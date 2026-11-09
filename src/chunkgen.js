@@ -3,7 +3,7 @@
 //  Output per chunk: ground texture, box instances, colliders,
 //  smashable props, billboards.
 // ============================================================
-const CH = 48, CTEX = 128;
+const CH = 48, CTEX = 256;
 const INST = 14; // floats per box instance: pos3 scale3 quat4 rgb3 mat1
 const COLF = 7;  // collider: cx cz ax az ha hb h
 const PROPF = 8; // prop: x z r type instStart instCount yaw mass
@@ -299,13 +299,15 @@ function prop(ctx, type, x, z, yaw, R) {
   const n = OB.length / INST - start;
   ctx.props.push(x, z, PRAD[type], type, start, n, yaw, PMASS[type]);
 }
-// sedan made of boxes, front = +z local
+// parked sedan made of boxes, front = +z local (static, so no raked glass; same proportions as the driven sedan)
 function carBoxes(x, z, yaw, col) {
-  const dk = [col[0] * 0.7, col[1] * 0.7, col[2] * 0.7];
-  lbox(x, z, yaw, 0, 0.36, 0, 1.08, 0.4, 2.15, col);
-  lbox(x, z, yaw, 0, 0.72, -0.15, 0.94, 0.34, 1.1, C.glass, 6);
-  lbox(x, z, yaw, 0, 0.92, -0.15, 0.96, 0.07, 0.95, dk);
-  for (const sx of [-0.5, 0.5]) for (const sz of [-0.68, 0.68]) lbox(x, z, yaw, sx, 0.2, sz, 0.2, 0.38, 0.4, C.tire);
+  lbox(x, z, yaw, 0, 0.33, 0, 1.08, 0.34, 2.16, col);
+  lbox(x, z, yaw, 0, 0.52, 0.68, 1.02, 0.08, 0.8, col);
+  lbox(x, z, yaw, 0, 0.52, -0.86, 1.02, 0.08, 0.44, col);
+  lbox(x, z, yaw, 0, 0.7, -0.2, 0.96, 0.34, 1.0, C.glass, 6);
+  lbox(x, z, yaw, 0, 0.89, -0.2, 0.92, 0.06, 0.74, col);
+  lbox(x, z, yaw, 0, 0.25, 1.1, 1.08, 0.14, 0.08, C.dark); lbox(x, z, yaw, 0, 0.25, -1.1, 1.08, 0.14, 0.08, C.dark);
+  for (const sx of [-0.5, 0.5]) for (const sz of [-0.7, 0.7]) { lbox(x, z, yaw, sx, 0.2, sz, 0.2, 0.4, 0.39, C.tire); lbox(x, z, yaw, sx * 1.21, 0.2, sz, 0.02, 0.25, 0.25, C.silver, 6); }
 }
 
 function blockProps(g, b, i, j, uc, vc, bu, bv, R, ctx, yaw) {

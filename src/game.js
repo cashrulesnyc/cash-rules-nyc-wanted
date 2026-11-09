@@ -3,6 +3,9 @@
 // ============================================================
 const $ = (id) => document.getElementById(id);
 const CAM_AZ = -16 * Math.PI / 180;
+// Steeper than the original 60deg: closer to the classic top-down city chase look, so towers
+// lean away from the car instead of across it. Anything still in the way gets sliced (gl.js).
+const CAM_PITCH = 66 * Math.PI / 180;
 const STAR_HEAT = [1, 16, 40, 80, 140];
 const COPS_FOR = [0, 2, 3, 5, 6, 8];
 const fmt$ = (n) => '$' + Math.floor(n).toLocaleString('en-US');
@@ -477,6 +480,7 @@ function pushVehicle(v, t) {
     if (f === 5 && !GFX.night) m = 0;
     if (wr && col !== VC.tire) { col = [col[0] * 0.28, col[1] * 0.26, col[2] * 0.24]; m = 0; }
     if (f === 3) pq = qMul(q, qYaw(t * 28));
+    else if (p[9]) pq = qMul(q, qAxis(1, 0, 0, p[9]));
     const o = qRot(q, [p[0], p[1], p[2]]);
     dpush(v.x + o[0], v.y + o[1] + (v.lift || 0), v.z + o[2], p[3], p[4], p[5], pq, col, m);
   }
@@ -532,7 +536,7 @@ let BILL_TEX = null, STATIC_BR = null;
 function render(t, dt) {
   const cv = GFX.canvas, asp = cv.clientWidth / Math.max(1, cv.clientHeight);
   const P = G.P;
-  let fov, dist, pitch = 60 * Math.PI / 180, az = CAM_AZ;
+  let fov, dist, pitch = CAM_PITCH, az = CAM_AZ;
   const portrait = asp < 1;
   fov = portrait ? Math.min(68, 2 * Math.atan(Math.tan(17 * Math.PI / 180) / asp) * 180 / Math.PI) : 36;
   const sp = P ? vSpeed(P) : 0;
@@ -571,7 +575,7 @@ function render(t, dt) {
     shadowCenter: [tx, 0, tz], shadowHalf: portrait ? 52 : 46,
     chunks, statics: STATIC_BR ? [STATIC_BR] : [], bills, billTex: BILL_TEX,
     sil: (G.state === 'play') ? { col: [1, 0.85, 0.2, 0.55] } : null,
-    cut: P && G.state !== 'shop' ? [P.x, P.y + 0.6, P.z, G.state === 'title' ? 5 : 7.5] : [0, 0, 0, 0],
+    slice: P && G.state !== 'shop' ? { x: P.x, z: P.z, minH: 2.7, fx: f[0], fz: f[1], slope: Math.tan(pitch) * 0.92 } : null,
   });
 }
 

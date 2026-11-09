@@ -10,6 +10,8 @@ const WX0 = -1500, WZ0 = -1392, WX1 = 1364, WZ1 = 1360, MAP_RES = 2;
 const MW = (WX1 - WX0) / MAP_RES | 0, MH = (WZ1 - WZ0) / MAP_RES | 0;
 const BORO = new Uint8Array(MW * MH);
 const ZONE = new Uint8Array(MW * MH);
+const NEARL = new Uint8Array(MW * MH); // 1 where land is within ~4 cells (shore band); built in buildMap
+const LANDB = new Uint8Array(MW * MH); // land mask blurred with a 5-tap binomial kernel (0..255); smooth coastlines
 
 // tile codes
 const T_WATER = 0, T_ROAD = 1, T_WALK = 2, T_LOT = 3, T_PARK = 4, T_SAND = 5, T_TARMAC = 6,
@@ -134,8 +136,41 @@ function mapIdx(x, z) {
   if (ix < 0 || iz < 0 || ix >= MW || iz >= MH) return -1;
   return iz * MW + ix;
 }
-function boroAt(x, z) { const m = mapIdx(x, z); return m < 0 ? 0 : BORO[m]; }
-function zoneAt(x, z) { const m = mapIdx(x, z); return m < 0 ? 0 : ZONE[m]; }
+// Smooth coastline: the raster is 2 units/px, so nearest-cell lookups give stair-stepped
+// shores. We bilinearly interpolate a land mask between cell centres and threshold it at 0.5,
+// which turns the steps into smooth diagonals. Physics (tileAt) and the ground texture both
+// go through landIdx(), so where it looks like water is exactly where the car sinks.
+function landVal(x, z) {
+  const fx = (x - WX0) / MAP_RES - 0.5, fz = (z - WZ0) / MAP_RES - 0.5;
+  const ix = Math.floor(fx), iz = Math.floor(fz), tx = fx - ix, tz = fz - iz;
+  if (ix < 0 || iz < 0 || ix >= MW - 1 || iz >= MH - 1) { const m = mapIdx(x, z); return m >= 0 && BORO[m] ? 1 : 0; }
+  const m = iz * MW + ix;
+  return ((LANDB[m] * (1 - tx) + LANDB[m + 1] * tx) * (1 - tz) + (LANDB[m + MW] * (1 - tx) + LANDB[m + MW + 1] * tx) * tz) * (1 / 255);
+}
+function landIdx(x, z) {
+  const mn = mapIdx(x, z);
+  if (mn < 0) return -1;
+  const fx = (x - WX0) / MAP_RES - 0.5, fz = (z - WZ0) / MAP_RES - 0.5;
+  const ix = Math.floor(fx), iz = Math.floor(fz);
+  if (ix < 0 || iz < 0 || ix >= MW - 1 || iz >= MH - 1) return BORO[mn] ? mn : -1;
+  const m = iz * MW + ix;
+  const a = LANDB[m], b = LANDB[m + 1], c = LANDB[m + MW], d = LANDB[m + MW + 1];
+  if (a === 255 && b === 255 && c === 255 && d === 255) return BORO[mn] ? mn : nearLand(mn);
+  if (a === 0 && b === 0 && c === 0 && d === 0) return -1;
+  const tx = fx - ix, tz = fz - iz;
+  if ((a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz < 127.5) return -1;
+  return BORO[mn] ? mn : nearLand(mn);
+}
+function nearLand(mn) { // smoothed land over a raw water cell: borrow the closest raw land cell's borough/zone
+  const iy = (mn / MW) | 0, ix = mn - iy * MW;
+  for (let r = 1; r <= 2; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const y = iy + dy, x = ix + dx; if (x < 0 || y < 0 || x >= MW || y >= MH) continue;
+    const k = y * MW + x; if (BORO[k]) return k;
+  }
+  return -1;
+}
+function boroAt(x, z) { const m = landIdx(x, z); return m < 0 ? 0 : BORO[m]; }
+function zoneAt(x, z) { const m = landIdx(x, z); return m < 0 ? 0 : ZONE[m]; }
 
 const SPECIAL_ZONES = [];
 function buildMap() {
@@ -155,14 +190,22 @@ function buildMap() {
   const sq = [[40.7308, -73.9973], [40.7359, -73.9911], [40.7420, -73.9880], [40.7536, -73.9832], [40.7265, -73.9815], [40.8040, -73.9440]];
   for (const s of sq) { const b = blockOf(g, s[0], s[1]); fillPoly(ZONE, blockRect(g, b[0], b[1], 1, 1, -0.01), 1, true); }
   buildRoads();
+  // blurred land mask (separable 1-4-6-4-1) for smooth coastlines
+  { const K = [1, 4, 6, 4, 1], t1 = new Uint16Array(MW * MH);
+    for (let y = 0; y < MH; y++) { const row = y * MW; for (let x = 0; x < MW; x++) { let v = 0; for (let k = -2; k <= 2; k++) { const xx = Math.min(MW - 1, Math.max(0, x + k)); v += (BORO[row + xx] ? 255 : 0) * K[k + 2]; } t1[row + x] = v >> 4; } }
+    for (let x = 0; x < MW; x++) for (let y = 0; y < MH; y++) { let v = 0; for (let k = -2; k <= 2; k++) { const yy = Math.min(MH - 1, Math.max(0, y + k)); v += t1[yy * MW + x] * K[k + 2]; } LANDB[y * MW + x] = Math.min(255, (v + 8) >> 4); } }
+  // shore band mask (separable dilation of the land raster by 4 cells)
+  const tmp = new Uint8Array(MW * MH), R = 4;
+  for (let y = 0; y < MH; y++) { const row = y * MW; let last = -1e9; for (let x = 0; x < MW; x++) { if (BORO[row + x]) last = x; if (x - last <= R) tmp[row + x] = 1; } last = 1e9; for (let x = MW - 1; x >= 0; x--) { if (BORO[row + x]) last = x; if (last - x <= R) tmp[row + x] = 1; } }
+  for (let x = 0; x < MW; x++) { let last = -1e9; for (let y = 0; y < MH; y++) { if (tmp[y * MW + x]) last = y; if (y - last <= R) NEARL[y * MW + x] = 1; } last = 1e9; for (let y = MH - 1; y >= 0; y--) { if (tmp[y * MW + x]) last = y; if (last - y <= R) NEARL[y * MW + x] = 1; } }
 }
 
 // ---------- tile classification ----------
 let LASTU = 0, LASTV = 0, LASTG = null;
 function tileAt(x, z) {
-  const m = mapIdx(x, z);
-  if (m < 0) return T_WATER;
-  const b = BORO[m];
+  if (mapIdx(x, z) < 0) return T_WATER;
+  const m = landIdx(x, z);
+  const b = m < 0 ? 0 : BORO[m];
   const s = segHit(x, z);
   if (s) {
     if (s.type === SEG_BRIDGE) return T_BRIDGE;
@@ -185,69 +228,98 @@ function isRoadish(t) { return t === T_ROAD || t === T_HWY || t === T_BRIDGE || 
 
 // ---------- texel colours for chunk textures ----------
 function hash2(x, z) { let h = (x * 374761393 + z * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
-const COL = { water: [70, 170, 226], foam: [196, 236, 252], road: [72, 74, 82], walk: [198, 194, 186], curb: [150, 148, 142], lot: [158, 154, 146],
-  grass: [112, 190, 84], grass2: [100, 176, 74], sand: [240, 216, 150], wet: [214, 192, 132], tarmac: [152, 154, 160], run: [62, 64, 70], hwy: [60, 62, 68],
-  cem: [120, 172, 92], plaza: [212, 206, 194], yellow: [236, 196, 64], white: [232, 232, 232], yard: [128, 182, 92] };
+const COL = { water: [62, 158, 216], shallow: [92, 186, 226], foam: [214, 240, 250], road: [66, 68, 76], walk: [196, 192, 184], curb: [138, 136, 130], lot: [150, 146, 138],
+  grass: [104, 178, 78], grass2: [94, 166, 70], sand: [238, 214, 152], wet: [212, 190, 134], tarmac: [146, 148, 154], run: [58, 60, 66], hwy: [56, 58, 64],
+  cem: [114, 164, 88], plaza: [208, 202, 190], yellow: [240, 196, 56], white: [236, 236, 236], yard: [120, 174, 88], gut: [40, 41, 46], edge: [120, 122, 126] };
+// Markings are sized for 256 px / 48 units (0.19 units per texel): every line is at least one
+// texel wide so it doesn't break up into specks, and dash/zebra periods are several texels long.
+const fr = (a) => a - Math.floor(a);
+function shade(c, k, out) { out[0] = c[0] * k; out[1] = c[1] * k; out[2] = c[2] * k; return out; }
+const _sc = [0, 0, 0];
+// Anti-aliased line painting: coverage of a stripe of half-width hw at distance d, one texel soft.
+const TXS = 48 / 256;
+function cov(d, hw) { const k = (hw - d) / TXS + 0.5; return k <= 0 ? 0 : k >= 1 ? 1 : k; }
+function paint(c, col, k) { if (k <= 0) return c; if (c !== _sc) { _sc[0] = c[0]; _sc[1] = c[1]; _sc[2] = c[2]; } _sc[0] += (col[0] - _sc[0]) * k; _sc[1] += (col[1] - _sc[1]) * k; _sc[2] += (col[2] - _sc[2]) * k; return _sc; }
+// dash coverage along a line: period p, duty 0.5, soft ends
+function dash(a, p) { const f = fr(a / p) * p, h = p * 0.25; return cov(Math.abs(f - p * 0.5), h); }
 function texel(x, z, out) {
   let t = tileAt(x, z), c;
+  const n = hash2(Math.floor(x * 5.33), Math.floor(z * 5.33)); // per-texel grain
   switch (t) {
     case T_WATER: {
-      const near = boroAt(x + 1.1, z) || boroAt(x - 1.1, z) || boroAt(x, z + 1.1) || boroAt(x, z - 1.1);
-      c = near ? COL.foam : COL.water;
-      if (!near) { const w = hash2(Math.floor(x / 3), Math.floor(z / 3)); if (w > 0.965) c = [84, 178, 230]; }
+      // the blurred land field doubles as distance-to-shore: shallows fade in, then a thin foam line
+      const mi = mapIdx(x, z);
+      if (mi < 0 || !NEARL[mi]) { c = COL.water; break; }
+      const v = landVal(x, z);
+      c = paint(COL.water, COL.shallow, Math.min(1, v * 6));
+      c = paint(c, COL.foam, Math.max(0, Math.min(1, (v - 0.3) * 7)));
       break;
     }
     case T_BRIDGE: {
       if (boroAt(x, z) === 0) { c = COL.water; break; }
       const a = Math.abs(SH.lat), hw = SH.seg.hw;
-      c = a > hw - 0.3 ? COL.curb : (a < 0.1 ? COL.yellow : COL.hwy); break;
+      c = a > hw - 0.35 ? COL.curb : (a < 0.12 ? COL.yellow : COL.hwy); break;
     }
     case T_ROAD: {
       const g = LASTG, u = LASTU, v = LASTV;
       const ru = u - g.A * Math.round(u / g.A), rv = v - g.S * Math.round(v / g.S);
       const du = Math.abs(ru), dv = Math.abs(rv);
       const onAve = du < g.wa / 2, onSt = dv < g.ws / 2;
-      c = COL.road;
-      if (onAve && onSt) { c = COL.road; }
-      else if (onAve) {
-        if (dv < g.ws / 2 + 0.75 && ((u * 2.6) % 1 + 1) % 1 < 0.5 && du < g.wa / 2 - 0.15) c = COL.white;
-        else if (g.style === 'city' ? (du > 0.06 && du < 0.17) : du < 0.07) c = COL.yellow;
-        else if (Math.abs(du - g.wa / 4) < 0.05 && (((v / 1.4) % 1 + 1) % 1) < 0.5) c = [180, 180, 184];
-      } else if (onSt) {
-        if (du < g.wa / 2 + 0.75 && ((v * 2.6) % 1 + 1) % 1 < 0.5 && dv < g.ws / 2 - 0.15) c = COL.white;
-        else if (dv < 0.06 && (((u / 1.6) % 1 + 1) % 1) < 0.5) c = COL.white;
+      c = shade(COL.road, 0.94 + 0.12 * n, _sc);
+      if (onAve && !onSt) {
+        const fromX = dv - g.ws / 2; // distance past the crossing street's edge
+        if (fromX < 1.4) {
+          if (du < g.wa / 2 - 0.25) c = paint(c, COL.white, Math.min(cov(Math.abs(fromX - 0.55), 0.4), dash(u, 0.9)));      // zebra
+          if (du > 0.3 && du < g.wa / 2 - 0.25) c = paint(c, COL.white, cov(Math.abs(fromX - 1.22), 0.12));               // stop bar
+        } else {
+          c = paint(c, COL.white, Math.min(cov(Math.abs(du - g.wa / 4 - 0.08), 0.1), dash(v, 2.2)));                     // lane dashes
+        }
+        c = paint(c, COL.yellow, cov(Math.abs(du - 0.16), 0.08));                                                           // double yellow
+        c = paint(c, COL.gut, cov(g.wa / 2 - du, 0.2) * 0.35);                                                          // gutter
+      } else if (onSt && !onAve) {
+        const fromX = du - g.wa / 2;
+        if (fromX < 1.1) { if (dv < g.ws / 2 - 0.25) c = paint(c, COL.white, Math.min(cov(Math.abs(fromX - 0.55), 0.4), dash(v, 0.9))); }
+        else c = paint(c, COL.white, Math.min(cov(dv, 0.09), dash(u, 2.0)));
+        c = paint(c, COL.gut, cov(g.ws / 2 - dv, 0.2) * 0.35);
       }
       break;
     }
     case T_WALK: {
       const g = LASTG, u = LASTU, v = LASTV;
       const du = Math.abs(u - g.A * Math.round(u / g.A)), dv = Math.abs(v - g.S * Math.round(v / g.S));
-      c = COL.walk;
-      if ((du >= g.wa / 2 && du < g.wa / 2 + 0.12) || (dv >= g.ws / 2 && dv < g.ws / 2 + 0.12)) c = COL.curb;
-      else if (((u / 1.2) % 1 + 1) % 1 < 0.07 || ((v / 1.2) % 1 + 1) % 1 < 0.07) c = [184, 180, 172];
+      c = shade(COL.walk, 0.96 + 0.07 * n, _sc);
+      if ((du >= g.wa / 2 && du < g.wa / 2 + 0.2) || (dv >= g.ws / 2 && dv < g.ws / 2 + 0.2)) c = COL.curb;
+      else if (fr(u / 1.4) < 0.13 || fr(v / 1.4) < 0.13) c = shade(COL.walk, 0.9, _sc);
+      // building-side shadow line (fake AO where the sidewalk meets the lot)
+      else if ((du > g.wa / 2 + g.sw - 0.2 && du < g.wa / 2 + g.sw) || (dv > g.ws / 2 + g.sw - 0.2 && dv < g.ws / 2 + g.sw)) c = shade(COL.walk, 0.84, _sc);
       break;
     }
-    case T_LOT: { const b = boroAt(x, z); c = b === 5 ? COL.yard : (b === 4 && x > 330) ? COL.yard : COL.lot; break; }
-    case T_PARK: { const h = hash2(Math.floor(x / 2.5), Math.floor(z / 2.5)); c = h > 0.6 ? COL.grass2 : COL.grass; break; }
-    case T_SAND: { const near = !boroAt(x + 2, z) || !boroAt(x - 2, z) || !boroAt(x, z + 2) || !boroAt(x, z - 2); c = near ? COL.wet : COL.sand; break; }
-    case T_TARMAC: c = COL.tarmac; break;
-    case T_CEM: c = COL.cem; break;
-    case T_PLAZA: c = COL.plaza; break;
+    case T_LOT: { const b = boroAt(x, z); c = shade(b === 5 ? COL.yard : (b === 4 && x > 330) ? COL.yard : COL.lot, 0.96 + 0.06 * n, _sc); break; }
+    case T_PARK: { const h = hash2(Math.floor(x / 2.5), Math.floor(z / 2.5)); c = shade(h > 0.6 ? COL.grass2 : COL.grass, 0.94 + 0.1 * n, _sc); break; }
+    case T_SAND: {
+      const lv = Math.min(landVal(x + 1.6, z), landVal(x - 1.6, z), landVal(x, z + 1.6), landVal(x, z - 1.6));
+      c = shade(lv < 0.5 ? COL.wet : COL.sand, 0.96 + 0.06 * n, _sc); break;
+    }
+    case T_TARMAC: c = shade(COL.tarmac, 0.96 + 0.06 * n, _sc); break;
+    case T_CEM: c = shade(COL.cem, 0.95 + 0.08 * n, _sc); break;
+    case T_PLAZA: { const u = x * 0.9 + z * 0.4, v = z * 0.9 - x * 0.4; c = shade(COL.plaza, (fr(u / 1.2) < 0.1 || fr(v / 1.2) < 0.1) ? 0.9 : 0.97 + 0.05 * n, _sc); break; }
     case T_RUNWAY: case T_HWY: {
-      const s = SH.seg, lat = SH.lat, al = SH.t, hw = s.hw;
-      c = t === T_RUNWAY ? COL.run : COL.hwy;
+      const sg = SH.seg, lat = SH.lat, al = SH.t, hw = sg.hw;
+      c = shade(t === T_RUNWAY ? COL.run : COL.hwy, 0.94 + 0.12 * n, _sc);
       const a = Math.abs(lat);
       if (t === T_RUNWAY) {
-        if (a > hw - 0.35 && a < hw - 0.15) c = COL.white;
-        else if (a < 0.12 && ((al / 3) % 1) < 0.5) c = COL.white;
-      } else if (s.type === SEG_AVE) {
-        c = COL.road; if (a < 0.08) c = COL.yellow;
+        c = paint(c, COL.white, cov(Math.abs(a - (hw - 0.32)), 0.12));
+        c = paint(c, COL.white, Math.min(cov(a, 0.14), dash(al, 3)));
+      } else if (sg.type === SEG_AVE) {
+        c = shade(COL.road, 0.94 + 0.12 * n, _sc);
+        c = paint(c, COL.yellow, cov(Math.abs(a - 0.16), 0.08));
+        c = paint(c, COL.white, Math.min(cov(Math.abs(a - hw * 0.5), 0.09), dash(al, 2.2)));
       } else {
-        if (a > hw - 0.32 && a < hw - 0.18) c = COL.white;
-        else if (a < 0.16 && a > 0.05) c = COL.yellow;
-        else if (Math.abs(a - hw * 0.5) < 0.06 && ((al / 2) % 1) < 0.5) c = COL.white;
+        c = paint(c, COL.white, cov(Math.abs(a - (hw - 0.3)), 0.1));
+        c = paint(c, COL.yellow, cov(Math.abs(a - 0.16), 0.08));
+        c = paint(c, COL.white, Math.min(cov(Math.abs(a - hw * 0.5), 0.09), dash(al, 2.4)));
       }
-      if (boroAt(x, z) === 0 && a > hw - 0.12) c = [120, 122, 126];
+      if (boroAt(x, z) === 0) c = paint(c, COL.edge, cov(hw - a, 0.18));
       break;
     }
     default: c = COL.lot;

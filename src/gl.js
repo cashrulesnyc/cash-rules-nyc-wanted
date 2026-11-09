@@ -42,22 +42,54 @@ const M4 = {
   }
 };
 
+// Box vertex shader.
+//  * Bevel: the mesh is a chamfered cube. aIn marks which axes a vertex is pulled in on, so the
+//    chamfer is a fixed world size (uBevel, capped by the box's thinnest side) instead of
+//    scaling with the box. Everything gets soft edges for free.
+//  * Slice: buildings between the camera and the player are capped in height (solid, with a
+//    roof) instead of being dithered see-through. The cap rises with distance toward the camera
+//    at the slope of the camera ray, so only what would actually hide the car gets cut, and it
+//    grows back smoothly as you drive past. Shadows still come from the full-height city.
 const BOX_VS = `#version 300 es
-layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm;
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=6) in vec3 aIn;
 layout(location=2) in vec3 iPos; layout(location=3) in vec3 iScl; layout(location=4) in vec4 iRot; layout(location=5) in vec4 iCol;
-uniform mat4 uVP; uniform mat4 uLVP;
-out vec3 vN; out vec3 vCol; out vec3 vL; out vec3 vW; out vec4 vS; out vec3 vLN; out vec3 vScl; flat out float vMat; flat out float vSeed;
+uniform mat4 uVP; uniform mat4 uLVP; uniform float uBevel; uniform vec4 uSlice; uniform vec3 uSliceDir; uniform float uSliceOn;
+out vec3 vN; out vec3 vCol; out vec3 vL; out vec3 vW; out vec4 vS; out vec3 vLN; out vec3 vScl; flat out float vMat; flat out float vSeed; out float vCutTop;
 vec3 qr(vec4 q, vec3 v){ return v + 2.0*cross(q.xyz, cross(q.xyz, v) + q.w*v); }
 void main(){
-  vec3 lp = aPos * iScl; vec3 w = qr(iRot, lp) + iPos;
-  vN = qr(iRot, aNrm); vCol = iCol.rgb; vMat = iCol.a; vL = lp; vLN = aNrm; vScl = iScl; vW = w;
+  float bv = min(uBevel, 0.22 * min(iScl.x, min(iScl.y, iScl.z)));
+  vec3 lp = aPos * iScl - aIn * bv;
+  vec3 scl = iScl;
+  vCutTop = 0.0;
+  if (uSliceOn > 0.5 && uSlice.w > 0.5) {
+    float top = iPos.y + 0.5 * iScl.y;
+    if (top > uSlice.z) {
+      vec2 rel = iPos.xz - uSlice.xy;
+      float along = dot(rel, uSliceDir.xy);              // >0: beyond the car, away from camera
+      float lat = abs(dot(rel, vec2(-uSliceDir.y, uSliceDir.x)));
+      float rad = 0.5 * max(iScl.x, iScl.z);
+      if (along < rad + 1.0) {
+        float a = max(0.0, -along - rad);                 // gap from the car to the box, toward camera
+        float l = max(0.0, lat - rad - 1.6);
+        float cap = uSlice.z + (a + 2.2 * l) * uSliceDir.z;
+        if (cap < top) {
+          float bot = iPos.y - 0.5 * iScl.y;
+          if (bot >= cap - 0.05) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; } // fully above cut: drop it
+          float ly = cap - iPos.y;                          // cap in local (scaled) space
+          if (lp.y > ly) { lp.y = ly; vCutTop = 1.0; }
+          scl.y = ly + 0.5 * iScl.y;                       // window rows think the box ends at the cut
+        }
+      }
+    }
+  }
+  vec3 w = qr(iRot, lp) + iPos;
+  vN = qr(iRot, aNrm); vCol = iCol.rgb; vMat = iCol.a; vL = vec3(lp.x, lp.y + 0.5 * (iScl.y - scl.y), lp.z); vLN = aNrm; vScl = scl; vW = w;
   vSeed = fract(iPos.x*0.1231 + iPos.z*0.3117 + iPos.y*0.071);
   vS = uLVP * vec4(w, 1.0);
   gl_Position = uVP * vec4(w, 1.0);
 }`;
 const LIGHT_FS = `
 uniform highp sampler2DShadow uShadow; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uAmb; uniform vec3 uFogCol; uniform vec2 uFog; uniform vec3 uCam; uniform float uNight; uniform float uShadowOn; uniform float uTime;
-uniform vec4 uCut;
 float shadowAt(vec4 s){
   if (uShadowOn < 0.5) return 1.0;
   vec3 p = s.xyz / s.w * 0.5 + 0.5;
@@ -74,20 +106,10 @@ vec3 fogit(vec3 c, vec3 w){ float f = smoothstep(uFog.x, uFog.y, distance(w, uCa
 `;
 const BOX_FS = `#version 300 es
 precision highp float;
-in vec3 vN; in vec3 vCol; in vec3 vL; in vec3 vW; in vec4 vS; in vec3 vLN; in vec3 vScl; flat in float vMat; flat in float vSeed;
+in vec3 vN; in vec3 vCol; in vec3 vL; in vec3 vW; in vec4 vS; in vec3 vLN; in vec3 vScl; flat in float vMat; flat in float vSeed; in float vCutTop;
 out vec4 o;
 ${LIGHT_FS}
 void main(){
-  if (uCut.w > 0.0 && vW.y > 0.7 && (vScl.y > 1.5 || vMat > 0.5 && vMat < 1.5)) {
-    vec3 cp = uCut.xyz - uCam; float t = dot(vW - uCam, cp) / dot(cp, cp);
-    if (t > 0.05 && t < 0.97) {
-      float d = length(vW - (uCam + cp * t)); float r = uCut.w * smoothstep(0.25, 0.9, t);
-      if (d < r) {
-        float bx = mod(floor(gl_FragCoord.x), 2.0), by = mod(floor(gl_FragCoord.y), 2.0);
-        if (d < r * 0.7) { if (bx + by > 0.5) discard; } else if (bx == by) discard;
-      }
-    }
-  }
   vec3 base = vCol; vec3 emi = vec3(0.0); float m = vMat; vec3 n = normalize(vN);
   bool win = (m > 0.5 && m < 1.5) || (m > 3.5 && m < 4.5);
   if (win && abs(vLN.y) < 0.5) {
@@ -105,19 +127,23 @@ void main(){
   }
   if (m > 1.5 && m < 2.5) emi = base * (uNight > 0.5 ? 1.0 : 0.55);
   if (m > 4.5 && m < 5.5 && uNight > 0.5) emi = vec3(1.0, 0.9, 0.6);
+  if (vCutTop > 0.5 && n.y > 0.5) { base = base * 0.72 + vec3(0.04); emi = vec3(0.0); } // sliced roof: flat, a touch darker
   float sh = shadowAt(vS);
   float ndl = max(dot(n, uSun), 0.0);
-  float side = 0.92 + 0.08 * n.y;
-  vec3 c = base * (uAmb * side + uSunCol * ndl * sh) + emi;
+  // hemisphere ambient (sky from above, warm city bounce from below) + contact darkening near the ground
+  vec3 hemi = mix(vec3(0.62, 0.58, 0.54), vec3(1.04, 1.04, 1.08), n.y * 0.5 + 0.5);
+  float ao = 0.7 + 0.3 * smoothstep(0.0, 1.1, vW.y);
+  float wallGrad = (abs(n.y) < 0.5 && vScl.y > 3.0) ? 0.93 + 0.07 * clamp(vW.y / 14.0, 0.0, 1.0) : 1.0;
+  vec3 c = base * (uAmb * hemi * ao * wallGrad + uSunCol * ndl * sh * (0.85 + 0.15 * ao)) + emi;
   if (m > 5.5 && m < 6.5) { vec3 v = normalize(uCam - vW); c += 0.35 * pow(max(dot(reflect(-uSun, n), v), 0.0), 12.0) * sh; }
   if (m > 2.5 && m < 3.5) c = base; // unlit flat (UI-ish markers)
   o = vec4(fogit(c, vW), 1.0);
 }`;
 const DEPTH_VS = `#version 300 es
-layout(location=0) in vec3 aPos; layout(location=2) in vec3 iPos; layout(location=3) in vec3 iScl; layout(location=4) in vec4 iRot;
-uniform mat4 uVP;
+layout(location=0) in vec3 aPos; layout(location=2) in vec3 iPos; layout(location=3) in vec3 iScl; layout(location=4) in vec4 iRot; layout(location=6) in vec3 aIn;
+uniform mat4 uVP; uniform float uBevel;
 vec3 qr(vec4 q, vec3 v){ return v + 2.0*cross(q.xyz, cross(q.xyz, v) + q.w*v); }
-void main(){ gl_Position = uVP * vec4(qr(iRot, aPos * iScl) + iPos, 1.0); }`;
+void main(){ float bv = min(uBevel, 0.22 * min(iScl.x, min(iScl.y, iScl.z))); gl_Position = uVP * vec4(qr(iRot, aPos * iScl - aIn * bv) + iPos, 1.0); }`;
 const DEPTH_FS = `#version 300 es
 precision mediump float; void main(){}`;
 const SIL_FS = `#version 300 es
@@ -142,16 +168,21 @@ void main(){
 }`;
 const BILL_VS = `#version 300 es
 layout(location=0) in vec2 aQ;
-uniform mat4 uVP; uniform vec3 uPos; uniform vec2 uSize; uniform vec2 uN; uniform vec4 uUV;
+uniform mat4 uVP; uniform vec3 uPos; uniform vec2 uSize; uniform vec2 uN; uniform vec4 uUV; uniform vec4 uSlice; uniform vec3 uSliceDir;
 out vec2 vUV; out vec3 vW;
-void main(){ vec3 r = vec3(uN.y, 0.0, -uN.x); vec3 w = uPos + r * (aQ.x - 0.5) * uSize.x + vec3(0.0, (aQ.y - 0.5) * uSize.y, 0.0) + vec3(uN.x, 0.0, uN.y) * 0.02;
+void main(){
+  if (uSlice.w > 0.5) { // same cap as BOX_VS: hide signs on buildings that are being sliced down
+    vec2 rel = uPos.xz - uSlice.xy; float along = dot(rel, uSliceDir.xy), lat = abs(dot(rel, vec2(-uSliceDir.y, uSliceDir.x)));
+    if (along < 1.0) { float cap = uSlice.z + (max(0.0, -along - 0.5) + 2.2 * max(0.0, lat - 1.6)) * uSliceDir.z; if (uPos.y + 0.5 * uSize.y > cap) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; } }
+  }
+  vec3 r = vec3(uN.y, 0.0, -uN.x); vec3 w = uPos + r * (aQ.x - 0.5) * uSize.x + vec3(0.0, (aQ.y - 0.5) * uSize.y, 0.0) + vec3(uN.x, 0.0, uN.y) * 0.02;
   vUV = vec2(uUV.x + aQ.x * uUV.z, uUV.y + (1.0 - aQ.y) * uUV.w); vW = w; gl_Position = uVP * vec4(w, 1.0); }`;
 const BILL_FS = `#version 300 es
 precision highp float; in vec2 vUV; in vec3 vW; out vec4 o; uniform sampler2D uTex; uniform vec3 uFogCol; uniform vec2 uFog; uniform vec3 uCam; uniform float uNight;
 void main(){ vec3 c = texture(uTex, vUV).rgb * (uNight > 0.5 ? 1.15 : 0.95); float f = smoothstep(uFog.x, uFog.y, distance(vW, uCam)); o = vec4(mix(c, uFogCol, f), 1.0); }`;
 
 const GFX = {
-  gl: null, ok: false, shadowSize: 2048, shadowOn: true, night: 0,
+  gl: null, ok: false, shadowSize: 2048, shadowOn: true, night: 0, bevel: 0.13,
   init(canvas) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     if (!gl) return false;
@@ -170,29 +201,51 @@ const GFX = {
     };
     this.pBox = mk(BOX_VS, BOX_FS); this.pDepth = mk(DEPTH_VS, DEPTH_FS); this.pSil = mk(BOX_VS, SIL_FS);
     this.pGround = mk(GROUND_VS, GROUND_FS); this.pBill = mk(BILL_VS, BILL_FS);
-    // cube
-    const P = [], N = [], I = [];
-    const faces = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-    for (const f of faces) {
-      const [nx, ny, nz] = f; const u = ny !== 0 ? [1, 0, 0] : [0, 1, 0]; const v = [ny * u[2] - nz * u[1], nz * u[0] - nx * u[2], nx * u[1] - ny * u[0]];
-      const b = P.length / 3;
-      for (const [a, c] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-        P.push(nx * 0.5 + (u[0] * a + v[0] * c) * 0.5, ny * 0.5 + (u[1] * a + v[1] * c) * 0.5, nz * 0.5 + (u[2] * a + v[2] * c) * 0.5); N.push(nx, ny, nz);
-      }
-      I.push(b, b + 1, b + 2, b, b + 2, b + 3);
-    }
-    // ensure CCW from outside
-    for (let k = 0; k < I.length; k += 3) {
-      const a = I[k] * 3, b = I[k + 1] * 3, c = I[k + 2] * 3;
-      const e1 = [P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]], e2 = [P[c] - P[a], P[c + 1] - P[a + 1], P[c + 2] - P[a + 2]];
+    // chamfered cube: 6 faces + 12 edge strips + 8 corner tris (44 tris). Vertex = pos, normal, inset-mask.
+    const V = [], I = [];
+    const vert = (p, n, inn) => { V.push(p[0], p[1], p[2], n[0], n[1], n[2], inn[0], inn[1], inn[2]); return V.length / 9 - 1; };
+    const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; };
+    const tri = (a, b, c) => {
+      // orient CCW from outside using a sample bevel
+      const P3 = (k) => [V[k * 9] - V[k * 9 + 6] * 0.1, V[k * 9 + 1] - V[k * 9 + 7] * 0.1, V[k * 9 + 2] - V[k * 9 + 8] * 0.1];
+      const A = P3(a), B = P3(b), C = P3(c);
+      const e1 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], e2 = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
       const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
-      if (cr[0] * N[a] + cr[1] * N[a + 1] + cr[2] * N[a + 2] < 0) { const t = I[k + 1]; I[k + 1] = I[k + 2]; I[k + 2] = t; }
+      if (cr[0] * V[a * 9 + 3] + cr[1] * V[a * 9 + 4] + cr[2] * V[a * 9 + 5] < 0) I.push(a, c, b); else I.push(a, b, c);
+    };
+    const quad = (a, b, c, d) => { tri(a, b, c); tri(a, c, d); };
+    const ax = (k, v) => { const r = [0, 0, 0]; r[k] = v; return r; };
+    for (let k = 0; k < 3; k++) for (const s of [-1, 1]) { // faces
+      const i = (k + 1) % 3, j = (k + 2) % 3, q = [];
+      for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const p = [0, 0, 0], m = [0, 0, 0]; p[k] = s * 0.5; p[i] = a * 0.5; p[j] = b * 0.5; m[i] = a; m[j] = b; q.push(vert(p, ax(k, s), m)); }
+      quad(q[0], q[1], q[2], q[3]);
     }
-    const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
-    const inter = new Float32Array(24 * 6); for (let i = 0; i < 24; i++) { inter.set(P.slice(i * 3, i * 3 + 3), i * 6); inter.set(N.slice(i * 3, i * 3 + 3), i * 6 + 3); }
-    gl.bufferData(gl.ARRAY_BUFFER, inter, gl.STATIC_DRAW);
+    for (let k = 0; k < 3; k++) { // edges running along axis k
+      const i = (k + 1) % 3, j = (k + 2) % 3;
+      for (const si of [-1, 1]) for (const sj of [-1, 1]) {
+        const n = [0, 0, 0]; n[i] = si; n[j] = sj; const nn = nrm(n), q = [];
+        for (const [face, sk] of [[i, -1], [i, 1], [j, 1], [j, -1]]) {
+          const p = [0, 0, 0], m = [0, 0, 0]; p[i] = si * 0.5; p[j] = sj * 0.5; p[k] = sk * 0.5; m[k] = sk;
+          if (face === i) m[j] = sj; else m[i] = si;
+          q.push(vert(p, nn, m));
+        }
+        quad(q[0], q[1], q[2], q[3]);
+      }
+    }
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) { // corners
+      const p = [sx * 0.5, sy * 0.5, sz * 0.5], n = nrm([sx, sy, sz]);
+      tri(vert(p, n, [0, sy, sz]), vert(p, n, [sx, 0, sz]), vert(p, n, [sx, sy, 0]));
+    }
+    const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(V), gl.STATIC_DRAW);
     const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(I), gl.STATIC_DRAW);
-    this.cubeVB = vb; this.cubeIB = ib;
+    this.cubeVB = vb; this.cubeIB = ib; this.cubeN = I.length;
+    // plain 12-tri cube (same vertex layout, no inset) for the shadow pass: bevels don't show in shadows
+    { const PV = [], PI = []; let n = 0;
+      for (let k = 0; k < 3; k++) for (const sg of [-1, 1]) { const i = (k + 1) % 3, j = (k + 2) % 3;
+        for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const p = [0, 0, 0]; p[k] = sg * 0.5; p[i] = a * 0.5; p[j] = b * 0.5; PV.push(p[0], p[1], p[2], 0, 0, 0, 0, 0, 0); }
+        PI.push(n, n + 1, n + 2, n, n + 2, n + 3); n += 4; }
+      this.flatVB = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.flatVB); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(PV), gl.STATIC_DRAW);
+      this.flatIB = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.flatIB); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(PI), gl.STATIC_DRAW); }
     // quad
     this.quadVB = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.quadVB); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]), gl.STATIC_DRAW);
     this.quadVAO = gl.createVertexArray(); gl.bindVertexArray(this.quadVAO); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null);
@@ -221,20 +274,25 @@ const GFX = {
   },
   makeInst(data, usage) {
     const gl = this.gl;
-    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.cubeVB);
-    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.cubeIB);
     const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, data, usage || gl.STATIC_DRAW);
     const S = INST * 4;
-    const at = (loc, n, off) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, off); gl.vertexAttribDivisor(loc, 1); };
-    at(2, 3, 0); at(3, 3, 12); at(4, 4, 24); at(5, 4, 40);
-    gl.bindVertexArray(null);
-    return { vao, buf, count: data.length / INST };
+    const mkVao = (vb, ib) => {
+      const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 36, 0);
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 36, 12);
+      gl.enableVertexAttribArray(6); gl.vertexAttribPointer(6, 3, gl.FLOAT, false, 36, 24);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      const at = (loc, n, off) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, off); gl.vertexAttribDivisor(loc, 1); };
+      at(2, 3, 0); at(3, 3, 12); at(4, 4, 24); at(5, 4, 40);
+      gl.bindVertexArray(null);
+      return vao;
+    };
+    return { vao: mkVao(this.cubeVB, this.cubeIB), svao: mkVao(this.flatVB, this.flatIB), buf, count: data.length / INST };
   },
   updateInst(obj, startInst, data) { const gl = this.gl; gl.bindBuffer(gl.ARRAY_BUFFER, obj.buf); gl.bufferSubData(gl.ARRAY_BUFFER, startInst * INST * 4, data); },
-  freeInst(obj) { const gl = this.gl; gl.deleteBuffer(obj.buf); gl.deleteVertexArray(obj.vao); },
+  freeInst(obj) { const gl = this.gl; gl.deleteBuffer(obj.buf); gl.deleteVertexArray(obj.vao); gl.deleteVertexArray(obj.svao); },
   makeTex(data, w, h, nearest, mips) {
     const gl = this.gl, t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -278,23 +336,28 @@ const GFX = {
     M4.ortho(this.LP, -hc - sx, hc - sx, -hc - sy, hc - sy, 20, 240);
     M4.mul(this.LVP, this.LP, this.LV);
     const lplanes = M4.planes(this.LVP);
-    const drawPlayer = () => { if (this.pl.count) { gl.bindVertexArray(this.pl.vao); gl.drawElementsInstanced(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0, this.pl.count); } };
+    let SH = false; // shadow pass: plain cube
+    const draw = (o) => { gl.bindVertexArray(SH ? o.svao : o.vao); gl.drawElementsInstanced(gl.TRIANGLES, SH ? 36 : this.cubeN, gl.UNSIGNED_SHORT, 0, o.count); };
+    const drawPlayer = () => { if (this.pl.count) draw(this.pl); };
+    const sliceU = (prog, on) => { if (prog.u.uSliceOn) gl.uniform1f(prog.u.uSliceOn, on); };
     const drawBoxes = (prog, pl, isShadow) => {
+      sliceU(prog, 1);
       for (const ch of S.chunks) {
         if (!ch.gfx || !ch.gfx.count) continue;
         if (!M4.boxVisible(pl, ch.x0, -1, ch.z0, ch.x0 + CH, ch.maxH || 40, ch.z0 + CH)) continue;
-        gl.bindVertexArray(ch.gfx.vao); gl.drawElementsInstanced(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0, ch.gfx.count);
+        draw(ch.gfx);
       }
-      for (const st of S.statics) { if (!st.count) continue; gl.bindVertexArray(st.vao); gl.drawElementsInstanced(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0, st.count); }
-      if (this.dyn.count) { gl.bindVertexArray(this.dyn.vao); gl.drawElementsInstanced(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0, this.dyn.count); }
+      sliceU(prog, 0);
+      for (const st of S.statics) { if (st.count) draw(st); }
+      if (this.dyn.count) draw(this.dyn);
       if (isShadow) drawPlayer();
     };
     // ---- shadow pass ----
     if (this.shadowOn) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.shFB); gl.viewport(0, 0, this.shadowSize, this.shadowSize);
-      gl.clear(gl.DEPTH_BUFFER_BIT); gl.useProgram(this.pDepth.p); gl.uniformMatrix4fv(this.pDepth.u.uVP, false, this.LVP);
+      gl.clear(gl.DEPTH_BUFFER_BIT); gl.useProgram(this.pDepth.p); gl.uniformMatrix4fv(this.pDepth.u.uVP, false, this.LVP); gl.uniform1f(this.pDepth.u.uBevel, this.bevel);
       gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(2, 4); gl.disable(gl.CULL_FACE);
-      drawBoxes(this.pDepth, lplanes, true);
+      SH = true; drawBoxes(this.pDepth, lplanes, true); SH = false;
       gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.CULL_FACE);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
@@ -306,7 +369,9 @@ const GFX = {
       gl.uniformMatrix4fv(u.uVP, false, this.VP); if (u.uLVP) gl.uniformMatrix4fv(u.uLVP, false, this.LVP);
       if (u.uSun) gl.uniform3fv(u.uSun, S.sunDir); if (u.uSunCol) gl.uniform3fv(u.uSunCol, S.sunCol); if (u.uAmb) gl.uniform3fv(u.uAmb, S.amb);
       if (u.uFogCol) gl.uniform3fv(u.uFogCol, S.fogCol); if (u.uFog) gl.uniform2f(u.uFog, S.fog[0], S.fog[1]); if (u.uCam) gl.uniform3fv(u.uCam, S.eye);
-      if (u.uNight) gl.uniform1f(u.uNight, this.night); if (u.uShadowOn) gl.uniform1f(u.uShadowOn, this.shadowOn ? 1 : 0); if (u.uTime) gl.uniform1f(u.uTime, S.time); if (u.uCut) gl.uniform4fv(u.uCut, S.cut || [0, 0, 0, 0]);
+      if (u.uNight) gl.uniform1f(u.uNight, this.night); if (u.uShadowOn) gl.uniform1f(u.uShadowOn, this.shadowOn ? 1 : 0); if (u.uTime) gl.uniform1f(u.uTime, S.time);
+      if (u.uBevel) gl.uniform1f(u.uBevel, this.bevel);
+      if (u.uSlice) { const sl = S.slice; gl.uniform4f(u.uSlice, sl ? sl.x : 0, sl ? sl.z : 0, sl ? sl.minH : 0, sl ? 1 : 0); gl.uniform3f(u.uSliceDir, sl ? sl.fx : 0, sl ? sl.fz : 1, sl ? sl.slope : 1); gl.uniform1f(u.uSliceOn, 0); }
       if (u.uShadow) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.shTex); gl.uniform1i(u.uShadow, 1); }
     };
     // ground
@@ -329,6 +394,7 @@ const GFX = {
     if (S.bills.length) {
       const pl = this.pBill; gl.useProgram(pl.p); gl.uniformMatrix4fv(pl.u.uVP, false, this.VP);
       gl.uniform3fv(pl.u.uFogCol, S.fogCol); gl.uniform2f(pl.u.uFog, S.fog[0], S.fog[1]); gl.uniform3fv(pl.u.uCam, S.eye); gl.uniform1f(pl.u.uNight, this.night);
+      { const sl = S.slice; gl.uniform4f(pl.u.uSlice, sl ? sl.x : 0, sl ? sl.z : 0, sl ? sl.minH : 0, sl ? 1 : 0); gl.uniform3f(pl.u.uSliceDir, sl ? sl.fx : 0, sl ? sl.fz : 1, sl ? sl.slope : 1); }
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, S.billTex); gl.uniform1i(pl.u.uTex, 0);
       gl.bindVertexArray(this.quadVAO); gl.disable(gl.CULL_FACE);
       for (const b of S.bills) {
@@ -340,7 +406,7 @@ const GFX = {
     }
     // player: silhouette where hidden by the world, then the car itself
     if (S.sil && this.pl.count) {
-      const ps = this.pSil; gl.useProgram(ps.p); gl.uniformMatrix4fv(ps.u.uVP, false, this.VP); gl.uniformMatrix4fv(ps.u.uLVP, false, this.LVP);
+      const ps = this.pSil; gl.useProgram(ps.p); setCommon(ps);
       gl.uniform4fv(ps.u.uSil, S.sil.col);
       gl.depthFunc(gl.GREATER); gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       drawPlayer();

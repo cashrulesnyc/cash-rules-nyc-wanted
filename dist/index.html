@@ -445,6 +445,8 @@ const WX0 = -1500, WZ0 = -1392, WX1 = 1364, WZ1 = 1360, MAP_RES = 2;
 const MW = (WX1 - WX0) / MAP_RES | 0, MH = (WZ1 - WZ0) / MAP_RES | 0;
 const BORO = new Uint8Array(MW * MH);
 const ZONE = new Uint8Array(MW * MH);
+const NEARL = new Uint8Array(MW * MH); // 1 where land is within ~4 cells (shore band); built in buildMap
+const LANDB = new Uint8Array(MW * MH); // land mask blurred with a 5-tap binomial kernel (0..255); smooth coastlines
 
 // tile codes
 const T_WATER = 0, T_ROAD = 1, T_WALK = 2, T_LOT = 3, T_PARK = 4, T_SAND = 5, T_TARMAC = 6,
@@ -569,8 +571,41 @@ function mapIdx(x, z) {
   if (ix < 0 || iz < 0 || ix >= MW || iz >= MH) return -1;
   return iz * MW + ix;
 }
-function boroAt(x, z) { const m = mapIdx(x, z); return m < 0 ? 0 : BORO[m]; }
-function zoneAt(x, z) { const m = mapIdx(x, z); return m < 0 ? 0 : ZONE[m]; }
+// Smooth coastline: the raster is 2 units/px, so nearest-cell lookups give stair-stepped
+// shores. We bilinearly interpolate a land mask between cell centres and threshold it at 0.5,
+// which turns the steps into smooth diagonals. Physics (tileAt) and the ground texture both
+// go through landIdx(), so where it looks like water is exactly where the car sinks.
+function landVal(x, z) {
+  const fx = (x - WX0) / MAP_RES - 0.5, fz = (z - WZ0) / MAP_RES - 0.5;
+  const ix = Math.floor(fx), iz = Math.floor(fz), tx = fx - ix, tz = fz - iz;
+  if (ix < 0 || iz < 0 || ix >= MW - 1 || iz >= MH - 1) { const m = mapIdx(x, z); return m >= 0 && BORO[m] ? 1 : 0; }
+  const m = iz * MW + ix;
+  return ((LANDB[m] * (1 - tx) + LANDB[m + 1] * tx) * (1 - tz) + (LANDB[m + MW] * (1 - tx) + LANDB[m + MW + 1] * tx) * tz) * (1 / 255);
+}
+function landIdx(x, z) {
+  const mn = mapIdx(x, z);
+  if (mn < 0) return -1;
+  const fx = (x - WX0) / MAP_RES - 0.5, fz = (z - WZ0) / MAP_RES - 0.5;
+  const ix = Math.floor(fx), iz = Math.floor(fz);
+  if (ix < 0 || iz < 0 || ix >= MW - 1 || iz >= MH - 1) return BORO[mn] ? mn : -1;
+  const m = iz * MW + ix;
+  const a = LANDB[m], b = LANDB[m + 1], c = LANDB[m + MW], d = LANDB[m + MW + 1];
+  if (a === 255 && b === 255 && c === 255 && d === 255) return BORO[mn] ? mn : nearLand(mn);
+  if (a === 0 && b === 0 && c === 0 && d === 0) return -1;
+  const tx = fx - ix, tz = fz - iz;
+  if ((a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz < 127.5) return -1;
+  return BORO[mn] ? mn : nearLand(mn);
+}
+function nearLand(mn) { // smoothed land over a raw water cell: borrow the closest raw land cell's borough/zone
+  const iy = (mn / MW) | 0, ix = mn - iy * MW;
+  for (let r = 1; r <= 2; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const y = iy + dy, x = ix + dx; if (x < 0 || y < 0 || x >= MW || y >= MH) continue;
+    const k = y * MW + x; if (BORO[k]) return k;
+  }
+  return -1;
+}
+function boroAt(x, z) { const m = landIdx(x, z); return m < 0 ? 0 : BORO[m]; }
+function zoneAt(x, z) { const m = landIdx(x, z); return m < 0 ? 0 : ZONE[m]; }
 
 const SPECIAL_ZONES = [];
 function buildMap() {
@@ -590,14 +625,22 @@ function buildMap() {
   const sq = [[40.7308, -73.9973], [40.7359, -73.9911], [40.7420, -73.9880], [40.7536, -73.9832], [40.7265, -73.9815], [40.8040, -73.9440]];
   for (const s of sq) { const b = blockOf(g, s[0], s[1]); fillPoly(ZONE, blockRect(g, b[0], b[1], 1, 1, -0.01), 1, true); }
   buildRoads();
+  // blurred land mask (separable 1-4-6-4-1) for smooth coastlines
+  { const K = [1, 4, 6, 4, 1], t1 = new Uint16Array(MW * MH);
+    for (let y = 0; y < MH; y++) { const row = y * MW; for (let x = 0; x < MW; x++) { let v = 0; for (let k = -2; k <= 2; k++) { const xx = Math.min(MW - 1, Math.max(0, x + k)); v += (BORO[row + xx] ? 255 : 0) * K[k + 2]; } t1[row + x] = v >> 4; } }
+    for (let x = 0; x < MW; x++) for (let y = 0; y < MH; y++) { let v = 0; for (let k = -2; k <= 2; k++) { const yy = Math.min(MH - 1, Math.max(0, y + k)); v += t1[yy * MW + x] * K[k + 2]; } LANDB[y * MW + x] = Math.min(255, (v + 8) >> 4); } }
+  // shore band mask (separable dilation of the land raster by 4 cells)
+  const tmp = new Uint8Array(MW * MH), R = 4;
+  for (let y = 0; y < MH; y++) { const row = y * MW; let last = -1e9; for (let x = 0; x < MW; x++) { if (BORO[row + x]) last = x; if (x - last <= R) tmp[row + x] = 1; } last = 1e9; for (let x = MW - 1; x >= 0; x--) { if (BORO[row + x]) last = x; if (last - x <= R) tmp[row + x] = 1; } }
+  for (let x = 0; x < MW; x++) { let last = -1e9; for (let y = 0; y < MH; y++) { if (tmp[y * MW + x]) last = y; if (y - last <= R) NEARL[y * MW + x] = 1; } last = 1e9; for (let y = MH - 1; y >= 0; y--) { if (tmp[y * MW + x]) last = y; if (last - y <= R) NEARL[y * MW + x] = 1; } }
 }
 
 // ---------- tile classification ----------
 let LASTU = 0, LASTV = 0, LASTG = null;
 function tileAt(x, z) {
-  const m = mapIdx(x, z);
-  if (m < 0) return T_WATER;
-  const b = BORO[m];
+  if (mapIdx(x, z) < 0) return T_WATER;
+  const m = landIdx(x, z);
+  const b = m < 0 ? 0 : BORO[m];
   const s = segHit(x, z);
   if (s) {
     if (s.type === SEG_BRIDGE) return T_BRIDGE;
@@ -620,69 +663,98 @@ function isRoadish(t) { return t === T_ROAD || t === T_HWY || t === T_BRIDGE || 
 
 // ---------- texel colours for chunk textures ----------
 function hash2(x, z) { let h = (x * 374761393 + z * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
-const COL = { water: [70, 170, 226], foam: [196, 236, 252], road: [72, 74, 82], walk: [198, 194, 186], curb: [150, 148, 142], lot: [158, 154, 146],
-  grass: [112, 190, 84], grass2: [100, 176, 74], sand: [240, 216, 150], wet: [214, 192, 132], tarmac: [152, 154, 160], run: [62, 64, 70], hwy: [60, 62, 68],
-  cem: [120, 172, 92], plaza: [212, 206, 194], yellow: [236, 196, 64], white: [232, 232, 232], yard: [128, 182, 92] };
+const COL = { water: [62, 158, 216], shallow: [92, 186, 226], foam: [214, 240, 250], road: [66, 68, 76], walk: [196, 192, 184], curb: [138, 136, 130], lot: [150, 146, 138],
+  grass: [104, 178, 78], grass2: [94, 166, 70], sand: [238, 214, 152], wet: [212, 190, 134], tarmac: [146, 148, 154], run: [58, 60, 66], hwy: [56, 58, 64],
+  cem: [114, 164, 88], plaza: [208, 202, 190], yellow: [240, 196, 56], white: [236, 236, 236], yard: [120, 174, 88], gut: [40, 41, 46], edge: [120, 122, 126] };
+// Markings are sized for 256 px / 48 units (0.19 units per texel): every line is at least one
+// texel wide so it doesn't break up into specks, and dash/zebra periods are several texels long.
+const fr = (a) => a - Math.floor(a);
+function shade(c, k, out) { out[0] = c[0] * k; out[1] = c[1] * k; out[2] = c[2] * k; return out; }
+const _sc = [0, 0, 0];
+// Anti-aliased line painting: coverage of a stripe of half-width hw at distance d, one texel soft.
+const TXS = 48 / 256;
+function cov(d, hw) { const k = (hw - d) / TXS + 0.5; return k <= 0 ? 0 : k >= 1 ? 1 : k; }
+function paint(c, col, k) { if (k <= 0) return c; if (c !== _sc) { _sc[0] = c[0]; _sc[1] = c[1]; _sc[2] = c[2]; } _sc[0] += (col[0] - _sc[0]) * k; _sc[1] += (col[1] - _sc[1]) * k; _sc[2] += (col[2] - _sc[2]) * k; return _sc; }
+// dash coverage along a line: period p, duty 0.5, soft ends
+function dash(a, p) { const f = fr(a / p) * p, h = p * 0.25; return cov(Math.abs(f - p * 0.5), h); }
 function texel(x, z, out) {
   let t = tileAt(x, z), c;
+  const n = hash2(Math.floor(x * 5.33), Math.floor(z * 5.33)); // per-texel grain
   switch (t) {
     case T_WATER: {
-      const near = boroAt(x + 1.1, z) || boroAt(x - 1.1, z) || boroAt(x, z + 1.1) || boroAt(x, z - 1.1);
-      c = near ? COL.foam : COL.water;
-      if (!near) { const w = hash2(Math.floor(x / 3), Math.floor(z / 3)); if (w > 0.965) c = [84, 178, 230]; }
+      // the blurred land field doubles as distance-to-shore: shallows fade in, then a thin foam line
+      const mi = mapIdx(x, z);
+      if (mi < 0 || !NEARL[mi]) { c = COL.water; break; }
+      const v = landVal(x, z);
+      c = paint(COL.water, COL.shallow, Math.min(1, v * 6));
+      c = paint(c, COL.foam, Math.max(0, Math.min(1, (v - 0.3) * 7)));
       break;
     }
     case T_BRIDGE: {
       if (boroAt(x, z) === 0) { c = COL.water; break; }
       const a = Math.abs(SH.lat), hw = SH.seg.hw;
-      c = a > hw - 0.3 ? COL.curb : (a < 0.1 ? COL.yellow : COL.hwy); break;
+      c = a > hw - 0.35 ? COL.curb : (a < 0.12 ? COL.yellow : COL.hwy); break;
     }
     case T_ROAD: {
       const g = LASTG, u = LASTU, v = LASTV;
       const ru = u - g.A * Math.round(u / g.A), rv = v - g.S * Math.round(v / g.S);
       const du = Math.abs(ru), dv = Math.abs(rv);
       const onAve = du < g.wa / 2, onSt = dv < g.ws / 2;
-      c = COL.road;
-      if (onAve && onSt) { c = COL.road; }
-      else if (onAve) {
-        if (dv < g.ws / 2 + 0.75 && ((u * 2.6) % 1 + 1) % 1 < 0.5 && du < g.wa / 2 - 0.15) c = COL.white;
-        else if (g.style === 'city' ? (du > 0.06 && du < 0.17) : du < 0.07) c = COL.yellow;
-        else if (Math.abs(du - g.wa / 4) < 0.05 && (((v / 1.4) % 1 + 1) % 1) < 0.5) c = [180, 180, 184];
-      } else if (onSt) {
-        if (du < g.wa / 2 + 0.75 && ((v * 2.6) % 1 + 1) % 1 < 0.5 && dv < g.ws / 2 - 0.15) c = COL.white;
-        else if (dv < 0.06 && (((u / 1.6) % 1 + 1) % 1) < 0.5) c = COL.white;
+      c = shade(COL.road, 0.94 + 0.12 * n, _sc);
+      if (onAve && !onSt) {
+        const fromX = dv - g.ws / 2; // distance past the crossing street's edge
+        if (fromX < 1.4) {
+          if (du < g.wa / 2 - 0.25) c = paint(c, COL.white, Math.min(cov(Math.abs(fromX - 0.55), 0.4), dash(u, 0.9)));      // zebra
+          if (du > 0.3 && du < g.wa / 2 - 0.25) c = paint(c, COL.white, cov(Math.abs(fromX - 1.22), 0.12));               // stop bar
+        } else {
+          c = paint(c, COL.white, Math.min(cov(Math.abs(du - g.wa / 4 - 0.08), 0.1), dash(v, 2.2)));                     // lane dashes
+        }
+        c = paint(c, COL.yellow, cov(Math.abs(du - 0.16), 0.08));                                                           // double yellow
+        c = paint(c, COL.gut, cov(g.wa / 2 - du, 0.2) * 0.35);                                                          // gutter
+      } else if (onSt && !onAve) {
+        const fromX = du - g.wa / 2;
+        if (fromX < 1.1) { if (dv < g.ws / 2 - 0.25) c = paint(c, COL.white, Math.min(cov(Math.abs(fromX - 0.55), 0.4), dash(v, 0.9))); }
+        else c = paint(c, COL.white, Math.min(cov(dv, 0.09), dash(u, 2.0)));
+        c = paint(c, COL.gut, cov(g.ws / 2 - dv, 0.2) * 0.35);
       }
       break;
     }
     case T_WALK: {
       const g = LASTG, u = LASTU, v = LASTV;
       const du = Math.abs(u - g.A * Math.round(u / g.A)), dv = Math.abs(v - g.S * Math.round(v / g.S));
-      c = COL.walk;
-      if ((du >= g.wa / 2 && du < g.wa / 2 + 0.12) || (dv >= g.ws / 2 && dv < g.ws / 2 + 0.12)) c = COL.curb;
-      else if (((u / 1.2) % 1 + 1) % 1 < 0.07 || ((v / 1.2) % 1 + 1) % 1 < 0.07) c = [184, 180, 172];
+      c = shade(COL.walk, 0.96 + 0.07 * n, _sc);
+      if ((du >= g.wa / 2 && du < g.wa / 2 + 0.2) || (dv >= g.ws / 2 && dv < g.ws / 2 + 0.2)) c = COL.curb;
+      else if (fr(u / 1.4) < 0.13 || fr(v / 1.4) < 0.13) c = shade(COL.walk, 0.9, _sc);
+      // building-side shadow line (fake AO where the sidewalk meets the lot)
+      else if ((du > g.wa / 2 + g.sw - 0.2 && du < g.wa / 2 + g.sw) || (dv > g.ws / 2 + g.sw - 0.2 && dv < g.ws / 2 + g.sw)) c = shade(COL.walk, 0.84, _sc);
       break;
     }
-    case T_LOT: { const b = boroAt(x, z); c = b === 5 ? COL.yard : (b === 4 && x > 330) ? COL.yard : COL.lot; break; }
-    case T_PARK: { const h = hash2(Math.floor(x / 2.5), Math.floor(z / 2.5)); c = h > 0.6 ? COL.grass2 : COL.grass; break; }
-    case T_SAND: { const near = !boroAt(x + 2, z) || !boroAt(x - 2, z) || !boroAt(x, z + 2) || !boroAt(x, z - 2); c = near ? COL.wet : COL.sand; break; }
-    case T_TARMAC: c = COL.tarmac; break;
-    case T_CEM: c = COL.cem; break;
-    case T_PLAZA: c = COL.plaza; break;
+    case T_LOT: { const b = boroAt(x, z); c = shade(b === 5 ? COL.yard : (b === 4 && x > 330) ? COL.yard : COL.lot, 0.96 + 0.06 * n, _sc); break; }
+    case T_PARK: { const h = hash2(Math.floor(x / 2.5), Math.floor(z / 2.5)); c = shade(h > 0.6 ? COL.grass2 : COL.grass, 0.94 + 0.1 * n, _sc); break; }
+    case T_SAND: {
+      const lv = Math.min(landVal(x + 1.6, z), landVal(x - 1.6, z), landVal(x, z + 1.6), landVal(x, z - 1.6));
+      c = shade(lv < 0.5 ? COL.wet : COL.sand, 0.96 + 0.06 * n, _sc); break;
+    }
+    case T_TARMAC: c = shade(COL.tarmac, 0.96 + 0.06 * n, _sc); break;
+    case T_CEM: c = shade(COL.cem, 0.95 + 0.08 * n, _sc); break;
+    case T_PLAZA: { const u = x * 0.9 + z * 0.4, v = z * 0.9 - x * 0.4; c = shade(COL.plaza, (fr(u / 1.2) < 0.1 || fr(v / 1.2) < 0.1) ? 0.9 : 0.97 + 0.05 * n, _sc); break; }
     case T_RUNWAY: case T_HWY: {
-      const s = SH.seg, lat = SH.lat, al = SH.t, hw = s.hw;
-      c = t === T_RUNWAY ? COL.run : COL.hwy;
+      const sg = SH.seg, lat = SH.lat, al = SH.t, hw = sg.hw;
+      c = shade(t === T_RUNWAY ? COL.run : COL.hwy, 0.94 + 0.12 * n, _sc);
       const a = Math.abs(lat);
       if (t === T_RUNWAY) {
-        if (a > hw - 0.35 && a < hw - 0.15) c = COL.white;
-        else if (a < 0.12 && ((al / 3) % 1) < 0.5) c = COL.white;
-      } else if (s.type === SEG_AVE) {
-        c = COL.road; if (a < 0.08) c = COL.yellow;
+        c = paint(c, COL.white, cov(Math.abs(a - (hw - 0.32)), 0.12));
+        c = paint(c, COL.white, Math.min(cov(a, 0.14), dash(al, 3)));
+      } else if (sg.type === SEG_AVE) {
+        c = shade(COL.road, 0.94 + 0.12 * n, _sc);
+        c = paint(c, COL.yellow, cov(Math.abs(a - 0.16), 0.08));
+        c = paint(c, COL.white, Math.min(cov(Math.abs(a - hw * 0.5), 0.09), dash(al, 2.2)));
       } else {
-        if (a > hw - 0.32 && a < hw - 0.18) c = COL.white;
-        else if (a < 0.16 && a > 0.05) c = COL.yellow;
-        else if (Math.abs(a - hw * 0.5) < 0.06 && ((al / 2) % 1) < 0.5) c = COL.white;
+        c = paint(c, COL.white, cov(Math.abs(a - (hw - 0.3)), 0.1));
+        c = paint(c, COL.yellow, cov(Math.abs(a - 0.16), 0.08));
+        c = paint(c, COL.white, Math.min(cov(Math.abs(a - hw * 0.5), 0.09), dash(al, 2.4)));
       }
-      if (boroAt(x, z) === 0 && a > hw - 0.12) c = [120, 122, 126];
+      if (boroAt(x, z) === 0) c = paint(c, COL.edge, cov(hw - a, 0.18));
       break;
     }
     default: c = COL.lot;
@@ -707,7 +779,7 @@ function mapColor(b, zn) {
 //  Output per chunk: ground texture, box instances, colliders,
 //  smashable props, billboards.
 // ============================================================
-const CH = 48, CTEX = 128;
+const CH = 48, CTEX = 256;
 const INST = 14; // floats per box instance: pos3 scale3 quat4 rgb3 mat1
 const COLF = 7;  // collider: cx cz ax az ha hb h
 const PROPF = 8; // prop: x z r type instStart instCount yaw mass
@@ -1003,13 +1075,15 @@ function prop(ctx, type, x, z, yaw, R) {
   const n = OB.length / INST - start;
   ctx.props.push(x, z, PRAD[type], type, start, n, yaw, PMASS[type]);
 }
-// sedan made of boxes, front = +z local
+// parked sedan made of boxes, front = +z local (static, so no raked glass; same proportions as the driven sedan)
 function carBoxes(x, z, yaw, col) {
-  const dk = [col[0] * 0.7, col[1] * 0.7, col[2] * 0.7];
-  lbox(x, z, yaw, 0, 0.36, 0, 1.08, 0.4, 2.15, col);
-  lbox(x, z, yaw, 0, 0.72, -0.15, 0.94, 0.34, 1.1, C.glass, 6);
-  lbox(x, z, yaw, 0, 0.92, -0.15, 0.96, 0.07, 0.95, dk);
-  for (const sx of [-0.5, 0.5]) for (const sz of [-0.68, 0.68]) lbox(x, z, yaw, sx, 0.2, sz, 0.2, 0.38, 0.4, C.tire);
+  lbox(x, z, yaw, 0, 0.33, 0, 1.08, 0.34, 2.16, col);
+  lbox(x, z, yaw, 0, 0.52, 0.68, 1.02, 0.08, 0.8, col);
+  lbox(x, z, yaw, 0, 0.52, -0.86, 1.02, 0.08, 0.44, col);
+  lbox(x, z, yaw, 0, 0.7, -0.2, 0.96, 0.34, 1.0, C.glass, 6);
+  lbox(x, z, yaw, 0, 0.89, -0.2, 0.92, 0.06, 0.74, col);
+  lbox(x, z, yaw, 0, 0.25, 1.1, 1.08, 0.14, 0.08, C.dark); lbox(x, z, yaw, 0, 0.25, -1.1, 1.08, 0.14, 0.08, C.dark);
+  for (const sx of [-0.5, 0.5]) for (const sz of [-0.7, 0.7]) { lbox(x, z, yaw, sx, 0.2, sz, 0.2, 0.4, 0.39, C.tire); lbox(x, z, yaw, sx * 1.21, 0.2, sz, 0.02, 0.25, 0.25, C.silver, 6); }
 }
 
 function blockProps(g, b, i, j, uc, vc, bu, bv, R, ctx, yaw) {
@@ -1318,22 +1392,54 @@ const M4 = {
   }
 };
 
+// Box vertex shader.
+//  * Bevel: the mesh is a chamfered cube. aIn marks which axes a vertex is pulled in on, so the
+//    chamfer is a fixed world size (uBevel, capped by the box's thinnest side) instead of
+//    scaling with the box. Everything gets soft edges for free.
+//  * Slice: buildings between the camera and the player are capped in height (solid, with a
+//    roof) instead of being dithered see-through. The cap rises with distance toward the camera
+//    at the slope of the camera ray, so only what would actually hide the car gets cut, and it
+//    grows back smoothly as you drive past. Shadows still come from the full-height city.
 const BOX_VS = `#version 300 es
-layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm;
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=6) in vec3 aIn;
 layout(location=2) in vec3 iPos; layout(location=3) in vec3 iScl; layout(location=4) in vec4 iRot; layout(location=5) in vec4 iCol;
-uniform mat4 uVP; uniform mat4 uLVP;
-out vec3 vN; out vec3 vCol; out vec3 vL; out vec3 vW; out vec4 vS; out vec3 vLN; out vec3 vScl; flat out float vMat; flat out float vSeed;
+uniform mat4 uVP; uniform mat4 uLVP; uniform float uBevel; uniform vec4 uSlice; uniform vec3 uSliceDir; uniform float uSliceOn;
+out vec3 vN; out vec3 vCol; out vec3 vL; out vec3 vW; out vec4 vS; out vec3 vLN; out vec3 vScl; flat out float vMat; flat out float vSeed; out float vCutTop;
 vec3 qr(vec4 q, vec3 v){ return v + 2.0*cross(q.xyz, cross(q.xyz, v) + q.w*v); }
 void main(){
-  vec3 lp = aPos * iScl; vec3 w = qr(iRot, lp) + iPos;
-  vN = qr(iRot, aNrm); vCol = iCol.rgb; vMat = iCol.a; vL = lp; vLN = aNrm; vScl = iScl; vW = w;
+  float bv = min(uBevel, 0.22 * min(iScl.x, min(iScl.y, iScl.z)));
+  vec3 lp = aPos * iScl - aIn * bv;
+  vec3 scl = iScl;
+  vCutTop = 0.0;
+  if (uSliceOn > 0.5 && uSlice.w > 0.5) {
+    float top = iPos.y + 0.5 * iScl.y;
+    if (top > uSlice.z) {
+      vec2 rel = iPos.xz - uSlice.xy;
+      float along = dot(rel, uSliceDir.xy);              // >0: beyond the car, away from camera
+      float lat = abs(dot(rel, vec2(-uSliceDir.y, uSliceDir.x)));
+      float rad = 0.5 * max(iScl.x, iScl.z);
+      if (along < rad + 1.0) {
+        float a = max(0.0, -along - rad);                 // gap from the car to the box, toward camera
+        float l = max(0.0, lat - rad - 1.6);
+        float cap = uSlice.z + (a + 2.2 * l) * uSliceDir.z;
+        if (cap < top) {
+          float bot = iPos.y - 0.5 * iScl.y;
+          if (bot >= cap - 0.05) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; } // fully above cut: drop it
+          float ly = cap - iPos.y;                          // cap in local (scaled) space
+          if (lp.y > ly) { lp.y = ly; vCutTop = 1.0; }
+          scl.y = ly + 0.5 * iScl.y;                       // window rows think the box ends at the cut
+        }
+      }
+    }
+  }
+  vec3 w = qr(iRot, lp) + iPos;
+  vN = qr(iRot, aNrm); vCol = iCol.rgb; vMat = iCol.a; vL = vec3(lp.x, lp.y + 0.5 * (iScl.y - scl.y), lp.z); vLN = aNrm; vScl = scl; vW = w;
   vSeed = fract(iPos.x*0.1231 + iPos.z*0.3117 + iPos.y*0.071);
   vS = uLVP * vec4(w, 1.0);
   gl_Position = uVP * vec4(w, 1.0);
 }`;
 const LIGHT_FS = `
 uniform highp sampler2DShadow uShadow; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uAmb; uniform vec3 uFogCol; uniform vec2 uFog; uniform vec3 uCam; uniform float uNight; uniform float uShadowOn; uniform float uTime;
-uniform vec4 uCut;
 float shadowAt(vec4 s){
   if (uShadowOn < 0.5) return 1.0;
   vec3 p = s.xyz / s.w * 0.5 + 0.5;
@@ -1350,20 +1456,10 @@ vec3 fogit(vec3 c, vec3 w){ float f = smoothstep(uFog.x, uFog.y, distance(w, uCa
 `;
 const BOX_FS = `#version 300 es
 precision highp float;
-in vec3 vN; in vec3 vCol; in vec3 vL; in vec3 vW; in vec4 vS; in vec3 vLN; in vec3 vScl; flat in float vMat; flat in float vSeed;
+in vec3 vN; in vec3 vCol; in vec3 vL; in vec3 vW; in vec4 vS; in vec3 vLN; in vec3 vScl; flat in float vMat; flat in float vSeed; in float vCutTop;
 out vec4 o;
 ${LIGHT_FS}
 void main(){
-  if (uCut.w > 0.0 && vW.y > 0.7 && (vScl.y > 1.5 || vMat > 0.5 && vMat < 1.5)) {
-    vec3 cp = uCut.xyz - uCam; float t = dot(vW - uCam, cp) / dot(cp, cp);
-    if (t > 0.05 && t < 0.97) {
-      float d = length(vW - (uCam + cp * t)); float r = uCut.w * smoothstep(0.25, 0.9, t);
-      if (d < r) {
-        float bx = mod(floor(gl_FragCoord.x), 2.0), by = mod(floor(gl_FragCoord.y), 2.0);
-        if (d < r * 0.7) { if (bx + by > 0.5) discard; } else if (bx == by) discard;
-      }
-    }
-  }
   vec3 base = vCol; vec3 emi = vec3(0.0); float m = vMat; vec3 n = normalize(vN);
   bool win = (m > 0.5 && m < 1.5) || (m > 3.5 && m < 4.5);
   if (win && abs(vLN.y) < 0.5) {
@@ -1381,19 +1477,23 @@ void main(){
   }
   if (m > 1.5 && m < 2.5) emi = base * (uNight > 0.5 ? 1.0 : 0.55);
   if (m > 4.5 && m < 5.5 && uNight > 0.5) emi = vec3(1.0, 0.9, 0.6);
+  if (vCutTop > 0.5 && n.y > 0.5) { base = base * 0.72 + vec3(0.04); emi = vec3(0.0); } // sliced roof: flat, a touch darker
   float sh = shadowAt(vS);
   float ndl = max(dot(n, uSun), 0.0);
-  float side = 0.92 + 0.08 * n.y;
-  vec3 c = base * (uAmb * side + uSunCol * ndl * sh) + emi;
+  // hemisphere ambient (sky from above, warm city bounce from below) + contact darkening near the ground
+  vec3 hemi = mix(vec3(0.62, 0.58, 0.54), vec3(1.04, 1.04, 1.08), n.y * 0.5 + 0.5);
+  float ao = 0.7 + 0.3 * smoothstep(0.0, 1.1, vW.y);
+  float wallGrad = (abs(n.y) < 0.5 && vScl.y > 3.0) ? 0.93 + 0.07 * clamp(vW.y / 14.0, 0.0, 1.0) : 1.0;
+  vec3 c = base * (uAmb * hemi * ao * wallGrad + uSunCol * ndl * sh * (0.85 + 0.15 * ao)) + emi;
   if (m > 5.5 && m < 6.5) { vec3 v = normalize(uCam - vW); c += 0.35 * pow(max(dot(reflect(-uSun, n), v), 0.0), 12.0) * sh; }
   if (m > 2.5 && m < 3.5) c = base; // unlit flat (UI-ish markers)
   o = vec4(fogit(c, vW), 1.0);
 }`;
 const DEPTH_VS = `#version 300 es
-layout(location=0) in vec3 aPos; layout(location=2) in vec3 iPos; layout(location=3) in vec3 iScl; layout(location=4) in vec4 iRot;
-uniform mat4 uVP;
+layout(location=0) in vec3 aPos; layout(location=2) in vec3 iPos; layout(location=3) in vec3 iScl; layout(location=4) in vec4 iRot; layout(location=6) in vec3 aIn;
+uniform mat4 uVP; uniform float uBevel;
 vec3 qr(vec4 q, vec3 v){ return v + 2.0*cross(q.xyz, cross(q.xyz, v) + q.w*v); }
-void main(){ gl_Position = uVP * vec4(qr(iRot, aPos * iScl) + iPos, 1.0); }`;
+void main(){ float bv = min(uBevel, 0.22 * min(iScl.x, min(iScl.y, iScl.z))); gl_Position = uVP * vec4(qr(iRot, aPos * iScl - aIn * bv) + iPos, 1.0); }`;
 const DEPTH_FS = `#version 300 es
 precision mediump float; void main(){}`;
 const SIL_FS = `#version 300 es
@@ -1418,16 +1518,21 @@ void main(){
 }`;
 const BILL_VS = `#version 300 es
 layout(location=0) in vec2 aQ;
-uniform mat4 uVP; uniform vec3 uPos; uniform vec2 uSize; uniform vec2 uN; uniform vec4 uUV;
+uniform mat4 uVP; uniform vec3 uPos; uniform vec2 uSize; uniform vec2 uN; uniform vec4 uUV; uniform vec4 uSlice; uniform vec3 uSliceDir;
 out vec2 vUV; out vec3 vW;
-void main(){ vec3 r = vec3(uN.y, 0.0, -uN.x); vec3 w = uPos + r * (aQ.x - 0.5) * uSize.x + vec3(0.0, (aQ.y - 0.5) * uSize.y, 0.0) + vec3(uN.x, 0.0, uN.y) * 0.02;
+void main(){
+  if (uSlice.w > 0.5) { // same cap as BOX_VS: hide signs on buildings that are being sliced down
+    vec2 rel = uPos.xz - uSlice.xy; float along = dot(rel, uSliceDir.xy), lat = abs(dot(rel, vec2(-uSliceDir.y, uSliceDir.x)));
+    if (along < 1.0) { float cap = uSlice.z + (max(0.0, -along - 0.5) + 2.2 * max(0.0, lat - 1.6)) * uSliceDir.z; if (uPos.y + 0.5 * uSize.y > cap) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; } }
+  }
+  vec3 r = vec3(uN.y, 0.0, -uN.x); vec3 w = uPos + r * (aQ.x - 0.5) * uSize.x + vec3(0.0, (aQ.y - 0.5) * uSize.y, 0.0) + vec3(uN.x, 0.0, uN.y) * 0.02;
   vUV = vec2(uUV.x + aQ.x * uUV.z, uUV.y + (1.0 - aQ.y) * uUV.w); vW = w; gl_Position = uVP * vec4(w, 1.0); }`;
 const BILL_FS = `#version 300 es
 precision highp float; in vec2 vUV; in vec3 vW; out vec4 o; uniform sampler2D uTex; uniform vec3 uFogCol; uniform vec2 uFog; uniform vec3 uCam; uniform float uNight;
 void main(){ vec3 c = texture(uTex, vUV).rgb * (uNight > 0.5 ? 1.15 : 0.95); float f = smoothstep(uFog.x, uFog.y, distance(vW, uCam)); o = vec4(mix(c, uFogCol, f), 1.0); }`;
 
 const GFX = {
-  gl: null, ok: false, shadowSize: 2048, shadowOn: true, night: 0,
+  gl: null, ok: false, shadowSize: 2048, shadowOn: true, night: 0, bevel: 0.13,
   init(canvas) {
     const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     if (!gl) return false;
@@ -1446,29 +1551,51 @@ const GFX = {
     };
     this.pBox = mk(BOX_VS, BOX_FS); this.pDepth = mk(DEPTH_VS, DEPTH_FS); this.pSil = mk(BOX_VS, SIL_FS);
     this.pGround = mk(GROUND_VS, GROUND_FS); this.pBill = mk(BILL_VS, BILL_FS);
-    // cube
-    const P = [], N = [], I = [];
-    const faces = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-    for (const f of faces) {
-      const [nx, ny, nz] = f; const u = ny !== 0 ? [1, 0, 0] : [0, 1, 0]; const v = [ny * u[2] - nz * u[1], nz * u[0] - nx * u[2], nx * u[1] - ny * u[0]];
-      const b = P.length / 3;
-      for (const [a, c] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-        P.push(nx * 0.5 + (u[0] * a + v[0] * c) * 0.5, ny * 0.5 + (u[1] * a + v[1] * c) * 0.5, nz * 0.5 + (u[2] * a + v[2] * c) * 0.5); N.push(nx, ny, nz);
-      }
-      I.push(b, b + 1, b + 2, b, b + 2, b + 3);
-    }
-    // ensure CCW from outside
-    for (let k = 0; k < I.length; k += 3) {
-      const a = I[k] * 3, b = I[k + 1] * 3, c = I[k + 2] * 3;
-      const e1 = [P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]], e2 = [P[c] - P[a], P[c + 1] - P[a + 1], P[c + 2] - P[a + 2]];
+    // chamfered cube: 6 faces + 12 edge strips + 8 corner tris (44 tris). Vertex = pos, normal, inset-mask.
+    const V = [], I = [];
+    const vert = (p, n, inn) => { V.push(p[0], p[1], p[2], n[0], n[1], n[2], inn[0], inn[1], inn[2]); return V.length / 9 - 1; };
+    const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; };
+    const tri = (a, b, c) => {
+      // orient CCW from outside using a sample bevel
+      const P3 = (k) => [V[k * 9] - V[k * 9 + 6] * 0.1, V[k * 9 + 1] - V[k * 9 + 7] * 0.1, V[k * 9 + 2] - V[k * 9 + 8] * 0.1];
+      const A = P3(a), B = P3(b), C = P3(c);
+      const e1 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], e2 = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
       const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
-      if (cr[0] * N[a] + cr[1] * N[a + 1] + cr[2] * N[a + 2] < 0) { const t = I[k + 1]; I[k + 1] = I[k + 2]; I[k + 2] = t; }
+      if (cr[0] * V[a * 9 + 3] + cr[1] * V[a * 9 + 4] + cr[2] * V[a * 9 + 5] < 0) I.push(a, c, b); else I.push(a, b, c);
+    };
+    const quad = (a, b, c, d) => { tri(a, b, c); tri(a, c, d); };
+    const ax = (k, v) => { const r = [0, 0, 0]; r[k] = v; return r; };
+    for (let k = 0; k < 3; k++) for (const s of [-1, 1]) { // faces
+      const i = (k + 1) % 3, j = (k + 2) % 3, q = [];
+      for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const p = [0, 0, 0], m = [0, 0, 0]; p[k] = s * 0.5; p[i] = a * 0.5; p[j] = b * 0.5; m[i] = a; m[j] = b; q.push(vert(p, ax(k, s), m)); }
+      quad(q[0], q[1], q[2], q[3]);
     }
-    const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
-    const inter = new Float32Array(24 * 6); for (let i = 0; i < 24; i++) { inter.set(P.slice(i * 3, i * 3 + 3), i * 6); inter.set(N.slice(i * 3, i * 3 + 3), i * 6 + 3); }
-    gl.bufferData(gl.ARRAY_BUFFER, inter, gl.STATIC_DRAW);
+    for (let k = 0; k < 3; k++) { // edges running along axis k
+      const i = (k + 1) % 3, j = (k + 2) % 3;
+      for (const si of [-1, 1]) for (const sj of [-1, 1]) {
+        const n = [0, 0, 0]; n[i] = si; n[j] = sj; const nn = nrm(n), q = [];
+        for (const [face, sk] of [[i, -1], [i, 1], [j, 1], [j, -1]]) {
+          const p = [0, 0, 0], m = [0, 0, 0]; p[i] = si * 0.5; p[j] = sj * 0.5; p[k] = sk * 0.5; m[k] = sk;
+          if (face === i) m[j] = sj; else m[i] = si;
+          q.push(vert(p, nn, m));
+        }
+        quad(q[0], q[1], q[2], q[3]);
+      }
+    }
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) { // corners
+      const p = [sx * 0.5, sy * 0.5, sz * 0.5], n = nrm([sx, sy, sz]);
+      tri(vert(p, n, [0, sy, sz]), vert(p, n, [sx, 0, sz]), vert(p, n, [sx, sy, 0]));
+    }
+    const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(V), gl.STATIC_DRAW);
     const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(I), gl.STATIC_DRAW);
-    this.cubeVB = vb; this.cubeIB = ib;
+    this.cubeVB = vb; this.cubeIB = ib; this.cubeN = I.length;
+    // plain 12-tri cube (same vertex layout, no inset) for the shadow pass: bevels don't show in shadows
+    { const PV = [], PI = []; let n = 0;
+      for (let k = 0; k < 3; k++) for (const sg of [-1, 1]) { const i = (k + 1) % 3, j = (k + 2) % 3;
+        for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const p = [0, 0, 0]; p[k] = sg * 0.5; p[i] = a * 0.5; p[j] = b * 0.5; PV.push(p[0], p[1], p[2], 0, 0, 0, 0, 0, 0); }
+        PI.push(n, n + 1, n + 2, n, n + 2, n + 3); n += 4; }
+      this.flatVB = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.flatVB); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(PV), gl.STATIC_DRAW);
+      this.flatIB = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.flatIB); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(PI), gl.STATIC_DRAW); }
     // quad
     this.quadVB = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.quadVB); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1]), gl.STATIC_DRAW);
     this.quadVAO = gl.createVertexArray(); gl.bindVertexArray(this.quadVAO); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null);
@@ -1497,20 +1624,25 @@ const GFX = {
   },
   makeInst(data, usage) {
     const gl = this.gl;
-    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.cubeVB);
-    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.cubeIB);
     const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, data, usage || gl.STATIC_DRAW);
     const S = INST * 4;
-    const at = (loc, n, off) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, off); gl.vertexAttribDivisor(loc, 1); };
-    at(2, 3, 0); at(3, 3, 12); at(4, 4, 24); at(5, 4, 40);
-    gl.bindVertexArray(null);
-    return { vao, buf, count: data.length / INST };
+    const mkVao = (vb, ib) => {
+      const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 36, 0);
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 36, 12);
+      gl.enableVertexAttribArray(6); gl.vertexAttribPointer(6, 3, gl.FLOAT, false, 36, 24);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      const at = (loc, n, off) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, S, off); gl.vertexAttribDivisor(loc, 1); };
+      at(2, 3, 0); at(3, 3, 12); at(4, 4, 24); at(5, 4, 40);
+      gl.bindVertexArray(null);
+      return vao;
+    };
+    return { vao: mkVao(this.cubeVB, this.cubeIB), svao: mkVao(this.flatVB, this.flatIB), buf, count: data.length / INST };
   },
   updateInst(obj, startInst, data) { const gl = this.gl; gl.bindBuffer(gl.ARRAY_BUFFER, obj.buf); gl.bufferSubData(gl.ARRAY_BUFFER, startInst * INST * 4, data); },
-  freeInst(obj) { const gl = this.gl; gl.deleteBuffer(obj.buf); gl.deleteVertexArray(obj.vao); },
+  freeInst(obj) { const gl = this.gl; gl.deleteBuffer(obj.buf); gl.deleteVertexArray(obj.vao); gl.deleteVertexArray(obj.svao); },
   makeTex(data, w, h, nearest, mips) {
     const gl = this.gl, t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -1554,23 +1686,28 @@ const GFX = {
     M4.ortho(this.LP, -hc - sx, hc - sx, -hc - sy, hc - sy, 20, 240);
     M4.mul(this.LVP, this.LP, this.LV);
     const lplanes = M4.planes(this.LVP);
-    const drawPlayer = () => { if (this.pl.count) { gl.bindVertexArray(this.pl.vao); gl.drawElementsInstanced(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0, this.pl.count); } };
+    let SH = false; // shadow pass: plain cube
+    const draw = (o) => { gl.bindVertexArray(SH ? o.svao : o.vao); gl.drawElementsInstanced(gl.TRIANGLES, SH ? 36 : this.cubeN, gl.UNSIGNED_SHORT, 0, o.count); };
+    const drawPlayer = () => { if (this.pl.count) draw(this.pl); };
+    const sliceU = (prog, on) => { if (prog.u.uSliceOn) gl.uniform1f(prog.u.uSliceOn, on); };
     const drawBoxes = (prog, pl, isShadow) => {
+      sliceU(prog, 1);
       for (const ch of S.chunks) {
         if (!ch.gfx || !ch.gfx.count) continue;
         if (!M4.boxVisible(pl, ch.x0, -1, ch.z0, ch.x0 + CH, ch.maxH || 40, ch.z0 + CH)) continue;
-        gl.bindVertexArray(ch.gfx.vao); gl.drawElementsInstanced(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0, ch.gfx.count);
+        draw(ch.gfx);
       }
-      for (const st of S.statics) { if (!st.count) continue; gl.bindVertexArray(st.vao); gl.drawElementsInstanced(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0, st.count); }
-      if (this.dyn.count) { gl.bindVertexArray(this.dyn.vao); gl.drawElementsInstanced(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0, this.dyn.count); }
+      sliceU(prog, 0);
+      for (const st of S.statics) { if (st.count) draw(st); }
+      if (this.dyn.count) draw(this.dyn);
       if (isShadow) drawPlayer();
     };
     // ---- shadow pass ----
     if (this.shadowOn) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.shFB); gl.viewport(0, 0, this.shadowSize, this.shadowSize);
-      gl.clear(gl.DEPTH_BUFFER_BIT); gl.useProgram(this.pDepth.p); gl.uniformMatrix4fv(this.pDepth.u.uVP, false, this.LVP);
+      gl.clear(gl.DEPTH_BUFFER_BIT); gl.useProgram(this.pDepth.p); gl.uniformMatrix4fv(this.pDepth.u.uVP, false, this.LVP); gl.uniform1f(this.pDepth.u.uBevel, this.bevel);
       gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(2, 4); gl.disable(gl.CULL_FACE);
-      drawBoxes(this.pDepth, lplanes, true);
+      SH = true; drawBoxes(this.pDepth, lplanes, true); SH = false;
       gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.CULL_FACE);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
@@ -1582,7 +1719,9 @@ const GFX = {
       gl.uniformMatrix4fv(u.uVP, false, this.VP); if (u.uLVP) gl.uniformMatrix4fv(u.uLVP, false, this.LVP);
       if (u.uSun) gl.uniform3fv(u.uSun, S.sunDir); if (u.uSunCol) gl.uniform3fv(u.uSunCol, S.sunCol); if (u.uAmb) gl.uniform3fv(u.uAmb, S.amb);
       if (u.uFogCol) gl.uniform3fv(u.uFogCol, S.fogCol); if (u.uFog) gl.uniform2f(u.uFog, S.fog[0], S.fog[1]); if (u.uCam) gl.uniform3fv(u.uCam, S.eye);
-      if (u.uNight) gl.uniform1f(u.uNight, this.night); if (u.uShadowOn) gl.uniform1f(u.uShadowOn, this.shadowOn ? 1 : 0); if (u.uTime) gl.uniform1f(u.uTime, S.time); if (u.uCut) gl.uniform4fv(u.uCut, S.cut || [0, 0, 0, 0]);
+      if (u.uNight) gl.uniform1f(u.uNight, this.night); if (u.uShadowOn) gl.uniform1f(u.uShadowOn, this.shadowOn ? 1 : 0); if (u.uTime) gl.uniform1f(u.uTime, S.time);
+      if (u.uBevel) gl.uniform1f(u.uBevel, this.bevel);
+      if (u.uSlice) { const sl = S.slice; gl.uniform4f(u.uSlice, sl ? sl.x : 0, sl ? sl.z : 0, sl ? sl.minH : 0, sl ? 1 : 0); gl.uniform3f(u.uSliceDir, sl ? sl.fx : 0, sl ? sl.fz : 1, sl ? sl.slope : 1); gl.uniform1f(u.uSliceOn, 0); }
       if (u.uShadow) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.shTex); gl.uniform1i(u.uShadow, 1); }
     };
     // ground
@@ -1605,6 +1744,7 @@ const GFX = {
     if (S.bills.length) {
       const pl = this.pBill; gl.useProgram(pl.p); gl.uniformMatrix4fv(pl.u.uVP, false, this.VP);
       gl.uniform3fv(pl.u.uFogCol, S.fogCol); gl.uniform2f(pl.u.uFog, S.fog[0], S.fog[1]); gl.uniform3fv(pl.u.uCam, S.eye); gl.uniform1f(pl.u.uNight, this.night);
+      { const sl = S.slice; gl.uniform4f(pl.u.uSlice, sl ? sl.x : 0, sl ? sl.z : 0, sl ? sl.minH : 0, sl ? 1 : 0); gl.uniform3f(pl.u.uSliceDir, sl ? sl.fx : 0, sl ? sl.fz : 1, sl ? sl.slope : 1); }
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, S.billTex); gl.uniform1i(pl.u.uTex, 0);
       gl.bindVertexArray(this.quadVAO); gl.disable(gl.CULL_FACE);
       for (const b of S.bills) {
@@ -1616,7 +1756,7 @@ const GFX = {
     }
     // player: silhouette where hidden by the world, then the car itself
     if (S.sil && this.pl.count) {
-      const ps = this.pSil; gl.useProgram(ps.p); gl.uniformMatrix4fv(ps.u.uVP, false, this.VP); gl.uniformMatrix4fv(ps.u.uLVP, false, this.LVP);
+      const ps = this.pSil; gl.useProgram(ps.p); setCommon(ps);
       gl.uniform4fv(ps.u.uSil, S.sil.col);
       gl.depthFunc(gl.GREATER); gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       drawPlayer();
@@ -1925,72 +2065,123 @@ const VC = {
   nypd: hex('#1f4fb8'), black: hex('#121214'), yellow: hex('#f7c412'), red: hex('#ff2b2b'), blue: hex('#2b6bff'), off: hex('#333844'),
   navy: hex('#1a2a4a'), gun: hex('#3a3f46'), mta: hex('#2a6fd6'),
 };
-// part: [x,y,z, sx,sy,sz, color|'body'|'bodyDk', mat, flag]  flag: 1 siren red, 2 siren blue, 3 rotor, 4 tail rotor, 5 headlight
+// part: [x,y,z, sx,sy,sz, color|'body'|'bodyDk', mat, flag, pitch]
+//   flag: 1 siren red, 2 siren blue, 3 rotor, 4 tail rotor, 5 headlight
+//   pitch: optional tilt about the car's local X axis (radians; + = front edge down), used for raked glass
+const VC2 = { rim: hex('#c3c8cf'), chrome: hex('#dfe3e8'), grille: hex('#1c1d21'), plate: hex('#f2f2ea'), amber: hex('#ffb020') };
+// tyre + rim (+ hub) at each corner. r = wheel radius, w = tyre width
+function wheels(xs, zs, r, w) {
+  const p = [];
+  for (const x of xs) for (const z of zs) {
+    const o = Math.sign(x);
+    p.push([x, r, z, w, r * 2, r * 1.95, VC.tire, 0]);
+    p.push([x + o * (w / 2 + 0.006), r, z, 0.02, r * 1.25, r * 1.25, VC2.rim, 6]);
+    p.push([x + o * (w / 2 + 0.016), r, z, 0.02, r * 0.45, r * 0.45, VC.dark, 0]);
+  }
+  return p;
+}
+// panel between two side-profile points (y,z) on the centreline: a raked windshield / rear glass
+function rake(y0, z0, y1, z1, w, col, mat) {
+  const dy = y1 - y0, dz = z1 - z0, len = Math.hypot(dy, dz);
+  return [0, (y0 + y1) / 2, (z0 + z1) / 2, w, 0.05, len, col, mat || 0, 0, Math.atan2(-dy, dz)];
+}
 function sedanParts(extra) {
   const p = [
-    [0, 0.36, 0, 1.1, 0.42, 2.2, 'body', 0], [0, 0.74, -0.12, 0.96, 0.36, 1.12, VC.glass, 6], [0, 0.95, -0.12, 0.98, 0.08, 0.98, 'bodyDk', 0],
-    [0, 0.26, 1.12, 1.12, 0.16, 0.06, VC.dark, 0], [0, 0.26, -1.12, 1.12, 0.16, 0.06, VC.dark, 0],
-    [0.34, 0.43, 1.105, 0.24, 0.1, 0.03, VC.headl, 2, 5], [-0.34, 0.43, 1.105, 0.24, 0.1, 0.03, VC.headl, 2, 5],
-    [0.36, 0.45, -1.105, 0.24, 0.1, 0.03, VC.tail, 2], [-0.36, 0.45, -1.105, 0.24, 0.1, 0.03, VC.tail, 2],
-  ];
-  for (const sx of [-0.52, 0.52]) for (const sz of [-0.7, 0.7]) p.push([sx, 0.2, sz, 0.2, 0.4, 0.42, VC.tire, 0]);
+    [0, 0.33, 0, 1.08, 0.34, 2.16, 'body', 0],                 // lower body
+    [0, 0.52, 0.68, 1.02, 0.08, 0.8, 'body', 0],                // hood
+    [0, 0.52, -0.86, 1.02, 0.08, 0.44, 'body', 0],              // trunk lid
+    rake(0.55, 0.64, 0.88, 0.16, 0.92, VC.glass, 6),           // windshield
+    rake(0.88, -0.56, 0.55, -0.86, 0.92, VC.glass, 6),         // rear window
+    [0, 0.72, -0.2, 0.96, 0.3, 0.7, VC.glass, 6],              // side glass
+    [0, 0.89, -0.2, 0.92, 0.06, 0.74, 'body', 0],               // roof
+    [0, 0.25, 1.1, 1.08, 0.14, 0.08, VC.dark, 0], [0, 0.25, -1.1, 1.08, 0.14, 0.08, VC.dark, 0], // bumpers
+    [0, 0.4, 1.085, 0.42, 0.1, 0.03, VC2.grille, 0], [0, 0.4, -1.09, 0.3, 0.08, 0.02, VC2.plate, 0],
+    [0.35, 0.42, 1.085, 0.24, 0.08, 0.04, VC.headl, 2, 5], [-0.35, 0.42, 1.085, 0.24, 0.08, 0.04, VC.headl, 2, 5],
+    [0.37, 0.44, -1.085, 0.24, 0.08, 0.04, VC.tail, 2], [-0.37, 0.44, -1.085, 0.24, 0.08, 0.04, VC.tail, 2],
+    [0.57, 0.62, 0.22, 0.08, 0.06, 0.1, 'body', 0], [-0.57, 0.62, 0.22, 0.08, 0.06, 0.1, 'body', 0], // mirrors
+    [0, 0.16, 0, 1.0, 0.06, 1.6, VC.dark, 0],                  // sills
+  ].concat(wheels([-0.5, 0.5], [-0.7, 0.7], 0.2, 0.2));
   return extra ? p.concat(extra) : p;
 }
 const MODELS = {
   sedan: { name: 'STREET SEDAN', parts: sedanParts(), len: 2.2, wid: 1.1, maxV: 24, turn: 2.7, grip: 7, hp: 100, mass: 1, price: 0, color: hex('#f2f2f2') },
-  taxi: { name: 'YELLOW CAB', parts: sedanParts([[0, 1.06, -0.1, 0.52, 0.16, 0.24, VC.white, 2], [0.56, 0.42, 0, 0.02, 0.09, 1.7, VC.black, 0], [-0.56, 0.42, 0, 0.02, 0.09, 1.7, VC.black, 0]]), len: 2.2, wid: 1.1, maxV: 25.5, turn: 2.85, grip: 7.5, hp: 100, mass: 1, price: 1500, color: VC.yellow },
+  taxi: { name: 'YELLOW CAB', parts: sedanParts([[0, 0.98, -0.18, 0.5, 0.14, 0.22, VC.white, 2], [0, 0.93, -0.18, 0.56, 0.03, 0.26, VC.dark, 0],
+    [0.545, 0.4, 0, 0.02, 0.07, 1.7, VC.black, 0], [-0.545, 0.4, 0, 0.02, 0.07, 1.7, VC.black, 0]]), len: 2.2, wid: 1.1, maxV: 25.5, turn: 2.85, grip: 7.5, hp: 100, mass: 1, price: 1500, color: VC.yellow },
   ev: {
     name: 'ELECTRIC CROSSOVER', parts: [
-      [0, 0.42, 0, 1.16, 0.5, 2.25, 'body', 0], [0, 0.82, -0.1, 1.02, 0.34, 1.35, VC.glass, 6], [0, 1.0, -0.15, 1.04, 0.06, 1.2, VC.black, 6],
-      [0, 0.33, 1.14, 1.14, 0.2, 0.06, VC.black, 0], [0, 0.5, 1.13, 0.9, 0.05, 0.03, VC.headl, 2, 5], [0, 0.55, -1.13, 1.0, 0.06, 0.03, VC.tail, 2],
-      [0.55, 0.22, 0.72, 0.22, 0.44, 0.46, VC.tire], [-0.55, 0.22, 0.72, 0.22, 0.44, 0.46, VC.tire], [0.55, 0.22, -0.72, 0.22, 0.44, 0.46, VC.tire], [-0.55, 0.22, -0.72, 0.22, 0.44, 0.46, VC.tire],
-    ], len: 2.25, wid: 1.16, maxV: 27, turn: 2.95, grip: 8, hp: 120, mass: 1.3, price: 3000, color: hex('#1b5e3b')
+      [0, 0.4, 0, 1.14, 0.42, 2.2, 'body', 0], [0, 0.63, 0.72, 1.08, 0.06, 0.74, 'body', 0],
+      rake(0.65, 0.66, 0.99, 0.08, 1.0, VC.glass, 6),
+      [0, 0.82, -0.4, 1.04, 0.34, 0.92, VC.glass, 6], [0, 1.0, -0.4, 1.0, 0.06, 0.96, VC.black, 6],
+      rake(0.98, -0.86, 0.66, -1.05, 1.0, VC.glass, 6),
+      [0, 0.24, 0, 1.17, 0.14, 2.12, VC.black, 0],               // cladding
+      [0, 0.52, 1.105, 0.96, 0.04, 0.03, VC.headl, 2, 5], [0, 0.36, 1.11, 0.6, 0.1, 0.03, VC.black, 0],
+      [0, 0.58, -1.105, 1.02, 0.05, 0.03, VC.tail, 2],
+      [0.59, 0.72, 0.28, 0.08, 0.06, 0.1, 'body', 0], [-0.59, 0.72, 0.28, 0.08, 0.06, 0.1, 'body', 0],
+      [0.4, 1.05, -0.4, 0.04, 0.03, 0.9, VC2.chrome, 6], [-0.4, 1.05, -0.4, 0.04, 0.03, 0.9, VC2.chrome, 6], // roof rails
+    ].concat(wheels([-0.55, 0.55], [-0.72, 0.72], 0.23, 0.22)), len: 2.25, wid: 1.16, maxV: 27, turn: 2.95, grip: 8, hp: 120, mass: 1.3, price: 3000, color: hex('#1b5e3b')
   },
   muscle: {
     name: 'MUSCLE COUPE', parts: [
-      [0, 0.33, 0, 1.16, 0.38, 2.45, 'body', 0], [0, 0.66, -0.35, 0.98, 0.3, 0.95, VC.glass, 6], [0, 0.83, -0.35, 1.0, 0.07, 0.85, 'bodyDk', 0],
-      [0.18, 0.53, 0.6, 0.14, 0.02, 1.2, VC.black, 0], [-0.18, 0.53, 0.6, 0.14, 0.02, 1.2, VC.black, 0], [0, 0.6, 0.55, 0.42, 0.1, 0.4, VC.dark, 0],
-      [0, 0.62, -1.15, 1.1, 0.06, 0.25, VC.black, 0],
-      [0.38, 0.38, 1.235, 0.22, 0.1, 0.03, VC.headl, 2, 5], [-0.38, 0.38, 1.235, 0.22, 0.1, 0.03, VC.headl, 2, 5], [0, 0.42, -1.235, 0.9, 0.08, 0.03, VC.tail, 2],
-      [0.55, 0.22, 0.8, 0.24, 0.44, 0.48, VC.tire], [-0.55, 0.22, 0.8, 0.24, 0.44, 0.48, VC.tire], [0.56, 0.24, -0.78, 0.26, 0.48, 0.52, VC.tire], [-0.56, 0.24, -0.78, 0.26, 0.48, 0.52, VC.tire],
-    ], len: 2.45, wid: 1.16, maxV: 29, turn: 2.55, grip: 5.5, hp: 90, mass: 1.1, price: 5000, color: hex('#c0392b')
+      [0, 0.31, 0, 1.14, 0.32, 2.42, 'body', 0], [0, 0.5, 0.6, 1.08, 0.08, 1.14, 'body', 0], [0, 0.5, -0.98, 1.08, 0.08, 0.44, 'body', 0],
+      [0, 0.57, 0.58, 0.42, 0.08, 0.42, VC.dark, 0],            // hood scoop
+      [0.17, 0.545, 0.6, 0.15, 0.01, 1.12, VC.black, 0], [-0.17, 0.545, 0.6, 0.15, 0.01, 1.12, VC.black, 0],
+      rake(0.53, 0.04, 0.8, -0.36, 0.94, VC.glass, 6),
+      [0, 0.67, -0.6, 1.0, 0.24, 0.5, VC.glass, 6], [0, 0.81, -0.6, 0.94, 0.06, 0.5, 'body', 0],
+      [0.17, 0.845, -0.6, 0.15, 0.01, 0.5, VC.black, 0], [-0.17, 0.845, -0.6, 0.15, 0.01, 0.5, VC.black, 0],
+      rake(0.8, -0.84, 0.54, -1.08, 0.94, VC.glass, 6),
+      [0, 0.64, -1.17, 1.1, 0.04, 0.2, VC.black, 0], [0.42, 0.58, -1.14, 0.06, 0.1, 0.06, VC.black, 0], [-0.42, 0.58, -1.14, 0.06, 0.1, 0.06, VC.black, 0], // spoiler
+      [0, 0.24, 1.23, 1.1, 0.12, 0.06, VC2.chrome, 6], [0, 0.24, -1.23, 1.1, 0.12, 0.06, VC2.chrome, 6],
+      [0, 0.38, 1.215, 0.5, 0.1, 0.03, VC2.grille, 0],
+      [0.4, 0.39, 1.22, 0.18, 0.1, 0.03, VC.headl, 2, 5], [-0.4, 0.39, 1.22, 0.18, 0.1, 0.03, VC.headl, 2, 5], [0, 0.42, -1.225, 0.92, 0.08, 0.03, VC.tail, 2],
+      [0.2, 0.13, -1.2, 0.1, 0.07, 0.12, VC2.chrome, 6], [-0.2, 0.13, -1.2, 0.1, 0.07, 0.12, VC2.chrome, 6], // exhausts
+    ].concat(wheels([-0.55], [0.82], 0.21, 0.22), wheels([0.55], [0.82], 0.21, 0.22), wheels([-0.56, 0.56], [-0.8], 0.24, 0.28)),
+    len: 2.45, wid: 1.16, maxV: 29, turn: 2.55, grip: 5.5, hp: 90, mass: 1.1, price: 5000, color: hex('#c0392b')
   },
   truck: {
     name: 'BOX TRUCK', parts: [
-      [0, 0.62, 0.95, 1.2, 0.86, 0.85, 'body', 0], [0, 0.85, 1.25, 1.1, 0.3, 0.3, VC.glass, 6], [0, 1.05, -0.45, 1.3, 1.5, 1.95, VC.white, 0],
-      [0, 0.3, 0, 1.0, 0.2, 2.8, VC.dark, 0], [0.6, 1.05, -0.45, 0.02, 0.5, 1.6, 'body', 0], [-0.6, 1.05, -0.45, 0.02, 0.5, 1.6, 'body', 0],
-      [0.38, 0.45, 1.385, 0.24, 0.12, 0.03, VC.headl, 2, 5], [-0.38, 0.45, 1.385, 0.24, 0.12, 0.03, VC.headl, 2, 5],
-      [0.58, 0.24, 1.0, 0.22, 0.48, 0.48, VC.tire], [-0.58, 0.24, 1.0, 0.22, 0.48, 0.48, VC.tire], [0.6, 0.24, -0.9, 0.22, 0.48, 0.48, VC.tire], [-0.6, 0.24, -0.9, 0.22, 0.48, 0.48, VC.tire],
-    ], len: 2.8, wid: 1.3, maxV: 21, turn: 2.25, grip: 8, hp: 220, mass: 2.2, price: 8000, color: hex('#1fd65f')
+      [0, 0.66, 0.95, 1.2, 0.9, 0.85, 'body', 0], rake(0.78, 1.37, 1.06, 1.28, 1.08, VC.glass, 6), [0.601, 0.85, 1.0, 0.02, 0.28, 0.4, VC.glass, 6], [-0.601, 0.85, 1.0, 0.02, 0.28, 0.4, VC.glass, 6],
+      [0, 1.15, -0.45, 1.3, 1.6, 1.95, VC.white, 0], [0, 1.95, -0.45, 1.24, 0.04, 1.88, hex('#d9dde2'), 0],
+      [0, 0.3, 0, 1.0, 0.2, 2.8, VC.dark, 0], [0.656, 1.05, -0.45, 0.02, 0.5, 1.6, 'body', 0], [-0.656, 1.05, -0.45, 0.02, 0.5, 1.6, 'body', 0],
+      [0, 0.32, 1.42, 1.2, 0.16, 0.1, VC.dark, 0], [0, 0.55, 1.38, 0.6, 0.18, 0.03, VC2.grille, 0],
+      [0.42, 0.52, 1.385, 0.22, 0.12, 0.03, VC.headl, 2, 5], [-0.42, 0.52, 1.385, 0.22, 0.12, 0.03, VC.headl, 2, 5],
+      [0.5, 0.5, -1.43, 0.14, 0.14, 0.03, VC.tail, 2], [-0.5, 0.5, -1.43, 0.14, 0.14, 0.03, VC.tail, 2],
+      [0.68, 0.92, 1.25, 0.06, 0.2, 0.08, VC.dark, 0], [-0.68, 0.92, 1.25, 0.06, 0.2, 0.08, VC.dark, 0],
+    ].concat(wheels([-0.58, 0.58], [1.0], 0.24, 0.22), wheels([-0.6, 0.6], [-0.9], 0.24, 0.24)), len: 2.8, wid: 1.3, maxV: 21, turn: 2.25, grip: 8, hp: 220, mass: 2.2, price: 8000, color: hex('#1fd65f')
   },
   cop: {
     name: 'NYPD', parts: sedanParts([
-      [0.57, 0.42, 0.1, 0.02, 0.1, 1.9, VC.nypd, 0], [-0.57, 0.42, 0.1, 0.02, 0.1, 1.9, VC.nypd, 0], [0, 0.3, 1.18, 0.9, 0.3, 0.08, VC.black, 0],
-      [0.23, 1.04, -0.12, 0.36, 0.1, 0.22, VC.red, 2, 1], [-0.23, 1.04, -0.12, 0.36, 0.1, 0.22, VC.blue, 2, 2], [0, 1.0, -0.12, 0.9, 0.04, 0.26, VC.black, 0],
+      [0.546, 0.38, 0.05, 0.02, 0.09, 1.9, VC.nypd, 0], [-0.546, 0.38, 0.05, 0.02, 0.09, 1.9, VC.nypd, 0],
+      [0.546, 0.48, -0.3, 0.02, 0.04, 1.2, VC.nypd, 0], [-0.546, 0.48, -0.3, 0.02, 0.04, 1.2, VC.nypd, 0],
+      [0, 0.3, 1.17, 0.86, 0.24, 0.06, VC.black, 0], [0.3, 0.3, 1.13, 0.06, 0.24, 0.08, VC.black, 0], [-0.3, 0.3, 1.13, 0.06, 0.24, 0.08, VC.black, 0],
+      [0.22, 0.97, -0.18, 0.34, 0.08, 0.2, VC.red, 2, 1], [-0.22, 0.97, -0.18, 0.34, 0.08, 0.2, VC.blue, 2, 2], [0, 0.93, -0.18, 0.86, 0.03, 0.24, VC.black, 0],
     ]), len: 2.2, wid: 1.1, maxV: 23.5, turn: 2.6, grip: 7.5, hp: 45, mass: 1, color: VC.white
   },
   suv: {
     name: 'ESU', parts: [
-      [0, 0.5, 0, 1.2, 0.6, 2.3, 'body', 0], [0, 0.95, -0.1, 1.1, 0.34, 1.6, VC.glass, 6], [0, 1.15, -0.1, 1.12, 0.07, 1.55, 'body', 0],
-      [0.61, 0.55, 0, 0.02, 0.1, 2.0, VC.white, 0], [-0.61, 0.55, 0, 0.02, 0.1, 2.0, VC.white, 0], [0, 0.38, 1.2, 1.0, 0.36, 0.1, VC.black, 0],
+      [0, 0.5, 0, 1.2, 0.6, 2.3, 'body', 0], rake(0.8, 0.74, 1.12, 0.48, 1.08, VC.glass, 6), [0, 0.97, -0.25, 1.12, 0.32, 1.42, VC.glass, 6], [0, 1.16, -0.18, 1.12, 0.07, 1.56, 'body', 0],
+      [0.61, 0.55, 0, 0.02, 0.1, 2.0, VC.white, 0], [-0.61, 0.55, 0, 0.02, 0.1, 2.0, VC.white, 0],
+      [0, 0.36, 1.2, 1.04, 0.32, 0.1, VC.black, 0], [0, 0.6, 1.16, 0.6, 0.14, 0.03, VC2.grille, 0],
       [0.25, 1.24, -0.1, 0.4, 0.1, 0.24, VC.red, 2, 1], [-0.25, 1.24, -0.1, 0.4, 0.1, 0.24, VC.blue, 2, 2],
-      [0.36, 0.6, 1.155, 0.24, 0.1, 0.03, VC.headl, 2, 5], [-0.36, 0.6, 1.155, 0.24, 0.1, 0.03, VC.headl, 2, 5],
-      [0.56, 0.24, 0.75, 0.24, 0.48, 0.48, VC.tire], [-0.56, 0.24, 0.75, 0.24, 0.48, 0.48, VC.tire], [0.56, 0.24, -0.75, 0.24, 0.48, 0.48, VC.tire], [-0.56, 0.24, -0.75, 0.24, 0.48, 0.48, VC.tire],
-    ], len: 2.3, wid: 1.2, maxV: 25.5, turn: 2.45, grip: 7.5, hp: 75, mass: 1.5, color: VC.navy
+      [0.38, 0.62, 1.155, 0.2, 0.1, 0.03, VC.headl, 2, 5], [-0.38, 0.62, 1.155, 0.2, 0.1, 0.03, VC.headl, 2, 5],
+      [0.42, 0.62, -1.155, 0.16, 0.14, 0.03, VC.tail, 2], [-0.42, 0.62, -1.155, 0.16, 0.14, 0.03, VC.tail, 2],
+      [0.64, 0.86, 0.5, 0.08, 0.08, 0.12, VC.black, 0], [-0.64, 0.86, 0.5, 0.08, 0.08, 0.12, VC.black, 0],
+    ].concat(wheels([-0.56, 0.56], [-0.75, 0.75], 0.24, 0.24)), len: 2.3, wid: 1.2, maxV: 25.5, turn: 2.45, grip: 7.5, hp: 75, mass: 1.5, color: VC.navy
   },
   armored: {
     name: 'ESU HEAVY', parts: [
-      [0, 0.75, 0, 1.45, 1.1, 2.9, 'body', 0], [0, 1.0, 1.25, 1.2, 0.3, 0.4, VC.glass, 6], [0, 0.45, 1.5, 1.3, 0.4, 0.15, VC.black, 0],
-      [0.3, 1.36, 0, 0.4, 0.12, 0.26, VC.red, 2, 1], [-0.3, 1.36, 0, 0.4, 0.12, 0.26, VC.blue, 2, 2], [0.74, 0.8, -0.2, 0.02, 0.18, 2.2, VC.white, 0], [-0.74, 0.8, -0.2, 0.02, 0.18, 2.2, VC.white, 0],
-      [0.66, 0.3, 0.95, 0.26, 0.6, 0.6, VC.tire], [-0.66, 0.3, 0.95, 0.26, 0.6, 0.6, VC.tire], [0.66, 0.3, -0.95, 0.26, 0.6, 0.6, VC.tire], [-0.66, 0.3, -0.95, 0.26, 0.6, 0.6, VC.tire],
-    ], len: 2.9, wid: 1.45, maxV: 22, turn: 2.1, grip: 9, hp: 170, mass: 3, color: VC.gun
+      [0, 0.75, 0, 1.45, 1.1, 2.9, 'body', 0], rake(1.0, 1.46, 1.3, 1.2, 1.2, VC.glass, 6), [0, 0.45, 1.5, 1.3, 0.4, 0.15, VC.black, 0],
+      [0, 1.32, -0.2, 1.3, 0.04, 2.3, VC.dark, 0], [0.735, 1.05, -0.3, 0.02, 0.2, 0.9, VC.glass, 6], [-0.735, 1.05, -0.3, 0.02, 0.2, 0.9, VC.glass, 6],
+      [0.3, 1.36, 0.6, 0.4, 0.12, 0.26, VC.red, 2, 1], [-0.3, 1.36, 0.6, 0.4, 0.12, 0.26, VC.blue, 2, 2], [0.74, 0.7, -0.2, 0.02, 0.18, 2.2, VC.white, 0], [-0.74, 0.7, -0.2, 0.02, 0.18, 2.2, VC.white, 0],
+      [0.45, 0.72, 1.455, 0.2, 0.1, 0.03, VC.headl, 2, 5], [-0.45, 0.72, 1.455, 0.2, 0.1, 0.03, VC.headl, 2, 5],
+      [0.55, 0.7, -1.455, 0.14, 0.14, 0.03, VC.tail, 2], [-0.55, 0.7, -1.455, 0.14, 0.14, 0.03, VC.tail, 2],
+    ].concat(wheels([-0.66, 0.66], [-0.95, 0.95], 0.3, 0.26)), len: 2.9, wid: 1.45, maxV: 22, turn: 2.1, grip: 9, hp: 170, mass: 3, color: VC.gun
   },
   bus: {
     name: 'MTA BUS', parts: [
       [0, 0.85, 0, 1.3, 1.3, 5.0, VC.white, 0], [0, 1.15, 0.1, 1.32, 0.45, 4.6, VC.glass, 6], [0, 0.55, 0, 1.32, 0.18, 4.9, VC.mta, 0], [0, 1.52, 0, 1.25, 0.06, 4.8, VC.mta, 0],
       [0, 1.15, 2.51, 1.1, 0.5, 0.03, VC.glass, 6], [0, 1.6, 2.5, 0.8, 0.15, 0.04, hex('#ff9f1a'), 2],
-      [0.6, 0.26, 1.7, 0.2, 0.5, 0.5, VC.tire], [-0.6, 0.26, 1.7, 0.2, 0.5, 0.5, VC.tire], [0.6, 0.26, -1.6, 0.2, 0.5, 0.5, VC.tire], [-0.6, 0.26, -1.6, 0.2, 0.5, 0.5, VC.tire],
-    ], len: 5.0, wid: 1.3, maxV: 12, turn: 1.6, grip: 9, hp: 200, mass: 4, color: VC.white
+      [0.4, 0.55, 2.51, 0.2, 0.1, 0.03, VC.headl, 2, 5], [-0.4, 0.55, 2.51, 0.2, 0.1, 0.03, VC.headl, 2, 5], [0.5, 0.55, -2.51, 0.14, 0.18, 0.03, VC.tail, 2], [-0.5, 0.55, -2.51, 0.14, 0.18, 0.03, VC.tail, 2],
+    ].concat(wheels([-0.6, 0.6], [1.7, -1.6], 0.26, 0.22)), len: 5.0, wid: 1.3, maxV: 12, turn: 1.6, grip: 9, hp: 200, mass: 4, color: VC.white
   },
   heli: {
     parts: [
@@ -2267,6 +2458,9 @@ function updateParts(dt) {
 // ============================================================
 const $ = (id) => document.getElementById(id);
 const CAM_AZ = -16 * Math.PI / 180;
+// Steeper than the original 60deg: closer to the classic top-down city chase look, so towers
+// lean away from the car instead of across it. Anything still in the way gets sliced (gl.js).
+const CAM_PITCH = 66 * Math.PI / 180;
 const STAR_HEAT = [1, 16, 40, 80, 140];
 const COPS_FOR = [0, 2, 3, 5, 6, 8];
 const fmt$ = (n) => '$' + Math.floor(n).toLocaleString('en-US');
@@ -2741,6 +2935,7 @@ function pushVehicle(v, t) {
     if (f === 5 && !GFX.night) m = 0;
     if (wr && col !== VC.tire) { col = [col[0] * 0.28, col[1] * 0.26, col[2] * 0.24]; m = 0; }
     if (f === 3) pq = qMul(q, qYaw(t * 28));
+    else if (p[9]) pq = qMul(q, qAxis(1, 0, 0, p[9]));
     const o = qRot(q, [p[0], p[1], p[2]]);
     dpush(v.x + o[0], v.y + o[1] + (v.lift || 0), v.z + o[2], p[3], p[4], p[5], pq, col, m);
   }
@@ -2796,7 +2991,7 @@ let BILL_TEX = null, STATIC_BR = null;
 function render(t, dt) {
   const cv = GFX.canvas, asp = cv.clientWidth / Math.max(1, cv.clientHeight);
   const P = G.P;
-  let fov, dist, pitch = 60 * Math.PI / 180, az = CAM_AZ;
+  let fov, dist, pitch = CAM_PITCH, az = CAM_AZ;
   const portrait = asp < 1;
   fov = portrait ? Math.min(68, 2 * Math.atan(Math.tan(17 * Math.PI / 180) / asp) * 180 / Math.PI) : 36;
   const sp = P ? vSpeed(P) : 0;
@@ -2835,7 +3030,7 @@ function render(t, dt) {
     shadowCenter: [tx, 0, tz], shadowHalf: portrait ? 52 : 46,
     chunks, statics: STATIC_BR ? [STATIC_BR] : [], bills, billTex: BILL_TEX,
     sil: (G.state === 'play') ? { col: [1, 0.85, 0.2, 0.55] } : null,
-    cut: P && G.state !== 'shop' ? [P.x, P.y + 0.6, P.z, G.state === 'title' ? 5 : 7.5] : [0, 0, 0, 0],
+    slice: P && G.state !== 'shop' ? { x: P.x, z: P.z, minH: 2.7, fx: f[0], fz: f[1], slope: Math.tan(pitch) * 0.92 } : null,
   });
 }
 
