@@ -125,6 +125,26 @@ void main(){
       if (uNight > 0.5) { float r = h21(vec2(floor(cw) + dot(vLN, vec3(3.0, 7.0, 11.0)), floor(cy)) + vSeed * 57.0); if (r > 0.52) emi = mix(vec3(1.0, 0.82, 0.45), vec3(0.75, 0.9, 1.0), step(0.85, r)) * 0.85; }
     } else if (m < 1.5 && y < gy && uNight > 0.5 && fh > 0.15 && fh < 0.85 && y > 0.15) { emi = vec3(0.9, 0.7, 0.4) * 0.35; }
   }
+  float spec = 0.0;
+  if (m > 6.5 && m < 7.5 && abs(vLN.y) < 0.5) { // glass curtain wall: mullion grid, sky reflection, sun glint
+    float hz = abs(vLN.x) > 0.5 ? vL.z : vL.x, y = vL.y + vScl.y * 0.5;
+    float cu = hz / 0.42, cv = y / 0.52;
+    vec3 vd = normalize(uCam - vW); float fres = pow(1.0 - abs(dot(vd, n)), 2.0);
+    vec3 sky = mix(vec3(0.62, 0.74, 0.86), vec3(0.92, 0.96, 1.0), fres) * (1.0 - 0.85 * uNight);
+    float pv = 0.9 + 0.16 * h21(vec2(floor(cu), floor(cv)) + vSeed * 31.0);
+    base = mix(vCol * pv * 1.08, sky, 0.34 + 0.4 * fres);
+    if (fract(cu) < 0.08 || fract(cv) < 0.1 || y > vScl.y - 0.25) base = vCol * 0.45 + vec3(0.32);
+    else if (uNight > 0.5) { float r = h21(vec2(floor(cu * 0.5), floor(cv)) + vSeed * 13.0); if (r > 0.6) emi = vec3(0.95, 0.85, 0.6) * 0.6; }
+    spec = 0.6;
+  }
+  if (m > 7.5 && m < 8.5) { // storefront band: lit shop glass under a coloured fascia
+    float y = vL.y + vScl.y * 0.5, hz = abs(vLN.x) > 0.5 ? vL.z : vL.x;
+    if (abs(vLN.y) < 0.5 && y < vScl.y * 0.72) {
+      base = fract(hz / 0.7) < 0.07 ? vec3(0.12) : vec3(0.18, 0.22, 0.28);
+      emi = uNight > 0.5 ? vec3(1.0, 0.82, 0.55) * 0.7 : vec3(0.05, 0.05, 0.04);
+      spec = 0.4;
+    } else if (n.y > 0.5) base = vec3(0.32, 0.33, 0.35);
+  }
   if (m > 1.5 && m < 2.5) emi = base * (uNight > 0.5 ? 1.0 : 0.55);
   if (m > 4.5 && m < 5.5 && uNight > 0.5) emi = vec3(1.0, 0.9, 0.6);
   if (vCutTop > 0.5 && n.y > 0.5) { base = base * 0.72 + vec3(0.04); emi = vec3(0.0); } // sliced roof: flat, a touch darker
@@ -135,7 +155,8 @@ void main(){
   float ao = 0.7 + 0.3 * smoothstep(0.0, 1.1, vW.y);
   float wallGrad = (abs(n.y) < 0.5 && vScl.y > 3.0) ? 0.93 + 0.07 * clamp(vW.y / 14.0, 0.0, 1.0) : 1.0;
   vec3 c = base * (uAmb * hemi * ao * wallGrad + uSunCol * ndl * sh * (0.85 + 0.15 * ao)) + emi;
-  if (m > 5.5 && m < 6.5) { vec3 v = normalize(uCam - vW); c += 0.35 * pow(max(dot(reflect(-uSun, n), v), 0.0), 12.0) * sh; }
+  if (m > 5.5 && m < 6.5) spec = 0.35;
+  if (spec > 0.0) { vec3 v = normalize(uCam - vW); c += spec * pow(max(dot(reflect(-uSun, n), v), 0.0), 14.0) * sh * (1.0 - 0.7 * uNight); }
   if (m > 2.5 && m < 3.5) c = base; // unlit flat (UI-ish markers)
   o = vec4(fogit(c, vW), 1.0);
 }`;
@@ -337,7 +358,8 @@ const GFX = {
     M4.mul(this.LVP, this.LP, this.LV);
     const lplanes = M4.planes(this.LVP);
     let SH = false; // shadow pass: plain cube
-    const draw = (o) => { gl.bindVertexArray(SH ? o.svao : o.vao); gl.drawElementsInstanced(gl.TRIANGLES, SH ? 36 : this.cubeN, gl.UNSIGNED_SHORT, 0, o.count); };
+    this.stat = this.stat || { inst: 0, calls: 0 }; if (!SH) { this.stat.inst = 0; this.stat.calls = 0; }
+    const draw = (o) => { if (!SH) { this.stat.inst += o.count; this.stat.calls++; } gl.bindVertexArray(SH ? o.svao : o.vao); gl.drawElementsInstanced(gl.TRIANGLES, SH ? 36 : this.cubeN, gl.UNSIGNED_SHORT, 0, o.count); };
     const drawPlayer = () => { if (this.pl.count) draw(this.pl); };
     const sliceU = (prog, on) => { if (prog.u.uSliceOn) gl.uniform1f(prog.u.uSliceOn, on); };
     const drawBoxes = (prog, pl, isShadow) => {

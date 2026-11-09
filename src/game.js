@@ -805,6 +805,7 @@ function frame(now) {
     const nc = nearestCopDist(P.x, P.z);
     AUD.update(vSpeed(P), G.stars > 0 ? Math.max(0, 1 - nc / 55) : 0, t, G.state === 'play');
   } else AUD.update(0, 0, t, false);
+  if (FPSBOX) fpsOverlay(now, dt);
   // adaptive resolution
   fpsT += dt; fpsN++;
   if (fpsT > 2) {
@@ -816,6 +817,19 @@ function frame(now) {
     }
     fpsT = 0; fpsN = 0; G.fps = fps;
   }
+}
+
+// ---------- ?fps=1 overlay (for measuring on real phones) ----------
+let FPSBOX = null;
+const FPSD = { t: 0, n: 0, worst: 0, last: 0 };
+try { if (/[?&]fps\b/.test(location.search)) { FPSBOX = document.createElement('div'); FPSBOX.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:calc(4px + env(safe-area-inset-top,0px));z-index:50;font:600 11px/1.35 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.65);padding:4px 8px;border-radius:6px;pointer-events:none;white-space:pre;text-align:center'; document.body.appendChild(FPSBOX); } } catch (e) { }
+function fpsOverlay(now, dt) {
+  const ms = FPSD.last ? now - FPSD.last : 16.7; FPSD.last = now;
+  FPSD.t += ms; FPSD.n++; FPSD.worst = Math.max(FPSD.worst, ms);
+  if (FPSD.t < 500) return;
+  const fps = 1000 * FPSD.n / FPSD.t, st = GFX.stat || { inst: 0, calls: 0 }, c = GFX.canvas;
+  FPSBOX.textContent = `${fps.toFixed(0)} fps · worst ${FPSD.worst.toFixed(0)} ms\n${c.width}×${c.height} @${G.renderScale.toFixed(2)} · shadow ${GFX.shadowOn ? GFX.shadowSize : 'off'}\n${st.inst} boxes · ${st.calls} draws · ${WORLD.chunks.size} chunks`;
+  FPSD.t = 0; FPSD.n = 0; FPSD.worst = 0;
 }
 
 // ---------- boot ----------
@@ -850,3 +864,7 @@ function boot() {
   };
 }
 window.addEventListener('load', boot);
+// Add to Home Screen / offline: only on a real https host (Netlify). Skipped for file:// and sandboxed previews.
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { }); });
+}

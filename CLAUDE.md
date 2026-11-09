@@ -6,6 +6,7 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 - **The output is one self-contained file: `dist/index.html`.** Don't add JS libraries or CDN scripts. External JS is unreliable in Claude artifacts and it complicates ownership. The renderer is hand-written WebGL2. The only outside request is the Google Fonts stylesheet (Bungee + Russo One), and the game falls back cleanly without it.
 - **Design for mobile first** (iPhone portrait), then phone landscape and desktop. Touch: hold the left or right half of the screen to steer, both halves to brake. Keys: ←/A, →/D, ↓/S/Space, P/Esc pauses, M opens the map.
 - **Hosting is static on Netlify**: `netlify.toml` runs `python3 build.py` and publishes `dist/`.
+- **PWA extras are optional siblings**: build.py also writes `dist/manifest.webmanifest`, `dist/sw.js` (from `src/sw.js`, versioned by a hash of index.html) and `dist/icons/` (from `assets/icons/`). The game still runs from `index.html` alone. The service worker registers only on https or localhost. It is network-first for the page (new deploys show up on the next online launch) and caches Google Fonts for offline.
 - **Edit only `src/`**, then run `python3 build.py`. Never hand-edit `dist/index.html`. Commit the rebuilt dist so Netlify Drop also works.
 
 ## Build
@@ -19,7 +20,7 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 |---|---|
 | `src/data.js` | `GEO`: hand-traced lat/lon polygons for MAN/BRX/BKN/QNS/SI/NJ, islands, zones (parks, beaches, airports, cemeteries, plazas), highways and runways, 25 bridges, 17 shop sites, spawn points, ~150 neighborhood labels |
 | `src/map.js` | Projection `P(lat,lon)`, the master raster (`BORO`/`ZONE` at 2 units/px via scanline `fillPoly`), smooth coastline lookup (`LANDB` blurred land mask → `landVal`/`landIdx`; `boroAt`/`zoneAt`/`tileAt` all go through it), shore band mask `NEARL`, per-borough street grids (`GRIDS`, `gLocal`/`gWorld`), segment buckets + `segHit`, `tileAt()`, `texel()` ground painter (anti-aliased markings via `cov`/`paint`/`dash`), `bridgeH()` deck profile |
-| `src/chunkgen.js` | `genChunk(cx,cz)` builds the 256px ground texture, building/prop box instances, colliders, props and billboards. Also landmarks (`LM`), shop placement (`SHOPS`, `initWorldData`), palettes, `box()`/`lbox()` helpers |
+| `src/chunkgen.js` | `genChunk(cx,cz)` builds the 256px ground texture, building/prop box instances, colliders, props and billboards. Building styles live in `tower()`: glass or masonry tiered towers with deco crowns/penthouses, cornices, storefront bands + awnings, fire escapes, brownstone stoops, roof caps. `faceZ` is the lot's street-facing local-z side. Also landmarks (`LM`), shop placement (`SHOPS`, `initWorldData`), palettes, `box()`/`lbox()` helpers |
 | `src/gl.js` | `GFX` renderer: instanced **chamfered** cube (world-size bevel `GFX.bevel`), plain cube for the shadow pass, shadow map (`sampler2DShadow`, PCF), chunk ground quads, billboard quads, **building slicing** (see below), hemisphere ambient + ground-contact AO, player silhouette pass, `M4` math |
 | `src/world.js` | `WORLD`: chunk streaming via workers (main-thread fallback), spatial cells, `forCols`/`forProps`/`pointBlocked`/`killProp`. Also quaternions, bridge 3D geometry, boats (Staten Island Ferry etc.) |
 | `src/vehicles.js` | `MODELS` (player cars, cops, ESU SUV/heavy, bus, heli), arcade physics `stepVehicle`, OBB collisions `collideWorld`, car-vs-car `collideVehicles`, cop AI, grid-following civilian AI, particles |
@@ -35,7 +36,7 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 
 ## Data formats
 - **Box instance** (`INST` = 14 floats): `x y z  sx sy sz  qx qy qz qw  r g b  mat`
-- **Material** (`mat`): 0 lit · 1 tower windows · 2 emissive · 3 unlit flat · 4 small residential windows · 5 lamp (glows at night) · 6 glass (specular)
+- **Material** (`mat`): 0 lit · 1 tower windows · 2 emissive · 3 unlit flat · 4 small residential windows · 5 lamp (glows at night) · 6 glass (specular) · 7 glass curtain wall (mullions, sky reflection, lit floors at night) · 8 storefront band (shop glass below, coloured fascia above, glows at night)
 - **Collider** (`COLF` = 7): `cx cz ax az ha hb h`. Axis a = `(ax,az)` = local X, b = `(−az, ax)` = local Z, with half-extents `ha`/`hb`.
 - **Prop** (`PROPF` = 8): `x z radius type instStart instCount yaw mass`. Types are in `PT` (tree, lamp, hydrant, trash, news box, bench, parked car, halal cart, tombstone, umbrella, bush, cone).
 - **Vehicle part** (`MODELS[k].parts`): `[x y z  sx sy sz  color|'body'|'bodyDk'  mat  flag  pitch]`. `pitch` tilts the part about the car's X axis (used for raked glass; build these with `rake(y0,z0,y1,z1,w,col,mat)`). `wheels(xs,zs,r,w)` adds tyre + rim + hub. Keep the player car ≤ 64 parts (silhouette buffer).
@@ -66,6 +67,7 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
   - `python3 test/flow.py` covers drive → wanted → chase → enter shop → respray clears stars → leave → drive into the Hudson.
   - `python3 test/chaos.py` does 20 s of random driving at 5★ in every borough (catches NaNs and exceptions).
   - `python3 test/bridge.py`, `test/quick.py W H tag` and `test/shots.py W H tag` take screenshots.
+- **Phone perf**: open the game with `?fps=1` (e.g. `https://hotcarnyc.netlify.app/?fps=1`) for an overlay with fps, worst frame, render size, shadow size, boxes drawn, draw calls and chunks.
 - Headless software WebGL (SwiftShader) runs at about 2 fps. For game logic, use **`window.__sim(seconds, steer)`**, which steps physics/AI/rules without rendering. Debug flags: `G.noBust`, `G.godT` (god-mode seconds), `G.noAdapt` (freezes auto-quality). The state object is `window.__G`.
 
 ## Known limitations / honest TODOs
@@ -80,4 +82,4 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 - More heat at 5★: roadblocks, spike strips, an armored "tank" tier, police boats on the rivers.
 - Missions and deliveries per borough. Daily challenges. Online leaderboard (needs a backend, e.g. Netlify Functions).
 - More rides and cosmetic packs: wraps, rims, neon underglow, plus more Cash Rules Customs services.
-- PWA manifest and offline cache for "Add to Home Screen". Possibly a shared lobby with the Shaolin City multiplayer project later.
+- Possibly a shared lobby with the Shaolin City multiplayer project later.

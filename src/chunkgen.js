@@ -18,6 +18,9 @@ const PAL = {
   roof: ['#6b4f3a', '#4a4a4a', '#7a3b2e', '#3f4a56', '#5c5048'].map(hex),
   car: ['#d23c3c', '#2f6fd0', '#f2f2f2', '#222428', '#8a8f96', '#2e8b57', '#e0b030', '#7a3fb0', '#c9c9c9', '#1d3557', '#f28c28', '#5a2a1a'].map(hex),
   leaf: ['#4caf50', '#3f9e45', '#5bbd4f', '#45a347'].map(hex),
+  glass: ['#5d86a8', '#4f7c8f', '#7c97ad', '#3f6f8f', '#6aa0b8', '#8aa3b8', '#4b6478', '#5f8f9a'].map(hex),
+  awning: ['#c0392b', '#1f6f43', '#1d3557', '#e0a91a', '#6b2d5c', '#d35400', '#2c3e50', '#8e1b1b'].map(hex),
+  stone: ['#c9b79c', '#b8a88f', '#d8cbb4', '#a99a83'].map(hex),
 };
 const C = {
   trunk: hex('#6b4a2b'), pole: hex('#4d535b'), lamp: hex('#fff2b0'), red: hex('#d22b2b'), dkgreen: hex('#2f5a3a'), gray: hex('#8d9196'),
@@ -223,32 +226,82 @@ function placeLots(g, b, i, j, uc, vc, bu, bv, R, ctx) {
     if (L[4] === 'house') { house(w[0], w[1], yaw, hu * 2, hv * 2, R, ctx); continue; }
     let h = L[4] === 'row' ? 2.0 + R() * 1.3 : heightFor(b, w[0], w[1], r, g.style);
     const pal = L[4] === 'row' ? PAL.brown : (b === 1 ? (h > 7 ? PAL.tower : PAL.walkup) : b === 6 ? (h > 7 ? PAL.tower : PAL.brick) : (h > 7 ? PAL.tower : (b === 3 ? PAL.brown : PAL.brick)));
-    tower(w[0], w[1], yaw, hu * 2, hv * 2, h, pal[Math.floor(R() * pal.length)], R, ctx, b);
+    // which local-z side faces a street: lots sit either side of the block's centre line in v (v = -lz)
+    const dvc = L[1] - vc, faceZ = Math.abs(dvc) > 0.01 ? -Math.sign(dvc) : (R() < 0.5 ? -1 : 1);
+    tower(w[0], w[1], yaw, hu * 2, hv * 2, h, pal[Math.floor(R() * pal.length)], R, ctx, b, faceZ, L[4], pal !== PAL.tower);
   }
 }
 
-function tower(x, z, yaw, w, d, h, col, R, ctx, b) {
+// Building styles (materials: 1 punched windows, 7 glass curtain wall, 8 storefront; see BOX_FS)
+//  - tall: tiered tower, either masonry with windows or a glass curtain wall; tallest get a crown or spire
+//  - walk-up / brick: cornice, storefront band + awning on the street side, fire escapes
+//  - row (brownstone): cornice + stoop
+//  - every flat roof gets a darker inset membrane so it reads as a roof with a parapet from above
+const shadeC = (c, k) => [c[0] * k, c[1] * k, c[2] * k];
+function roofCap(x, z, yaw, w, d, top, col) { if (w > 0.7 && d > 0.7) box(x, top + 0.01, z, w - 0.26, 0.03, d - 0.26, yaw, shadeC(col, 0.62), 0); }
+function tower(x, z, yaw, w, d, h, col, R, ctx, b, faceZ, kind, masonry) {
+  faceZ = faceZ || 1;
+  const street = b === 1 || b === 2 || b === 3 || b === 4 || b === 6;
   if (h > 8.5 && w > 2.5 && d > 2.5) {
+    const glass = R() < (b === 1 || b === 6 ? 0.5 : 0.3);
+    const wm = glass ? 7 : 1, c = glass ? PAL.glass[Math.floor(R() * PAL.glass.length)] : col;
     const h1 = h * (0.35 + R() * 0.2);
-    box(x, h1 / 2, z, w, h1, d, yaw, col, 1);
+    box(x, h1 / 2, z, w, h1, d, yaw, c, wm);
+    if (street && R() < 0.8) box(x, 0.33, z, w + 0.06, 0.66, d + 0.06, yaw, PAL.awning[Math.floor(R() * PAL.awning.length)], 8);
     const w2 = w * (0.72 + R() * 0.12), d2 = d * (0.72 + R() * 0.12);
+    roofCap(x, z, yaw, w, d, h1, glass ? hex('#8c949c') : col);
     if (h > 12.5 && w2 > 2.2) {
       const h2 = h * 0.72;
-      box(x, h1 + (h2 - h1) / 2, z, w2, h2 - h1, d2, yaw, col, 1);
-      box(x, h2 + (h - h2) / 2, z, w2 * 0.7, h - h2, d2 * 0.7, yaw, col, 1);
-      if (R() < 0.6) box(x, h + 1.2, z, 0.12, 2.4, 0.12, yaw, C.gray, 0);
-    } else box(x, h1 + (h - h1) / 2, z, w2, h - h1, d2, yaw, col, 1);
+      box(x, h1 + (h2 - h1) / 2, z, w2, h2 - h1, d2, yaw, c, wm);
+      box(x, h2 + (h - h2) / 2, z, w2 * 0.7, h - h2, d2 * 0.7, yaw, c, wm);
+      const cw = w2 * 0.7, cd = d2 * 0.7, r = R();
+      if (r < 0.35) { // art deco stepped crown + spire
+        const cc = glass ? hex('#c9d2da') : shadeC(col, 1.12);
+        box(x, h + 0.3, z, cw * 0.7, 0.6, cd * 0.7, yaw, cc, 0);
+        box(x, h + 0.85, z, cw * 0.45, 0.5, cd * 0.45, yaw, cc, 0);
+        box(x, h + 1.25, z, cw * 0.25, 0.3, cd * 0.25, yaw, cc, 0);
+        box(x, h + 2.4, z, 0.1, 2.0, 0.1, yaw, C.silver, 6);
+      } else if (r < 0.7) { // mechanical penthouse + antenna
+        roofCap(x, z, yaw, cw, cd, h, glass ? hex('#8c949c') : col);
+        box(x, h + 0.3, z, cw * 0.45, 0.6, cd * 0.4, yaw, hex('#8d9196'), 0);
+        box(x, h + 1.5, z, 0.12, 2.4, 0.12, yaw, C.gray, 0);
+      } else { // flat roof with helipad-ish marking
+        roofCap(x, z, yaw, cw, cd, h, glass ? hex('#8c949c') : col);
+        if (cw > 1.6) box(x, h + 0.04, z, cw * 0.5, 0.02, cd * 0.5, yaw, hex('#d8d8d8'), 0);
+      }
+    } else {
+      box(x, h1 + (h - h1) / 2, z, w2, h - h1, d2, yaw, c, wm);
+      roofCap(x, z, yaw, w2, d2, h, glass ? hex('#8c949c') : col);
+      box(x, h + 0.25, z, w2 * 0.35, 0.5, d2 * 0.35, yaw, hex('#8d9196'), 0);
+    }
   } else {
     box(x, h / 2, z, w, h, d, yaw, col, 1);
-    // roof parapet + details
+    // cornice doubles as the roof: its top sits just above the wall top so the faces never z-fight
+    if (h > 1.8 && w > 0.8) box(x, h - 0.05, z, w + 0.1, 0.14, d + 0.1, yaw, shadeC(col, 0.68), 0);
+    else roofCap(x, z, yaw, w, d, h, col);
+    if (kind === 'row') { // brownstone stoop
+      if (w > 0.7) lbox(x, z, yaw, (R() - 0.5) * w * 0.4, 0.18, faceZ * (d / 2 + 0.22), 0.34, 0.36, 0.44, PAL.stone[Math.floor(R() * PAL.stone.length)], 0);
+    } else if (street) {
+      if (R() < 0.75) { // storefront band + awning on the street side
+        const ac = PAL.awning[Math.floor(R() * PAL.awning.length)];
+        box(x, 0.33, z, w + 0.06, 0.66, d + 0.06, yaw, ac, 8);
+        if (R() < 0.7) lbox(x, z, yaw, 0, 0.74, faceZ * (d / 2 + 0.17), w * 0.78, 0.05, 0.34, ac, 0);
+      }
+      if (masonry && h >= 3 && h < 9 && w > 1.4 && R() < 0.55) { // fire escape
+        const lx = (R() - 0.5) * (w - 1.2), top = h - 0.5, fz = faceZ * (d / 2 + 0.14);
+        for (let y = 1.3; y <= top; y += 0.75) lbox(x, z, yaw, lx, y, fz, 0.78, 0.04, 0.28, C.black, 0);
+        if (top > 1.3) lbox(x, z, yaw, lx + 0.33, (1.3 + top) / 2, faceZ * (d / 2 + 0.27), 0.04, top - 1.3, 0.04, C.black, 0);
+      }
+    }
+    // rooftop details
     if (h > 2.2 && w > 1.2 && d > 1.2) {
       const nAC = R() < 0.6 ? 1 + Math.floor(R() * 2) : 0;
-      for (let k = 0; k < nAC; k++) lbox(x, z, yaw, (R() - 0.5) * (w - 0.8), h + 0.18, (R() - 0.5) * (d - 0.8), 0.45, 0.36, 0.38, C.gray, 0);
+      for (let k = 0; k < nAC; k++) lbox(x, z, yaw, (R() - 0.5) * (w - 0.8), h + 0.2, (R() - 0.5) * (d - 0.8), 0.45, 0.36, 0.38, C.gray, 0);
       if ((b === 1 || b === 3 || b === 2) && h < 9 && R() < 0.3 && w > 1.6) {
         const lx = (R() - 0.5) * (w - 1), lz = (R() - 0.5) * (d - 1);
-        lbox(x, z, yaw, lx, h + 0.35, lz, 0.5, 0.7, 0.5, C.wood2, 0);
+        for (const sx of [-0.2, 0.2]) for (const sz of [-0.2, 0.2]) lbox(x, z, yaw, lx + sx, h + 0.35, lz + sz, 0.06, 0.7, 0.06, C.wood2, 0);
         lbox(x, z, yaw, lx, h + 1.0, lz, 0.75, 0.75, 0.75, C.wood, 0);
-        lbox(x, z, yaw, lx, h + 1.5, lz, 0.5, 0.25, 0.5, C.wood2, 0);
+        lbox(x, z, yaw, lx, h + 1.5, lz, 0.55, 0.25, 0.55, C.wood2, 0);
       }
     }
   }
