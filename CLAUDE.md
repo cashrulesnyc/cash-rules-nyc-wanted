@@ -1,0 +1,75 @@
+# CLAUDE.md — CASH RULES NYC: WANTED
+
+A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all five NYC boroughs (plus the Jersey waterfront), with GTA-style auto shops ("Cash Rules Customs") where a respray or a repair wipes your wanted level. Owner: DJ / CASH RULES NYC LLC. Everything here was written from scratch: no Smashy Road code or assets, no third-party engine, so it is 100% owned IP.
+
+## Hard rules
+- **The output is one self-contained file: `dist/index.html`.** Don't add JS libraries or CDN scripts. External JS is unreliable in Claude artifacts and it complicates ownership. The renderer is hand-written WebGL2. The only outside request is the Google Fonts stylesheet (Bungee + Russo One), and the game falls back cleanly without it.
+- **Design for mobile first** (iPhone portrait), then phone landscape and desktop. Touch: hold the left or right half of the screen to steer, both halves to brake. Keys: ←/A, →/D, ↓/S/Space, P/Esc pauses, M opens the map.
+- **Hosting is static on Netlify**: `netlify.toml` runs `python3 build.py` and publishes `dist/`.
+- **Edit only `src/`**, then run `python3 build.py`. Never hand-edit `dist/index.html`. Commit the rebuilt dist so Netlify Drop also works.
+
+## Build
+`python3 build.py` stitches the source into `src/index.html`:
+- **SHARED** = `data.js`, `map.js`, `chunkgen.js`. This goes into `<script id="shared">`, which runs on the main thread. At startup the same text is also loaded into a **Web Worker** (Blob URL) that generates chunks. So SHARED code must stay pure: no DOM, no `GFX`, no references to anything in MAIN.
+- **MAIN** = `gl.js`, `world.js`, `vehicles.js`, `game.js`, in that order. These are plain globals, not ES modules, so load order matters.
+- Source files must never contain the literal `</script` (the build checks for it).
+
+## File map
+| File | What it does |
+|---|---|
+| `src/data.js` | `GEO`: hand-traced lat/lon polygons for MAN/BRX/BKN/QNS/SI/NJ, islands, zones (parks, beaches, airports, cemeteries, plazas), highways and runways, 25 bridges, 17 shop sites, spawn points, ~150 neighborhood labels |
+| `src/map.js` | Projection `P(lat,lon)`, the master raster (`BORO`/`ZONE` at 2 units/px via scanline `fillPoly`), per-borough street grids (`GRIDS`, `gLocal`/`gWorld`), segment buckets + `segHit`, `tileAt()`, `texel()` ground colors, `bridgeH()` deck profile |
+| `src/chunkgen.js` | `genChunk(cx,cz)` builds the 128px ground texture, building/prop box instances, colliders, props and billboards. Also landmarks (`LM`), shop placement (`SHOPS`, `initWorldData`), palettes, `box()`/`lbox()` helpers |
+| `src/gl.js` | `GFX` renderer: instanced unit cube, shadow map (`sampler2DShadow`, PCF), chunk ground quads, billboard quads, see-through cutaway, player silhouette pass, `M4` math |
+| `src/world.js` | `WORLD`: chunk streaming via workers (main-thread fallback), spatial cells, `forCols`/`forProps`/`pointBlocked`/`killProp`. Also quaternions, bridge 3D geometry, boats (Staten Island Ferry etc.) |
+| `src/vehicles.js` | `MODELS` (player cars, cops, ESU SUV/heavy, bus, heli), arcade physics `stepVehicle`, OBB collisions `collideWorld`, car-vs-car `collideVehicles`, cop AI, grid-following civilian AI, particles |
+| `src/game.js` | State machine (`boot → title → play ⇄ pause/shop → over`), heat/stars, spawning, damage, shops UI, HUD, minimap and big map, synth audio (`AUD`), saves, input, camera, main loop, debug hooks |
+| `src/index.html` | All CSS and the DOM overlays (title, HUD, shop sheet, pause map, game over) |
+
+## Coordinates and conventions (read before touching the math)
+- **1 world unit = 18 m.** X points east, **Z points south (north = −Z)**, Y is up. `P(lat,lon)` → `[x,z]`, origin at 40.71, −73.98. World bounds `WX0..WX1`, `WZ0..WZ1` (about 2860×2750 units).
+- **Heading `h`** is an azimuth: 0 = north, clockwise. forward = `(sin h, −cos h)`, right = `(cos h, sin h)`.
+- **Box rotation** is a quaternion. A pure yaw is `qYaw(φ)` = Ry(φ). Vehicles use `φ = π − h` and models are built with the **front at local +Z**. Grid-aligned objects use `φ = −grid.th`, which maps local +X to the avenue-crossing axis `e`.
+- **Street grid**: `mkGrid(boro, thDeg, A, S, wa, ws, originLat, originLon, style)`. Avenue lines are constant `u` (spacing A, width wa) and run along `d` (azimuth th). Street lines are constant `v` (spacing S, width ws). Manhattan is th=29°, A=15.5, S=9, and Central Park is fitted exactly to that grid.
+- **Tiles** (`tileAt`): `T_WATER, T_ROAD, T_WALK, T_LOT, T_PARK, T_SAND, T_TARMAC, T_HWY, T_BRIDGE, T_CEM, T_PLAZA, T_RUNWAY`. Water anywhere that isn't a bridge or highway sinks the car.
+
+## Data formats
+- **Box instance** (`INST` = 14 floats): `x y z  sx sy sz  qx qy qz qw  r g b  mat`
+- **Material** (`mat`): 0 lit · 1 tower windows · 2 emissive · 3 unlit flat · 4 small residential windows · 5 lamp (glows at night) · 6 glass (specular)
+- **Collider** (`COLF` = 7): `cx cz ax az ha hb h`. Axis a = `(ax,az)` = local X, b = `(−az, ax)` = local Z, with half-extents `ha`/`hb`.
+- **Prop** (`PROPF` = 8): `x z radius type instStart instCount yaw mass`. Types are in `PT` (tree, lamp, hydrant, trash, news box, bench, parked car, halal cart, tombstone, umbrella, bush, cone).
+- **Billboard**: `[x y z w h nx nz atlasIndex]`. Atlas: 0 CASH RULES NYC · 1 BLUESCREENU · 2 AI BEEN HERE · 3 GAS GADGETS · 4 NYC DJ · 5 MINITECH101 · 6 CASH RULES CUSTOMS (shop sign) · 7 WANTED. Edit `makeBillboards()` in game.js to change them.
+- **Chunks**: `CH` = 48 units, `CTEX` = 128 px, stream radius `WORLD.wantR` = 2.4 chunks, spatial cells of 6 units.
+
+## Gameplay tuning (game.js unless noted)
+- Stars: `STAR_HEAT = [1,16,40,80,140]`. Chasing cops per star level: `COPS_FOR = [0,2,3,5,6,8]`. The helicopter appears at 4★ and up.
+- Heat sources: smashing a prop +1.2 (parked car +3), hitting a cop +2 + 0.15×impact, hitting a civilian +1.5, wrecking a cop +10. Heat also rises +0.45/s while you're wanted.
+- Cash: pickups $20–$60 (briefcase $250), $2×stars per second while wanted, +$100 per cop wrecked or drowned.
+- **Busted**: speed < 2.4 with a cop within 4.2 units for 2.4 s. Bail is 50 + 25×stars.
+- **Shop door** stays shut while any chasing cop is within **9 units** (`updateShops`). The door is a dynamic collider in `DYNCOLS`.
+- Respray costs 120 + 100×stars. Repair costs 60 + 1.6×missing HP + 40×stars. **Both clear the wanted level** (`clearWanted`): cops switch to `ai.lost` and the helicopter leaves.
+- Upgrades: engine `[700,1500,3000]` (+6% top speed per level), armor `[500,1100,2400]` (+22% HP per level). Car stats and prices live in `MODELS` (vehicles.js). The player garage is `PLAYER_CARS`.
+- Cop rubber-banding is `v.boost` in `copAI` (vehicles.js).
+- Saves go to localStorage key `crnyc_wanted_v1`: bank, owned cars, current car, paint, upgrades, best time and settings.
+
+## Testing
+- `node test/maptest.js` renders the master map and close-up ground crops to `test/out/*.png`. Use it to check coastlines, grids and bridges after editing `data.js`/`map.js`.
+- `node test/chunktest.js` reports shop placement and per-chunk generation time and counts.
+- Browser tests need Playwright (`pip install playwright && playwright install chromium`; set `CHROME_PATH` to use a system Chrome). Run them from the repo root:
+  - `python3 test/flow.py` covers drive → wanted → chase → enter shop → respray clears stars → leave → drive into the Hudson.
+  - `python3 test/chaos.py` does 20 s of random driving at 5★ in every borough (catches NaNs and exceptions).
+  - `python3 test/bridge.py`, `test/quick.py W H tag` and `test/shots.py W H tag` take screenshots.
+- Headless software WebGL (SwiftShader) runs at about 2 fps. For game logic, use **`window.__sim(seconds, steer)`**, which steps physics/AI/rules without rendering. Debug flags: `G.noBust`, `G.godT` (god-mode seconds), `G.noAdapt` (freezes auto-quality). The state object is `window.__G`.
+
+## Known limitations / honest TODOs
+- Coastlines, bridges, parks and landmarks are real, but streets are a **per-borough procedural grid**, not every real street. Buildings are procedural and heights are compressed so the car stays visible.
+- The Bronx/Westchester and Queens/Nassau edges are treated as water. Newtown Creek and the Gowanus Canal are left out on purpose.
+- Frame rate on a real iPhone hasn't been measured yet. Adaptive quality lowers render scale, then shadow size, if fps drops (end of `frame()` in game.js).
+- Audio is all WebAudio synthesis (engine, siren, crashes). There are no audio files.
+
+## Roadmap ideas
+- Real street geometry baked from OpenStreetMap into a compact binary (Broadway is already a special case).
+- More heat at 5★: roadblocks, spike strips, an armored "tank" tier, police boats on the rivers.
+- Missions and deliveries per borough. Daily challenges. Online leaderboard (needs a backend, e.g. Netlify Functions).
+- More rides and cosmetic packs: wraps, rims, neon underglow, plus more Cash Rules Customs services.
+- PWA manifest and offline cache for "Add to Home Screen". Possibly a shared lobby with the Shaolin City multiplayer project later.

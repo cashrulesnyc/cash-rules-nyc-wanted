@@ -1,0 +1,14 @@
+{
+  "name": "cash-rules-nyc-wanted",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Smashy Road-style police chase on the real five-borough NYC map, with Cash Rules Customs shops that clear your wanted level.",
+  "scripts": {
+    "build": "python3 build.py",
+    "serve": "python3 -m http.server 8080 -d dist",
+    "test:map": "node test/maptest.js",
+    "test:chunks": "node test/chunktest.js",
+    "test:flow": "python3 test/flow.py",
+    "test:chaos": "python3 test/chaos.py"
+  }
+}
