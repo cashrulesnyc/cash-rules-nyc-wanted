@@ -36,17 +36,24 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 
 ## Data formats
 - **Box instance** (`INST` = 14 floats): `x y z  sx sy sz  qx qy qz qw  r g b  mat`
-- **Material** (`mat`): 0 lit · 1 tower windows · 2 emissive · 3 unlit flat · 4 small residential windows · 5 lamp (glows at night) · 6 glass (specular) · 7 glass curtain wall (mullions, sky reflection, lit floors at night) · 8 storefront band (shop glass below, coloured fascia above, glows at night)
+- **Material** (`mat`): 0 lit · 1 tower windows · 2 emissive · 3 unlit flat · 4 small residential windows · 5 lamp (glows at night) · 6 glass (specular) · 7 glass curtain wall (mullions, sky reflection, lit floors at night) · 8 storefront band (shop glass below, coloured fascia above, glows at night) · 9 art-deco vertical window strips (ESB/Chrysler). **+16** on any mat = landmark flag (set in `genChunk`), which makes slicing lenient so landmarks keep their silhouette; the shader subtracts it.
 - **Collider** (`COLF` = 7): `cx cz ax az ha hb h`. Axis a = `(ax,az)` = local X, b = `(−az, ax)` = local Z, with half-extents `ha`/`hb`.
 - **Prop** (`PROPF` = 8): `x z radius type instStart instCount yaw mass`. Types are in `PT` (tree, lamp, hydrant, trash, news box, bench, parked car, halal cart, tombstone, umbrella, bush, cone).
 - **Vehicle part** (`MODELS[k].parts`): `[x y z  sx sy sz  color|'body'|'bodyDk'  mat  flag  pitch]`. `pitch` tilts the part about the car's X axis (used for raked glass; build these with `rake(y0,z0,y1,z1,w,col,mat)`). `wheels(xs,zs,r,w)` adds tyre + rim + hub. Keep the player car ≤ 64 parts (silhouette buffer).
 - **Billboard**: `[x y z w h nx nz atlasIndex]`. Atlas: 0 CASH RULES NYC · 1 BLUESCREENU · 2 AI BEEN HERE · 3 GAS GADGETS · 4 NYC DJ · 5 MINITECH101 · 6 CASH RULES CUSTOMS (shop sign) · 7 WANTED. Edit `makeBillboards()` in game.js to change them.
+- **Ground texture alpha**: `32 × borough` where the street grid decides the tile (road/sidewalk/lot), 255 elsewhere. For grid tiles, `GROUND_FS` draws roads, sidewalks, curbs, crosswalks, stop bars, lane dashes and double yellows **analytically per pixel** (`gridColor`, derivative AA), so they stay sharp at any screen resolution. Grid params come from `GRIDS` via `uGa`/`uGb`. Highways, bridges, zones and water still come from the texture. If you change marking positions in `texel()`, mirror them in `gridColor()`.
 - **Chunks**: `CH` = 48 units, `CTEX` = 256 px (0.19 units/texel; keep markings ≥ 1 texel wide), stream radius `WORLD.wantR` = 2.4 chunks, spatial cells of 6 units.
 
 ## Camera and tall buildings (no see-through)
 - Camera pitch is `CAM_PITCH` (66°, game.js), steeper than a typical chase cam so towers lean away from the car, like the classic top-down city games.
 - Anything still between the camera and the car is **sliced**: `BOX_VS` in gl.js caps the height of chunk boxes in front of the player at `minH + distance × tan(pitch)`. The cut top renders as a solid, slightly darker roof, and boxes that sit fully above the cut are dropped. Billboards follow the same rule in `BILL_VS`. Shadows still use the full-height city. Tune it via the `slice` object passed in `render()` (game.js): `minH` 2.7 and `slope`. The lateral factor (2.2) and the margins (1.6) live in the shader.
 - Only chunk geometry is sliced. Bridges (`statics`), vehicles, particles and the player are not. The shop camera doesn't slice.
+
+## Landmarks
+- Defined in `initWorldData()` (chunkgen.js) with `name` (shown as the location label when you're within `nr` or `r + 9` units; see `hoodName` in game.js) and built in `buildLandmark()`. Flatiron and Washington Square Arch are anchored to their Manhattan grid block.
+- Helpers: `lb` (part in the landmark frame), `lr` (frame position + its own yaw; use it whenever a part's yaw differs from the frame yaw), `beam(a,b,th)` (bar between two 3D points), `qy/qa/qm` quaternions.
+- Heights are deliberately exaggerated (ESB antenna ≈ 29, One WTC spire ≈ 34) so they read over the generic skyline. `r` also clears generic lots and park props around them.
+- The Brooklyn Bridge Gothic towers and cable web live in `buildBridgeGeometry()` (world.js, style `gothic`).
 
 ## Gameplay tuning (game.js unless noted)
 - Stars: `STAR_HEAT = [1,16,40,80,140]`. Chasing cops per star level: `COPS_FOR = [0,2,3,5,6,8]`. The helicopter appears at 4★ and up.
@@ -74,7 +81,7 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 - Coastlines, bridges, parks and landmarks are real, but streets are a **per-borough procedural grid**, not every real street. Buildings are procedural, and heights are compressed and sliced near the car so it stays visible.
 - The coastline blur removes water channels and land strips narrower than ~1 raster cell (2 units ≈ 36 m).
 - The Bronx/Westchester and Queens/Nassau edges are treated as water. Newtown Creek and the Gowanus Canal are left out on purpose.
-- Frame rate on a real iPhone hasn't been measured yet. Adaptive quality lowers render scale, then shadow size, if fps drops (end of `frame()` in game.js).
+- Frame rate on a real iPhone hasn't been measured yet. Adaptive quality (end of `frame()` in game.js) starts at `min(dpr, 2)`. Below 50 fps it first cuts shadows to 1024, then render scale down to 1.5 on retina; it goes under 1.5 only below 26 fps, so a 30 fps Low Power cap stays sharp. It scales back up after three fast windows.
 - Audio is all WebAudio synthesis (engine, siren, crashes). There are no audio files.
 
 ## Roadmap ideas

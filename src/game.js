@@ -450,6 +450,7 @@ function hoodName(x, z) {
   if (!HOODW) HOODW = GEO.HOODS.map(h => { const p = P(h[2], h[3]); return [h[0], h[1], p[0], p[1]]; });
   const b = boroAt(x, z), s = segHit(x, z);
   if (s && s.br) return s.br.name;
+  for (const L of LM) if (L.name && Math.hypot(L.x - x, L.z - z) < (L.nr || L.r + 9)) return L.name + '<small>LANDMARK</small>';
   if (!b) {
     const W = [['HUDSON RIVER', 40.80, -73.975], ['HUDSON RIVER', 40.74, -74.02], ['EAST RIVER', 40.73, -73.968], ['EAST RIVER', 40.775, -73.935], ['HARLEM RIVER', 40.835, -73.933], ['UPPER BAY', 40.672, -74.045],
       ['THE NARROWS', 40.607, -74.045], ['JAMAICA BAY', 40.612, -73.84], ['LONG ISLAND SOUND', 40.82, -73.78], ['FLUSHING BAY', 40.765, -73.85], ['KILL VAN KULL', 40.645, -74.12], ['ARTHUR KILL', 40.57, -74.215],
@@ -571,7 +572,7 @@ function render(t, dt) {
   GFX.render({
     eye: [ex, ey, ez], target: [tx, ty, tz], fov: fov * Math.PI / 180, near: 1, far: 400,
     sunDir: L.sun, sunCol: L.sunCol, amb: L.amb, fogCol: L.fog, waterCol: L.water,
-    fog: [dist * 1.25, dist * 2.3 + (portrait ? 20 : 0)], time: t,
+    fog: [dist * 1.7, dist * 3.0 + (portrait ? 20 : 0)], time: t, // pushed out: haze only at the far edge
     shadowCenter: [tx, 0, tz], shadowHalf: portrait ? 52 : 46,
     chunks, statics: STATIC_BR ? [STATIC_BR] : [], bills, billTex: BILL_TEX,
     sil: (G.state === 'play') ? { col: [1, 0.85, 0.2, 0.55] } : null,
@@ -811,9 +812,16 @@ function frame(now) {
   if (fpsT > 2) {
     const fps = fpsN / fpsT;
     if (G.state === 'play' && !G.noAdapt) {
-      if (fps < 40 && G.renderScale > 1) G.renderScale = Math.max(1, G.renderScale - 0.25);
-      else if (fps < 26 && G.renderScale <= 1 && GFX.shadowOn && GFX.shadowSize > 1024) GFX.setShadowSize(1024);
-      else if (fps < 22 && G.renderScale > 0.75) G.renderScale -= 0.125;
+      // Sharpness first: shadows get cheaper before the picture gets softer, and on retina phones the
+      // render scale only drops below 1.5x if the game is genuinely struggling (< 26 fps). A 30 fps cap
+      // (iPhone Low Power Mode) therefore settles at 1.5x instead of a blurry 1x. Recovers when fast again.
+      const hiFloor = G.maxScale >= 2 ? 1.5 : 1;
+      if (fps < 26 && G.renderScale > 1) { G.renderScale = Math.max(1, G.renderScale - 0.25); G.goodN = 0; }
+      else if (fps < 50) {
+        G.goodN = 0;
+        if (GFX.shadowOn && GFX.shadowSize > 1024) GFX.setShadowSize(1024);
+        else if (G.renderScale > hiFloor) G.renderScale = Math.max(hiFloor, G.renderScale - 0.25);
+      } else if (fps > 57 && G.renderScale < G.maxScale && ++G.goodN >= 3) { G.renderScale = Math.min(G.maxScale, G.renderScale + 0.25); G.goodN = 0; }
     }
     fpsT = 0; fpsN = 0; G.fps = fps;
   }
@@ -839,7 +847,7 @@ function boot() {
   let ok = false;
   try { ok = GFX.init(cv); } catch (e) { console.error(e); $('err').textContent = 'Graphics error: ' + e.message; $('err').style.display = 'block'; return; }
   if (!ok) { $('err').innerHTML = 'This game needs WebGL2. Try Safari 15+ or Chrome.'; $('err').style.display = 'block'; return; }
-  G.renderScale = Math.min(window.devicePixelRatio || 1, 1.75);
+  G.maxScale = Math.min(window.devicePixelRatio || 1, 2); G.renderScale = G.maxScale; G.goodN = 0;
   const mobile = /iPhone|iPad|Android/i.test(navigator.userAgent) || window.innerWidth < 700;
   if (mobile) GFX.setShadowSize(1536);
   GFX.shadowOn = SAVE.shadows; GFX.night = SAVE.night ? 1 : 0;

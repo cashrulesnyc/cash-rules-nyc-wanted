@@ -193,10 +193,23 @@ function buildBridgeGeometry() {
       for (const tt of [tA, tB]) {
         const h = bridgeH(br, tt);
         if (style === 'gothic') {
-          for (const s of [-1, 1]) { const p = at(tt, s * (br.w / 2 + 0.2), 0); box(p[0], TH / 2, p[2], 0.9, TH, 1.6, Math.atan2(dx, dz), col); }
-          const pm = at(tt, 0, 0); box(pm[0], h + 2.6 + (TH - h - 2.6) / 2, pm[2], br.w + 1.2, TH - h - 2.6, 1.5, Math.atan2(dx, dz), col);
-          box(pm[0], TH + 0.25, pm[2], br.w + 1.6, 0.5, 1.8, Math.atan2(dx, dz), col);
-          box(pm[0], (h - 0.4) / 2, pm[2], br.w + 1.2, h - 0.4 + 0.6, 1.5, Math.atan2(dx, dz), col);
+          // stone tower: two outer piers, a pointed gothic arch over the roadway, blind arches on the piers
+          const yw = Math.atan2(dx, dz), hw = br.w / 2, pw = 1.1, dark = hex('#4a4136');
+          for (const s of [-1, 1]) {
+            const p = at(tt, s * (hw + pw / 2), 0); box(p[0], TH / 2, p[2], pw, TH, 1.8, yw, col);
+            for (const f of [-1, 1]) { const q = at(tt + f * 0.92, s * (hw + pw / 2), 0); box(q[0], h + 3.6, q[2], 0.45, 3.2, 0.06, yw, dark); }
+          }
+          const spring = h + 2.4, peak = h + 4.2;
+          for (const s of [-1, 1]) seg3(at(tt, s * hw, spring), at(tt, 0, peak), 0.9, col);
+          const pm = at(tt, 0, 0); box(pm[0], peak + (TH - peak) / 2 - 0.3, pm[2], br.w + 0.2, TH - peak + 0.6, 1.6, yw, col);
+          for (const f of [-1, 1]) { const q = at(tt + f * 0.82, 0, 0); box(q[0], peak + 1.4, q[2], br.w * 0.6, 1.6, 0.06, yw, dark); }
+          box(pm[0], TH + 0.25, pm[2], br.w + 2 * pw + 0.6, 0.5, 2.1, yw, col);
+          box(pm[0], (h - 0.4) / 2, pm[2], br.w + 1.2, h - 0.4 + 0.6, 1.5, yw, col);
+          // diagonal stays fanning from the tower top (the Brooklyn Bridge web)
+          for (const s of [-1, 1]) for (const f of [-1, 1]) for (let k = 1; k <= 5; k++) {
+            const t2 = tt + f * k * 2.6; if (t2 < 0 || t2 > br.len) continue;
+            seg3(at(tt, s * (hw + 0.1), TH - 1.0), at(t2, s * (hw - 0.05), bridgeH(br, t2) + 0.35), 0.05, hex('#8a7f6a'));
+          }
         } else {
           for (const s of [-1, 1]) { const p = at(tt, s * (br.w / 2 + 0.25), 0); box(p[0], TH / 2, p[2], 0.55, TH, 0.7, Math.atan2(dx, dz), col); }
           for (const yy of [h + 2.8, TH - 1.2, TH - 0.2]) { const pm = at(tt, 0, yy); box(pm[0], yy, pm[2], br.w + 1.0, 0.45, 0.6, Math.atan2(dx, dz), col); }

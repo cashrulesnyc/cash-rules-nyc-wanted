@@ -49,16 +49,22 @@ const LM = [];
 function lmAdd(type, lat, lon, r, extra) { const p = P(lat, lon); LM.push(Object.assign({ type, x: p[0], z: p[1], r }, extra || {})); }
 let SHOPS = [];
 function initWorldData() {
-  lmAdd('esb', 40.7484, -73.9857, 7.5);
-  lmAdd('wtc', 40.7130, -74.0132, 7);
-  lmAdd('chrysler', 40.7516, -73.9755, 5.5);
-  lmAdd('liberty', 40.6892, -74.0445, 0);
-  lmAdd('yankee', 40.8296, -73.9262, 11);
-  lmAdd('citi', 40.7571, -73.8458, 11);
-  lmAdd('barclays', 40.6826, -73.9754, 7);
-  lmAdd('wheel', 40.5745, -73.9790, 4);
-  lmAdd('parachute', 40.5738, -73.9845, 3);
-  lmAdd('unisphere', 40.7465, -73.8448, 5);
+  LM.length = 0;
+  lmAdd('esb', 40.7484, -73.9857, 7.5, { name: 'EMPIRE STATE BUILDING' });
+  lmAdd('wtc', 40.7130, -74.0132, 7, { name: 'ONE WORLD TRADE CENTER' });
+  lmAdd('chrysler', 40.7516, -73.9755, 5.5, { name: 'CHRYSLER BUILDING' });
+  lmAdd('liberty', 40.6892, -74.0445, 0, { name: 'STATUE OF LIBERTY', nr: 14 });
+  lmAdd('yankee', 40.8296, -73.9262, 11, { name: 'YANKEE STADIUM' });
+  lmAdd('citi', 40.7571, -73.8458, 11, { name: 'CITI FIELD' });
+  lmAdd('barclays', 40.6826, -73.9754, 9, { name: 'BARCLAYS CENTER' });
+  lmAdd('wheel', 40.5745, -73.9790, 5, { name: 'WONDER WHEEL' });
+  lmAdd('parachute', 40.5738, -73.9845, 3, { name: 'PARACHUTE JUMP' });
+  lmAdd('unisphere', 40.7465, -73.8448, 7, { name: 'UNISPHERE' });
+  // block-anchored landmarks: centred on the Manhattan grid block that holds them
+  for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0]]) {
+    const g = GRIDS[1], b = blockOf(g, lat, lon), c = gWorld(g, (b[0] + 0.5) * g.A, (b[1] + 0.5) * g.S + dv);
+    LM.push({ type, x: c[0], z: c[1], r, name });
+  }
   lmAdd('ferryterm', 40.6440, -74.0728, 6);
   lmAdd('ferryterm', 40.7013, -74.0130, 4);
   lmAdd('plane', 40.6460, -73.7820, 6, { yaw: 0.6 });
@@ -125,7 +131,10 @@ function genChunk(cx, cz) {
     const z = z0 + (j + 0.5) * st;
     for (let i = 0; i < CTEX; i++) {
       const t = texel(x0 + (i + 0.5) * st, z, o);
-      const k = (j * CTEX + i) * 4; tex[k] = o[0]; tex[k + 1] = o[1]; tex[k + 2] = o[2]; tex[k + 3] = 255;
+      // alpha: 32*borough where the street grid decides the tile (the ground shader then draws roads,
+      // sidewalks and markings analytically, sharp at any resolution); 255 = use the texture colour as-is
+      const k = (j * CTEX + i) * 4; tex[k] = o[0]; tex[k + 1] = o[1]; tex[k + 2] = o[2];
+      tex[k + 3] = (t === T_ROAD || t === T_WALK || t === T_LOT) && LASTG ? LASTG.boro * 32 : 255;
       if (t !== T_WATER) land++;
     }
   }
@@ -137,7 +146,10 @@ function genChunk(cx, cz) {
     for (let a = 0; a <= 8; a++) for (let b = 0; b <= 8; b++) { const bb = boroAt(x0 + a * CH / 8, z0 + b * CH / 8); if (bb) boros.add(bb); }
     for (const b of boros) placeBlocks(GRIDS[b], ctx);
     placeOpenProps(ctx);
-    for (const L of LM) if (L.x >= x0 && L.x < x0 + CH && L.z >= z0 && L.z < z0 + CH) buildLandmark(L, ctx);
+    for (const L of LM) if (L.x >= x0 && L.x < x0 + CH && L.z >= z0 && L.z < z0 + CH) {
+      const s0 = OB.length; buildLandmark(L, ctx);
+      for (let i = s0 + 13; i < OB.length; i += INST) OB[i] += 16; // landmark flag for the slicing shader
+    }
     for (const S of SHOPS) if (S.x >= x0 && S.x < x0 + CH && S.z >= z0 && S.z < z0 + CH) buildShop(S, ctx);
   }
   const boxes = new Float32Array(OB); OB = null;
@@ -434,65 +446,129 @@ function placeOpenProps(ctx) {
 // ---------- landmarks ----------
 const LMY = 0.68;
 function vbox(x, y, z, sx, sy, sz, yaw, col, mat) { box(x, y * LMY, z, sx, sy * LMY, sz, yaw, col, mat); }
+// quaternion helpers for landmark parts (shared code can't use world.js)
+function qy(a) { return [0, Math.sin(a / 2), 0, Math.cos(a / 2)]; }
+function qa(x, y, z, a) { const s = Math.sin(a / 2); return [x * s, y * s, z * s, Math.cos(a / 2)]; }
+function qm(a, b) { return [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]]; }
+// square-section beam between two 3D points
+function beam(a, b, th, col, mat) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz);
+  const q = qm(qy(Math.atan2(dx, dz)), qa(1, 0, 0, -Math.atan2(dy, Math.hypot(dx, dz))));
+  boxQ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, th, th, L + th * 0.5, q, col, mat);
+}
+// Landmarks. Heights are exaggerated vs. the generic city so the skyline reads at a glance.
+// mat 9 = art-deco vertical piers (ESB / Chrysler shafts), see BOX_FS. Landmark boxes get +16 on mat
+// in genChunk so the slicing shader treats them leniently (they stay recognizable as you drive past).
 function buildLandmark(L, ctx) {
   const x = L.x, z = L.z;
   const R = rng(ihash(x | 0, z | 0, 5));
   const gy = GRIDS[boroAt(x, z) || 1] ? -GRIDS[boroAt(x, z) || 1].th : 0;
+  const lb = (lx, y, lz, sx, sy, sz, yaw, col, mat) => lbox(x, z, yaw, lx, y, lz, sx, sy, sz, col, mat);
+  // like lb, but the part has its own yaw (by) while its position stays in the landmark frame (fy)
+  const lr = (fy, lx, y, lz, sx, sy, sz, by, col, mat) => { const p = rot(x, z, fy, lx, lz); box(p[0], y, p[1], sx, sy, sz, by, col, mat); };
   switch (L.type) {
     case 'esb': {
-      const yaw = -GRIDS[1].th, s = C.stone;
-      vbox(x, 2.2, z, 9, 4.4, 5.4, yaw, s, 1);
-      vbox(x, 4.4 + 5.5, z, 6.2, 11, 4.0, yaw, s, 1);
-      vbox(x, 15.4 + 3.5, z, 4.4, 7, 3.0, yaw, s, 1);
-      vbox(x, 22.4 + 1.5, z, 2.6, 3, 2.0, yaw, s, 1);
-      vbox(x, 25.4 + 0.8, z, 1.6, 1.6, 1.4, yaw, s, 0);
-      vbox(x, 27.0 + 1.2, z, 0.8, 2.4, 0.8, yaw, C.silver, 0);
-      vbox(x, 29.4 + 1.6, z, 0.25, 3.2, 0.25, yaw, C.silver, 0);
-      vbox(x, 26.2, z, 1.7, 0.3, 1.5, yaw, C.lamp, 5);
-      addCol(ctx, x, z, yaw, 4.5, 2.7, 30);
-      break;
-    }
-    case 'wtc': {
-      const yaw = -GRIDS[1].th + Math.PI / 4, gl = hex('#8fb6d6');
-      vbox(x, 1.8, z, 5.6, 3.6, 5.6, yaw, C.concrete, 1);
-      const N = 7, H = 30;
-      for (let k = 0; k < N; k++) {
-        const t = k / N, w = 4.8 * (1 - t * 0.55), y0 = 3.6 + t * H, hh = H / N;
-        vbox(x, y0 + hh / 2, z, w, hh + 0.02, w, yaw, gl, 1);
-        vbox(x, y0 + hh / 2, z, w * 0.92, hh + 0.02, w * 0.92, yaw + Math.PI / 4 * (t), gl, 1);
-      }
-      vbox(x, 3.6 + H + 0.4, z, 2.4, 0.8, 2.4, yaw, C.silver, 0);
-      vbox(x, 3.6 + H + 4.5, z, 0.22, 8, 0.22, yaw, C.white, 0);
-      addCol(ctx, x, z, yaw, 2.8, 2.8, 30);
+      const yaw = -GRIDS[1].th, s = hex('#d6cdb8'), s2 = hex('#c9bfa8');
+      box(x, 0.8, z, 9, 1.6, 5.6, yaw, s2, 1);                        // 5-storey base fills the block
+      box(x, 1.6 + 2.6, z, 6.8, 5.2, 4.4, yaw, s, 9);                 // lower setback mass
+      box(x, 6.8 + 5.6, z, 4.6, 11.2, 3.2, yaw, s, 9);                // main shaft
+      box(x, 18.0 + 0.8, z, 3.4, 1.6, 2.5, yaw, s, 9);               // 72nd-81st floor steps
+      box(x, 19.6 + 0.5, z, 2.6, 1.0, 1.9, yaw, s, 9);
+      box(x, 20.6 + 0.6, z, 1.7, 1.2, 1.4, yaw, hex('#efe6cf'), 5);  // observatory crown (lit at night)
+      box(x, 21.8 + 0.9, z, 1.0, 1.8, 0.9, yaw, C.silver, 6);         // mooring mast
+      box(x, 23.6 + 0.6, z, 0.6, 1.2, 0.6, yaw, C.silver, 6);
+      box(x, 24.8 + 2.0, z, 0.16, 4.0, 0.16, yaw, C.white, 0);       // antenna
+      box(x, 28.9, z, 0.3, 0.3, 0.3, yaw, C.red, 2);
+      addCol(ctx, x, z, yaw, 4.5, 2.8, 30);
       break;
     }
     case 'chrysler': {
-      const yaw = -GRIDS[1].th, s = hex('#cfc8ba');
-      vbox(x, 3.5, z, 4.6, 7, 4.6, yaw, s, 1);
-      vbox(x, 7 + 4.5, z, 3.4, 9, 3.4, yaw, s, 1);
-      const cr = [2.6, 2.0, 1.5, 1.0, 0.6];
-      for (let k = 0; k < cr.length; k++) vbox(x, 16 + k * 0.9 + 0.45, z, cr[k], 0.9, cr[k], yaw, C.silver, k % 2 ? 5 : 0);
-      vbox(x, 20.5 + 1.6, z, 0.18, 3.2, 0.18, yaw, C.silver, 0);
-      addCol(ctx, x, z, yaw, 2.3, 2.3, 20);
+      const yaw = -GRIDS[1].th, s = hex('#d9d4cb'), sil = hex('#dfe4ea');
+      box(x, 0.9, z, 5.2, 1.8, 5.2, yaw, hex('#c9c1b4'), 1);
+      box(x, 1.8 + 3.4, z, 4.0, 6.8, 4.0, yaw, s, 9);
+      box(x, 8.6 + 2.4, z, 3.2, 4.8, 3.2, yaw, s, 9);
+      // eagles at the 61st-floor corners
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) lr(yaw, sx * 1.65, 13.2, sz * 1.65, 0.5, 0.25, 0.5, yaw + Math.PI / 4, sil, 6);
+      // terraced crown: 5 shrinking tiers, each with sunburst points on all four faces
+      const tiers = [2.6, 2.1, 1.65, 1.2, 0.8];
+      let y = 13.4;
+      for (let k = 0; k < tiers.length; k++) {
+        const w = tiers[k], h = 0.95;
+        box(x, y + h / 2, z, w, h, w, yaw, sil, 6);
+        const tri = w * 0.62;
+        for (let f = 0; f < 4; f++) {
+          const a = f * Math.PI / 2, nx = Math.sin(a), nz = Math.cos(a);
+          const p = rot(x, z, yaw, nx * (w / 2 - 0.12), nz * (w / 2 - 0.12));
+          const q = qm(qy(yaw + a), qa(0, 0, 1, Math.PI / 4));
+          boxQ(p[0], y + h, p[1], tri, tri, 0.2, q, k % 2 ? sil : hex('#f4f1e8'), 5); // top half pokes above the tier = sunburst arch
+        }
+        y += h;
+      }
+      box(x, y + 0.3, z, 0.4, 0.6, 0.4, yaw, sil, 6);
+      box(x, y + 2.2, z, 0.14, 3.2, 0.14, yaw, sil, 6);               // needle spire
+      addCol(ctx, x, z, yaw, 2.6, 2.6, 20);
+      break;
+    }
+    case 'wtc': {
+      const yaw = -GRIDS[1].th, gl = hex('#9cc1dc'), W = 5.2, H0 = 1.4, H = 21.5, N = 12;
+      box(x, H0 / 2, z, W + 0.4, H0, W + 0.4, yaw, hex('#c7ccd1'), 0); // podium
+      for (let k = 0; k < N; k++) {
+        const t = (k + 0.5) / N, y0 = H0 + k * H / N, hh = H / N + 0.02;
+        const sA = W * (1 - 0.65 * t), sB = W * (0.45 + 0.27 * t);   // square shrinks while the 45deg square grows: twisting taper
+        box(x, y0 + hh / 2, z, sA, hh, sA, yaw, gl, 7);
+        box(x, y0 + hh / 2, z, sB, hh, sB, yaw + Math.PI / 4, gl, 7);
+      }
+      const top = H0 + H, sw = W * 0.72;
+      box(x, top + 0.25, z, sw * 0.7, 0.5, sw * 0.7, yaw + Math.PI / 4, hex('#dfe4ea'), 0);
+      box(x, top + 5.5, z, 0.24, 10.5, 0.24, yaw, C.white, 0);       // spire
+      for (const ry of [top + 1.5, top + 4, top + 6.5]) box(x, ry, z, 0.7, 0.12, 0.7, yaw, C.white, 0);
+      box(x, top + 10.9, z, 0.3, 0.3, 0.3, yaw, hex('#9fe6ff'), 2);
+      addCol(ctx, x, z, yaw, W / 2, W / 2, 30);
+      break;
+    }
+    case 'flatiron': {
+      const g = GRIDS[1], yaw = -g.th, Lz = 4.4, W = 4.4, H = 5.6, N = 7, col = hex('#e2d3b5');
+      // triangle: straight 5th Ave side (+x), Broadway side tapers to a narrow prow pointing uptown (-z)
+      for (let k = 0; k < N; k++) {
+        const t = (k + 0.5) / N, w = W * (1 - t * 0.88), lz = Lz / 2 - (k + 0.5) * Lz / N;
+        lb(W / 2 - w / 2, H / 2, lz, w, H, Lz / N + 0.02, yaw, col, 1);
+        lb(W / 2 - w / 2, H + 0.12, lz, w + 0.12, 0.24, Lz / N + 0.04, yaw, hex('#b9a888'), 0); // cornice
+      }
+      lb(W / 2 - 0.25, H / 2, -Lz / 2 - 0.1, 0.5, H, 0.4, yaw, col, 1);                         // rounded prow
+      lb(0, 0.35, 0, W + 0.1, 0.7, Lz + 0.1, yaw, hex('#6b2d2d'), 8);                           // ground-floor shops
+      const p = rot(x, z, yaw, W / 4, 0); addCol(ctx, p[0], p[1], yaw, W / 2.5, Lz / 2, H);
+      break;
+    }
+    case 'wsq': {
+      const g = GRIDS[1], yaw = -g.th, m = hex('#f1ece1'), m2 = hex('#ddd6c8');
+      const az = -1.6; // arch on the north side of the square, facing up 5th Ave
+      for (const sx of [-1, 1]) lb(sx * 1.45, 1.6, az, 1.1, 3.2, 1.0, yaw, m, 0);
+      lb(0, 3.6, az, 4.0, 0.8, 1.0, yaw, m, 0);
+      lb(0, 4.2, az, 4.2, 0.45, 1.1, yaw, m2, 0);
+      lb(0, 3.05, az, 1.8, 0.3, 1.02, yaw, m2, 0);                  // arch soffit
+      // fountain: ring of stone + water + jet
+      for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2; lr(yaw, Math.cos(a) * 1.9, 0.14, 1.0 + Math.sin(a) * 1.9, 0.56, 0.28, 0.32, yaw - a - Math.PI / 2, m2, 0); }
+      for (const r of [0, Math.PI / 8, Math.PI / 4, 3 * Math.PI / 8]) lr(yaw, 0, 0.06, 1.0, 3.6, 0.06, 3.6, yaw + r, hex('#5fb3e0'), 6);
+      lb(0, 0.7, 1.0, 0.3, 1.4, 0.3, yaw, hex('#e8f6ff'), 2);
+      for (const sx of [-1, 1]) { const p = rot(x, z, yaw, sx * 1.45, az); addCol(ctx, p[0], p[1], yaw, 0.55, 0.5, 3.2); }
       break;
     }
     case 'liberty': {
-      const yaw = 0.3;
-      box(x, 0.4, z, 6, 0.8, 6, yaw, hex('#b9b2a2'));
-      box(x, 0.4, z, 6, 0.8, 6, yaw + Math.PI / 4, hex('#b9b2a2'));
-      box(x, 0.8 + 1.6, z, 2.6, 3.2, 2.6, yaw, hex('#c8b89a'), 0);
-      box(x, 4.0 + 0.2, z, 3.0, 0.4, 3.0, yaw, hex('#c0b090'), 0);
-      const g = C.liberty, gd = C.libdark;
-      lbox(x, z, yaw, 0, 4.4 + 0.3, 0, 1.6, 0.6, 1.4, gd);
-      lbox(x, z, yaw, 0, 4.4 + 1.9, 0, 1.25, 2.6, 1.1, g);
-      lbox(x, z, yaw, 0, 7.5 + 0.35, 0, 1.0, 0.7, 0.9, g);
-      lbox(x, z, yaw, 0, 8.25, 0, 0.55, 0.6, 0.55, g);
-      for (let k = 0; k < 5; k++) { const a = -0.9 + k * 0.45; lbox(x, z, yaw, Math.sin(a) * 0.35, 8.75, -Math.cos(a) * 0.1 + 0.05, 0.1, 0.45, 0.1, g); }
-      lbox(x, z, yaw, -0.62, 9.0, 0, 0.3, 2.2, 0.3, g);          // raised arm
-      lbox(x, z, yaw, -0.62, 10.25, 0, 0.42, 0.35, 0.42, C.gold, 2); // torch
-      lbox(x, z, yaw, -0.62, 10.6, 0, 0.26, 0.4, 0.26, hex('#ffb347'), 2);
-      lbox(x, z, yaw, 0.7, 6.4, 0.25, 0.25, 1.1, 0.7, g);        // tablet
-      addCol(ctx, x, z, yaw, 1.6, 1.6, 10);
+      const yaw = 0.3, ped = hex('#c9b99b'), g = C.liberty, gd = C.libdark;
+      box(x, 0.4, z, 7, 0.8, 7, yaw, hex('#b9b2a2')); box(x, 0.4, z, 7, 0.8, 7, yaw + Math.PI / 4, hex('#b9b2a2')); // Fort Wood star
+      box(x, 0.8 + 1.9, z, 2.8, 3.8, 2.8, yaw, ped, 0);
+      box(x, 4.6 + 0.25, z, 3.3, 0.5, 3.3, yaw, hex('#bfae8c'), 0);
+      lb(0, 5.1 + 0.6, 0, 1.9, 1.2, 1.7, yaw, gd);                  // robe hem
+      lb(0, 6.3 + 1.2, 0, 1.55, 2.4, 1.35, yaw, g);                 // robe
+      lb(0, 8.7 + 0.5, 0, 1.2, 1.0, 1.05, yaw, g);                  // shoulders
+      lb(0, 9.2 + 0.1, 0.32, 0.9, 0.2, 0.5, yaw, gd);               // drape
+      lb(0, 10.0, 0, 0.6, 0.6, 0.6, yaw, g);                        // head
+      for (let k = 0; k < 7; k++) { const a = -1.2 + k * 0.4, len = 0.55; const p = rot(x, z, yaw, Math.sin(a) * 0.45, -Math.cos(a) * 0.45); boxQ(p[0], 10.35, p[1], 0.08, 0.08, len, qm(qy(yaw + a + Math.PI), qa(1, 0, 0, -0.35)), g, 0); }
+      lb(-0.7, 10.3, 0, 0.32, 2.4, 0.32, yaw, g);                   // raised right arm
+      lb(-0.7, 11.65, 0, 0.5, 0.3, 0.5, yaw, C.gold, 2);            // torch
+      lb(-0.7, 12.0, 0, 0.32, 0.45, 0.32, yaw, hex('#ffb347'), 2);
+      lb(0.75, 7.9, 0.2, 0.28, 1.2, 0.8, yaw, g);                   // tablet
+      addCol(ctx, x, z, yaw, 1.7, 1.7, 12);
       break;
     }
     case 'tsq': {
@@ -503,7 +579,6 @@ function buildLandmark(L, ctx) {
         box(w[0], h / 2, w[1], bu, h, bv, yaw, PAL.tower[Math.floor(R() * 10)], 1);
         addCol(ctx, w[0], w[1], yaw, bu / 2, bv / 2, h);
         const su = Math.sign(L.iu * g.A - uc), sv = Math.sign(L.iv * g.S - vc);
-        // billboard on the u-facing face and v-facing face
         const fu = gWorld(g, uc + su * (bu / 2 + 0.05), vc), fv = gWorld(g, uc, vc + sv * (bv / 2 + 0.05));
         const nu = [g.ex * su, g.ez * su], nv = [g.dx * sv, g.dz * sv];
         ctx.bills.push(fu[0], 5.5, fu[1], bv * 0.9, 3.6, nu[0], nu[1], Math.floor(R() * 6));
@@ -514,59 +589,81 @@ function buildLandmark(L, ctx) {
       break;
     }
     case 'yankee': case 'citi': {
-      const yaw = gy, R0 = 7.2, wall = L.type === 'yankee' ? hex('#d9d6cf') : hex('#9a5a3e'), N = 20;
+      const yaw = gy, R0 = 7.2, yk = L.type === 'yankee', wall = yk ? hex('#d9d6cf') : hex('#9a5a3e'), N = 24;
       box(x, 0.03, z, 12.5, 0.06, 12.5, yaw + Math.PI / 4, C.field, 0);
       box(x, 0.07, z, 4.2, 0.06, 4.2, yaw + Math.PI / 4, C.dirt, 0);
+      box(x, 0.05, z, 13.5, 0.06, 13.5, yaw + Math.PI / 4, hex('#3f9a45'), 0);
       for (let k = 0; k < N; k++) {
         const a = k / N * Math.PI * 2, px = x + Math.cos(a) * R0, pz = z + Math.sin(a) * R0;
-        const h = 2.6 + (Math.sin(a * 1 + 1) > 0.3 ? 1.2 : 0);
-        box(px, h / 2, pz, 2.4, h, 1.4, -a + Math.PI / 2, wall, 1);
-        box(px, h + 0.12, pz, 2.5, 0.24, 1.6, -a + Math.PI / 2, C.blue, 0);
+        const h = 2.6 + (Math.sin(a + 1) > 0.3 ? 1.2 : 0), sa = -a + Math.PI / 2;
+        box(px, h / 2, pz, 2.0, h, 1.4, sa, wall, 1);
+        box(x + Math.cos(a) * (R0 - 1.2), h * 0.4, z + Math.sin(a) * (R0 - 1.2), 1.7, h * 0.8, 1.2, sa, yk ? hex('#2d4f8f') : hex('#2f5aa8'), 0); // seating
+        if (yk) { // the white frieze along the roof
+          const fx = x + Math.cos(a) * (R0 - 0.9), fz = z + Math.sin(a) * (R0 - 0.9);
+          box(fx, h + 0.35, fz, 1.9, 0.12, 0.25, sa, C.white, 0);
+          for (const o of [-0.6, 0, 0.6]) { const p = rot(fx, fz, sa, o, 0); box(p[0], h + 0.15, p[1], 0.08, 0.35, 0.08, sa, C.white, 0); }
+        } else box(px, h + 0.12, pz, 2.1, 0.24, 1.6, sa, hex('#f07c1e'), 0);
       }
       for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + 0.6; box(x + Math.cos(a) * 8.2, 3.5, z + Math.sin(a) * 8.2, 0.25, 7, 0.25, 0, C.pole); box(x + Math.cos(a) * 8.2, 7.2, z + Math.sin(a) * 8.2, 1.2, 0.6, 0.3, -a, C.lamp, 5); }
       addCol(ctx, x, z, 0, 8.2, 8.2, 4);
       break;
     }
     case 'barclays': {
-      const yaw = gy;
-      box(x, 1.8, z, 9, 3.6, 7, yaw, C.rust, 0);
-      box(x, 1.8, z, 7, 3.6, 9, yaw, C.rust, 0);
-      box(x, 3.7, z, 8, 0.3, 8, yaw, C.dark, 0);
-      box(x, 1.2, z, 9.1, 0.5, 7.1, yaw, C.black, 2);
-      addCol(ctx, x, z, yaw, 4.6, 4.6, 4);
+      const yaw = gy, rust = hex('#7d4129'), dk = hex('#3a2418'), A = 5.4, B = 4.2, N = 11;
+      // oval bowl built from slices whose depth follows an ellipse
+      for (let k = 0; k < N; k++) {
+        const t = -1 + (k + 0.5) * 2 / N, d = 2 * B * Math.sqrt(1 - t * t * 0.96), lx = t * A, sw = 2 * A / N + 0.03;
+        lb(lx, 1.6, 0, sw, 3.2, d, yaw, rust, 0);
+        for (const yy of [0.85, 1.65, 2.45]) lb(lx, yy, 0, sw + 0.02, 0.14, d + 0.14, yaw, dk, 0); // weathering-steel bands
+        lb(lx, 3.24, 0, sw, 0.1, Math.max(0.1, d - 0.8), yaw, hex('#5d8f4a'), 0);                   // green roof
+      }
+      // oculus canopy over the plaza at Flatbush & Atlantic, with the LED ring underneath
+      const oc = rot(x, z, yaw, -6.2, -4.4);
+      for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2; box(oc[0] + Math.cos(a) * 2.4, 2.6, oc[1] + Math.sin(a) * 2.4, 1.1, 0.3, 1.4, -a, dk, 0); box(oc[0] + Math.cos(a) * 1.75, 2.42, oc[1] + Math.sin(a) * 1.75, 0.7, 0.08, 0.3, -a + Math.PI / 2, hex('#ffffff'), 2); }
+      for (let k = 0; k < 3; k++) { const a = k * 2.1 + 0.4; box(oc[0] + Math.cos(a) * 2.6, 1.3, oc[1] + Math.sin(a) * 2.6, 0.2, 2.6, 0.2, 0, dk, 0); }
+      addCol(ctx, x, z, yaw, A, B, 4);
       break;
     }
     case 'wheel': {
-      const yaw = 0.15, Rw = 3.6, cy = 4.4, N = 16;
-      lbox(x, z, yaw, -0.5, 2.2, 0, 0.25, 4.4, 0.25, C.white);
-      lbox(x, z, yaw, 0.5, 2.2, 0, 0.25, 4.4, 0.25, C.white);
-      for (let k = 0; k < N; k++) {
-        const a = k / N * Math.PI * 2, px = Math.cos(a) * Rw, py = cy + Math.sin(a) * Rw;
-        lbox(x, z, yaw, 0, py, px, 0.2, 0.2, 1.5, C.white);
-        lbox(x, z, yaw, 0.45, py - 0.4, px, 0.5, 0.5, 0.45, [C.red, C.yellow, C.blue, C.green][k % 4]);
-        lbox(x, z, yaw, 0, cy + Math.sin(a) * Rw * 0.5, Math.cos(a) * Rw * 0.5, 0.08, 0.08, 0.08, C.white);
-      }
-      addCol(ctx, x, z, yaw, 0.8, 2.5, 6);
+      // faces the camera (camera azimuth is about -16deg) so it reads as a wheel, not a line
+      const yaw = 0.28, Rw = 4.4, cy = 5.0, N = 24, W = C.white, ax = [Math.cos(yaw), -Math.sin(yaw)];
+      const P3 = (a, r) => [x + ax[0] * Math.cos(a) * r, cy + Math.sin(a) * r, z + ax[1] * Math.cos(a) * r];
+      for (let k = 0; k < N; k++) { const a0 = k / N * Math.PI * 2, a1 = (k + 1) / N * Math.PI * 2; beam(P3(a0, Rw), P3(a1, Rw), 0.16, W, 0); beam(P3(a0, Rw * 0.86), P3(a1, Rw * 0.86), 0.09, W, 0); }
+      for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; beam(P3(a, 0.3), P3(a, Rw), 0.07, W, 0); }
+      const cars = [C.red, C.blue, C.yellow, C.green, C.orange, hex('#e84393')];
+      for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2, p = P3(a, Rw); box(p[0], p[1] - 0.45, p[2], 0.55, 0.5, 0.5, yaw, cars[k % cars.length], 0); }
+      for (const s of [-1, 1]) for (const f of [-1, 1]) { const top = P3(0, 0), base = [x + ax[0] * s * 2.2 - ax[1] * f * 0.9, 0, z + ax[1] * s * 2.2 + ax[0] * f * 0.9]; beam(base, top, 0.2, W, 0); }
+      box(x, cy, z, 0.5, 0.5, 0.5, yaw, W, 0);
+      box(x, 0.3, z, 6, 0.6, 1.4, yaw, hex('#c0392b'), 0);
+      addCol(ctx, x, z, yaw, 3.0, 0.8, 6);
       break;
     }
     case 'parachute': {
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(x + sx * 0.9, 4.5, z + sz * 0.9, 0.18, 9, 0.18, 0, C.red);
-      box(x, 9.2, z, 4.2, 0.3, 4.2, 0.3, C.red); box(x, 9.2, z, 4.2, 0.3, 4.2, 1.08, C.red);
-      box(x, 10.2, z, 0.25, 2, 0.25, 0, C.red);
-      addCol(ctx, x, z, 0, 1.1, 1.1, 9);
+      const red = hex('#d0312d');
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) beam([x + sx * 1.4, 0, z + sz * 1.4], [x + sx * 0.5, 9.5, z + sz * 0.5], 0.18, red, 0);
+      for (let y = 2; y < 9.5; y += 2.4) { const k = 1.4 - (y / 9.5) * 0.9; box(x, y, z, k * 2 + 0.2, 0.12, k * 2 + 0.2, 0, red, 0); }
+      for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; beam([x, 10, z], [x + Math.cos(a) * 2.6, 9.3, z + Math.sin(a) * 2.6], 0.12, red, 0); }
+      box(x, 10.4, z, 0.6, 0.8, 0.6, 0, red, 0);
+      addCol(ctx, x, z, 0, 1.3, 1.3, 9);
       break;
     }
     case 'unisphere': {
-      box(x, 0.5, z, 1.2, 1.0, 1.2, 0, C.steel);
-      box(x, 0.05, z, 9, 0.1, 9, 0.4, hex('#7ec3e8'));
-      const Rs = 2.8, cy = 4;
-      for (let ring = 0; ring < 3; ring++) for (let k = 0; k < 18; k++) {
-        const a = k / 18 * Math.PI * 2, ry = ring * Math.PI / 3;
-        const px = Math.cos(a) * Rs, py = Math.sin(a) * Rs;
-        box(x + px * Math.cos(ry), cy + py, z + px * Math.sin(ry), 0.3, 0.3, 0.3, ry, C.steel, 0);
+      const st = hex('#b9c1c9'), Rs = 3.0, cy = 4.4, pool = hex('#5fb3e0');
+      const S3 = (lat, lon) => [x + Math.cos(lat) * Math.cos(lon) * Rs, cy + Math.sin(lat) * Rs, z + Math.cos(lat) * Math.sin(lon) * Rs];
+      for (let m = 0; m < 8; m++) { const lon = m / 8 * Math.PI; for (let k = 0; k < 16; k++) beam(S3(-Math.PI / 2 + k / 16 * Math.PI * 2, lon), S3(-Math.PI / 2 + (k + 1) / 16 * Math.PI * 2, lon), 0.09, st, 6); } // meridians
+      for (const lat of [-0.9, -0.45, 0, 0.45, 0.9]) for (let k = 0; k < 16; k++) beam(S3(lat, k / 16 * Math.PI * 2), S3(lat, (k + 1) / 16 * Math.PI * 2), 0.09, st, 6);           // parallels
+      // continents as flat plates hugging the globe
+      for (const [la, lo, w] of [[0.6, 0.3, 1.3], [0.2, 0.9, 1.1], [-0.3, 2.2, 1.2], [0.7, 2.6, 1.4], [-0.5, 4.2, 1.0], [0.4, 5.2, 1.2]]) { const p = S3(la, lo); boxQ(p[0], p[1], p[2], w, 0.08, w * 0.8, qm(qy(-lo + Math.PI / 2), qa(1, 0, 0, Math.PI / 2 - la)), hex('#8f989f'), 6); }
+      // three tilted orbit rings
+      for (const [tilt, rr] of [[0.5, 3.8], [-0.6, 3.6], [1.2, 3.5]]) for (let k = 0; k < 20; k++) {
+        const a0 = k / 20 * Math.PI * 2, a1 = (k + 1) / 20 * Math.PI * 2, O = (a) => [x + Math.cos(a) * rr, cy + Math.sin(a) * Math.sin(tilt) * rr, z + Math.sin(a) * Math.cos(tilt) * rr];
+        beam(O(a0), O(a1), 0.07, st, 6);
       }
-      for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2; box(x + Math.cos(a) * Rs, cy, z + Math.sin(a) * Rs, 0.3, 0.3, 0.3, 0, C.steel); }
-      addCol(ctx, x, z, 0, 1, 1, 5);
+      for (let k = 0; k < 3; k++) { const a = k * 2.094; beam([x + Math.cos(a) * 1.2, 0, z + Math.sin(a) * 1.2], [x, cy - Rs + 0.2, z], 0.3, st, 0); }
+      for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2; box(x + Math.cos(a) * 5.6, 0.15, z + Math.sin(a) * 5.6, 1.6, 0.3, 0.35, -a + Math.PI / 2, hex('#d8d2c4'), 0); }
+      box(x, 0.05, z, 10.6, 0.06, 10.6, 0, pool, 6); box(x, 0.05, z, 10.6, 0.06, 10.6, Math.PI / 4, pool, 6);
+      for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; box(x + Math.cos(a) * 4.6, 0.5, z + Math.sin(a) * 4.6, 0.12, 1.0, 0.12, 0, hex('#eaf7ff'), 2); } // fountain jets
+      addCol(ctx, x, z, 0, 1.3, 1.3, 5);
       break;
     }
     case 'ferryterm': {

@@ -61,6 +61,7 @@ void main(){
   vec3 lp = aPos * iScl - aIn * bv;
   vec3 scl = iScl;
   vCutTop = 0.0;
+  float lmF = step(15.5, iCol.a); // landmark: sliced more leniently so it keeps its silhouette
   if (uSliceOn > 0.5 && uSlice.w > 0.5) {
     float top = iPos.y + 0.5 * iScl.y;
     if (top > uSlice.z) {
@@ -70,8 +71,8 @@ void main(){
       float rad = 0.5 * max(iScl.x, iScl.z);
       if (along < rad + 1.0) {
         float a = max(0.0, -along - rad);                 // gap from the car to the box, toward camera
-        float l = max(0.0, lat - rad - 1.6);
-        float cap = uSlice.z + (a + 2.2 * l) * uSliceDir.z;
+        float l = max(0.0, lat - rad - 1.6 - 1.5 * lmF);
+        float cap = uSlice.z + 5.0 * lmF + (a + 2.2 * l) * uSliceDir.z;
         if (cap < top) {
           float bot = iPos.y - 0.5 * iScl.y;
           if (bot >= cap - 0.05) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; } // fully above cut: drop it
@@ -83,7 +84,7 @@ void main(){
     }
   }
   vec3 w = qr(iRot, lp) + iPos;
-  vN = qr(iRot, aNrm); vCol = iCol.rgb; vMat = iCol.a; vL = vec3(lp.x, lp.y + 0.5 * (iScl.y - scl.y), lp.z); vLN = aNrm; vScl = scl; vW = w;
+  vN = qr(iRot, aNrm); vCol = iCol.rgb; vMat = iCol.a - 16.0 * lmF; vL = vec3(lp.x, lp.y + 0.5 * (iScl.y - scl.y), lp.z); vLN = aNrm; vScl = scl; vW = w;
   vSeed = fract(iPos.x*0.1231 + iPos.z*0.3117 + iPos.y*0.071);
   vS = uLVP * vec4(w, 1.0);
   gl_Position = uVP * vec4(w, 1.0);
@@ -137,6 +138,15 @@ void main(){
     else if (uNight > 0.5) { float r = h21(vec2(floor(cu * 0.5), floor(cv)) + vSeed * 13.0); if (r > 0.6) emi = vec3(0.95, 0.85, 0.6) * 0.6; }
     spec = 0.6;
   }
+  if (m > 8.5 && m < 9.5 && abs(vLN.y) < 0.5) { // art deco: continuous vertical window strips between stone piers
+    float hz = abs(vLN.x) > 0.5 ? vL.z : vL.x, y = vL.y + vScl.y * 0.5;
+    float cu = hz / 0.44, f = fract(cu), row = floor(y / 0.5);
+    if (f > 0.32 && f < 0.68 && y > 0.3 && y < vScl.y - 0.25) {
+      base = mix(vec3(0.24, 0.29, 0.35), vec3(0.42, 0.52, 0.62), 0.3 + 0.3 * h21(vec2(floor(cu), row) + vSeed * 17.0));
+      if (fract(y / 0.5) < 0.16) base = vCol * 0.62;             // spandrel panels
+      else if (uNight > 0.5 && h21(vec2(floor(cu) * 1.7, row) + vSeed * 7.0) > 0.5) emi = vec3(1.0, 0.86, 0.55) * 0.75;
+    } else base = vCol * (0.95 + 0.08 * step(0.85, f));
+  }
   if (m > 7.5 && m < 8.5) { // storefront band: lit shop glass under a coloured fascia
     float y = vL.y + vScl.y * 0.5, hz = abs(vLN.x) > 0.5 ? vL.z : vL.x;
     if (abs(vLN.y) < 0.5 && y < vScl.y * 0.72) {
@@ -174,13 +184,62 @@ layout(location=0) in vec2 aQ;
 uniform mat4 uVP; uniform mat4 uLVP; uniform vec4 uChunk;
 out vec2 vUV; out vec3 vW; out vec4 vS;
 void main(){ vec3 w = vec3(uChunk.x + aQ.x * uChunk.z, uChunk.w, uChunk.y + aQ.y * uChunk.z); vUV = aQ; vW = w; vS = uLVP * vec4(w, 1.0); gl_Position = uVP * vec4(w, 1.0); }`;
+// Ground: chunk texture for everything, except street-grid tiles (alpha = 32*borough), where roads,
+// sidewalks and markings are computed from the grid maths per pixel with derivative anti-aliasing.
+// That keeps them razor sharp on 3x phone screens instead of a stretched 256px texture.
 const GROUND_FS = `#version 300 es
 precision highp float;
 in vec2 vUV; in vec3 vW; in vec4 vS; out vec4 o;
 uniform sampler2D uTex; uniform vec3 uFlat; uniform float uUseTex;
+uniform vec4 uGa[7]; uniform vec4 uGb[7];
 ${LIGHT_FS}
+float cov(float d, float hw, float f){ return clamp((hw - d) / f + 0.5, 0.0, 1.0) * clamp(2.0 * hw / f, 0.0, 1.0); }
+float dsh(float a, float p, float f){ float x = fract(a / p) * p; return cov(abs(x - p * 0.5), p * 0.25, f); }
+vec3 C(float r, float g, float b){ return vec3(r, g, b) / 255.0; }
+vec3 gridColor(int bo, vec3 lot){
+  vec4 ga = uGa[bo], gb = uGb[bo];
+  vec2 r = vW.xz - ga.xy;
+  float u = dot(r, ga.zw), v = dot(r, vec2(ga.w, -ga.z));
+  float A = gb.x, S = gb.y, wa = gb.z, ws = gb.w, sw = 0.7;
+  float fu = max(fwidth(u), 1e-3), fv = max(fwidth(v), 1e-3);
+  float du = abs(u - A * floor(u / A + 0.5)), dv = abs(v - S * floor(v / S + 0.5));
+  float n = h21(floor(vW.xz * 5.33));
+  // sidewalk
+  vec3 walk = C(196.0, 192.0, 184.0) * (0.96 + 0.07 * n);
+  float joint = max(cov(abs(fract(u / 1.4) - 0.5) * 1.4, 0.09, fu), cov(abs(fract(v / 1.4) - 0.5) * 1.4, 0.09, fv));
+  walk *= 1.0 - 0.08 * joint;
+  float inner = max(cov(abs(du - (wa * 0.5 + sw - 0.1)), 0.1, fu), cov(abs(dv - (ws * 0.5 + sw - 0.1)), 0.1, fv));
+  walk *= 1.0 - 0.14 * inner; // shade where the sidewalk meets the building line
+  float curb = max(cov(abs(du - wa * 0.5 - 0.1), 0.1, fu), cov(abs(dv - ws * 0.5 - 0.1), 0.1, fv));
+  walk = mix(walk, C(138.0, 136.0, 130.0), curb);
+  // asphalt + markings
+  vec3 road = C(66.0, 68.0, 76.0) * (0.94 + 0.12 * n);
+  vec3 W = C(236.0, 236.0, 236.0), Y = C(240.0, 196.0, 56.0);
+  bool onAve = du < wa * 0.5, onSt = dv < ws * 0.5;
+  if (onAve && !onSt) {
+    float fx = dv - ws * 0.5;
+    if (fx < 1.4) {
+      road = mix(road, W, cov(abs(fx - 0.55), 0.4, fv) * dsh(u, 0.9, fu) * step(du, wa * 0.5 - 0.25));
+      road = mix(road, W, cov(abs(fx - 1.22), 0.12, fv) * step(0.3, du) * step(du, wa * 0.5 - 0.25));
+    } else road = mix(road, W, cov(abs(du - wa * 0.25 - 0.08), 0.09, fu) * dsh(v, 2.2, fv));
+    road = mix(road, Y, cov(abs(du - 0.16), 0.08, fu));
+    road *= 1.0 - 0.3 * cov(wa * 0.5 - du, 0.2, fu);
+  } else if (onSt && !onAve) {
+    float fx = du - wa * 0.5;
+    if (fx < 1.1) road = mix(road, W, cov(abs(fx - 0.55), 0.4, fu) * dsh(v, 0.9, fv) * step(dv, ws * 0.5 - 0.25));
+    else road = mix(road, W, cov(dv, 0.09, fv) * dsh(u, 2.0, fu));
+    road *= 1.0 - 0.3 * cov(ws * 0.5 - dv, 0.2, fv);
+  }
+  float roadM = max(cov(du, wa * 0.5, fu), cov(dv, ws * 0.5, fv));
+  float walkM = max(cov(du, wa * 0.5 + sw, fu), cov(dv, ws * 0.5 + sw, fv));
+  return mix(mix(lot, walk, walkM), road, roadM);
+}
 void main(){
   vec3 base = uUseTex > 0.5 ? texture(uTex, vUV).rgb : uFlat;
+  if (uUseTex > 0.5) {
+    float a = texelFetch(uTex, clamp(ivec2(vUV * 256.0), ivec2(0), ivec2(255)), 0).a * 255.0;
+    if (a < 250.0) base = gridColor(int(a / 32.0 + 0.5), base);
+  }
   float sh = shadowAt(vS);
   vec3 c = base * (uAmb + uSunCol * uSun.y * sh);
   bool water = base.b > base.r * 1.6 && base.b > 0.55;
@@ -323,7 +382,7 @@ const GFX = {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, nearest ? gl.NEAREST : gl.LINEAR);
     if (mips) { gl.generateMipmap(gl.TEXTURE_2D); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); }
     else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    const ext = gl.getExtension('EXT_texture_filter_anisotropic'); if (ext && mips) gl.texParameterf(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, 4);
+    const ext = gl.getExtension('EXT_texture_filter_anisotropic'); if (ext && mips) gl.texParameterf(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(ext.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
     return t;
   },
   resize(scale) {
@@ -398,6 +457,11 @@ const GFX = {
     };
     // ground
     const pg = this.pGround; gl.useProgram(pg.p); setCommon(pg);
+    if (!this.gridA && typeof GRIDS !== 'undefined') {
+      this.gridA = new Float32Array(28); this.gridB = new Float32Array(28);
+      for (let i = 1; i < 7; i++) { const g = GRIDS[i]; if (!g) continue; this.gridA.set([g.ox, g.oz, g.ex, g.ez], i * 4); this.gridB.set([g.A, g.S, g.wa, g.ws], i * 4); }
+    }
+    if (this.gridA) { gl.uniform4fv(pg.u['uGa[0]'] || pg.u.uGa, this.gridA); gl.uniform4fv(pg.u['uGb[0]'] || pg.u.uGb, this.gridB); }
     gl.bindVertexArray(this.quadVAO); gl.uniform1i(pg.u.uTex, 0); gl.activeTexture(gl.TEXTURE0);
     gl.uniform1f(pg.u.uUseTex, 0); gl.uniform3fv(pg.u.uFlat, S.waterCol);
     gl.disable(gl.CULL_FACE);
