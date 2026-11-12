@@ -151,11 +151,27 @@ function vSpeed(v) { return Math.hypot(v.vx, v.vz); }
 function angWrap(a) { return ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; }
 
 // ---------- physics ----------
+const AIR_G = 30;
+function groundH(x, z) {
+  const s = segHit(x, z);
+  if (s && s.type === SEG_BRIDGE) return bridgeH(s.br, SH.t);
+  return rampHeight(x, z);
+}
 function stepVehicle(v, dt) {
   const fx = Math.sin(v.h), fz = -Math.cos(v.h), rx = Math.cos(v.h), rz = Math.sin(v.h);
   let vf = v.vx * fx + v.vz * fz, vr = v.vx * rx + v.vz * rz;
   if (v.sink > 0) { v.sink += dt; v.y -= dt * 0.9; v.vx *= 0.94; v.vz *= 0.94; v.x += v.vx * dt; v.z += v.vz * dt; v.pitch += dt * 0.5; return; }
   if (!v.alive || v.wreck) { vf *= Math.exp(-2.5 * dt); vr *= Math.exp(-4 * dt); v.thr = 0; v.steer = 0; }
+  // airborne (off a jump ramp): ballistic, no grip or steering until it lands
+  if (v.air) {
+    v.vy -= AIR_G * dt; v.y += v.vy * dt; v.airT += dt;
+    v.x += v.vx * dt; v.z += v.vz * dt;
+    v.h += v.spin * dt; v.spin *= Math.exp(-1 * dt);
+    v.pitch = Math.max(-0.35, Math.min(0.45, -v.vy * 0.035));
+    const gh = groundH(v.x, v.z);
+    if (v.y <= gh) { v.y = gh; v.air = false; v.landed = v.airT; v.landV = -v.vy; v.vy = 0; v.pitch = 0; }
+    return;
+  }
   const t = tileAt(v.x, v.z);
   const surf = (t === T_PARK || t === T_SAND || t === T_CEM) ? 0.78 : (t === T_WALK || t === T_LOT) ? 0.92 : 1;
   const maxV = v.maxV * surf * (v.boost || 1);
@@ -171,6 +187,13 @@ function stepVehicle(v, dt) {
   const nfx = Math.sin(v.h), nfz = -Math.cos(v.h), nrx = Math.cos(v.h), nrz = Math.sin(v.h);
   v.vx = nfx * vf + nrx * vr; v.vz = nfz * vf + nrz * vr;
   v.x += v.vx * dt; v.z += v.vz * dt;
+  // jump ramps: follow the hump up; when it starts dropping away at speed, launch
+  const rh = rampHeight(v.x, v.z);
+  if (rh > 0) {
+    if (rh < (v.rampH || 0) - 0.001 && (v.rampH || 0) > RAMP_H * 0.45 && sp > 6) {
+      v.air = true; v.airT = 0; v.vy = Math.min(17, sp * 0.62); v.y = v.rampH; v.rampH = 0;
+    } else { v.rampH = rh; v.y = rh; }
+  } else if (v.rampH) { v.rampH = 0; }
   v.roll += ((-v.steer * Math.min(1, sp / 20) * 0.07) - v.roll) * Math.min(1, dt * 6);
   v.drifting = drift && Math.abs(vr) > 2.5;
 }
@@ -182,8 +205,9 @@ function collideWorld(v, dt, onProp) {
   const r = v.m.cr;
   for (const o of v.m.circles) {
     let cx = v.x + fx * o, cz = v.z + fz * o;
-    if (v.y > 0.6) continue; // on elevated bridge deck: only railings matter
+    if (v.y > 0.6 && !v.air) continue; // on elevated bridge deck: only railings matter
     WORLD.forCols(cx, cz, r + 0.2, (c, k) => {
+      if (v.air && c[k + 6] < v.y) return false; // flying over it
       const dx = cx - c[k], dz = cz - c[k + 1], ax = c[k + 2], az = c[k + 3], ha = c[k + 4], hb = c[k + 5];
       const lu = dx * ax + dz * az, lv = dx * az - dz * ax; // b axis = (az, -ax)?? keep consistent below
       // local b axis vector = (-az?); derive: a=(ax,az), b=(-az,ax) rotated +90; use lv2 = -dx*az + dz*ax
@@ -207,7 +231,7 @@ function collideWorld(v, dt, onProp) {
       }
       return false;
     });
-    WORLD.forProps(cx, cz, r + 1.1, (ch, id) => {
+    if (!v.air || v.y < 1.2) WORLD.forProps(cx, cz, r + 1.1, (ch, id) => {
       const k = id * PROPF, px = ch.props[k], pz = ch.props[k + 1], pr = ch.props[k + 2];
       const dx = cx - px, dz = cz - pz, d = Math.hypot(dx, dz);
       if (d >= r + pr || d < 1e-5) return;
@@ -218,7 +242,7 @@ function collideWorld(v, dt, onProp) {
   const s = segHit(v.x, v.z);
   if (s && s.type === SEG_BRIDGE) {
     const br = s.br, h = bridgeH(br, SH.t);
-    v.onBridge = br; v.y += (h - v.y) * Math.min(1, dt * 20);
+    v.onBridge = br; if (!v.air) v.y += (h - v.y) * Math.min(1, dt * 20);
     if (h > 0.25) {
       const lim = s.hw - v.m.wid * 0.5 - 0.1;
       if (Math.abs(SH.lat) > lim) {
@@ -229,8 +253,9 @@ function collideWorld(v, dt, onProp) {
     }
   } else {
     // left a bridge sideways at height? clamp down
-    v.onBridge = null; v.y += (0 - v.y) * Math.min(1, dt * 8);
-    if (v.y < 0.3 && tileAt(v.x, v.z) === T_WATER && v.sink === 0) v.sink = 0.001;
+    v.onBridge = null;
+    if (!v.air && !v.rampH) v.y += (0 - v.y) * Math.min(1, dt * 8);
+    if (!v.air && v.y < 0.3 && tileAt(v.x, v.z) === T_WATER && v.sink === 0) v.sink = 0.001;
   }
   return maxImp;
 }

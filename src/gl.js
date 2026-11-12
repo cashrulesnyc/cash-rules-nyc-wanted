@@ -201,7 +201,7 @@ vec3 gridColor(int bo, vec3 lot){
   vec4 ga = uGa[bo], gb = uGb[bo];
   vec2 r = vW.xz - ga.xy;
   float u = dot(r, ga.zw), v = dot(r, vec2(ga.w, -ga.z));
-  float A = gb.x, S = gb.y, wa = gb.z, ws = gb.w, sw = 0.7;
+  float A = gb.x, S = gb.y, wa = gb.z, ws = gb.w, sw = ${GRID_SW.toFixed(3)};
   float fu = max(fwidth(u), 1e-3), fv = max(fwidth(v), 1e-3);
   float du = abs(u - A * floor(u / A + 0.5)), dv = abs(v - S * floor(v / S + 0.5));
   float n = h21(floor(vW.xz * 5.33));

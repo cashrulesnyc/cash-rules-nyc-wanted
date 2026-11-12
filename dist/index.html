@@ -87,6 +87,25 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
 #playBtn:active{transform:translateY(4px);box-shadow:0 2px 0 #000}
 #playBtn:disabled{background:#3b4a40;color:#9fb3a5}
 #playBtn[data-mode=buy]{background:var(--gold)}
+#misBtn{font-family:'Bungee',Impact,sans-serif;font-size:15px;padding:9px;border-radius:14px;background:#141820;color:var(--gold);border:2px solid var(--gold);display:flex;align-items:center;justify-content:center;gap:8px}
+#misBadge{font-style:normal;background:var(--red);color:#fff;border-radius:11px;min-width:22px;height:22px;padding:0 6px;font-size:12px;display:none;align-items:center;justify-content:center}
+#missions{z-index:20;align-items:flex-end;justify-content:center;background:rgba(5,6,8,.6)}
+#missions .sheet{max-height:82vh;display:flex;flex-direction:column;gap:8px;padding-bottom:calc(14px + var(--safe-b))}
+.mhead{display:flex;align-items:center;gap:8px;justify-content:space-between;position:sticky;top:-14px;background:rgba(12,14,18,.96);padding:6px 0;z-index:1}
+.mhead .disp{font-size:20px;color:var(--g)}
+#misClose{background:rgba(255,255,255,.1);border-radius:10px;width:36px;height:36px;font-size:16px}
+#misList{display:flex;flex-direction:column;gap:8px}
+.mrow{display:flex;gap:10px;align-items:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:10px 12px}
+.mrow.ready{border-color:var(--g);background:rgba(31,214,95,.12)}
+.mrow.gift{border-color:rgba(232,185,35,.5)}
+.mt{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.mt b{font-family:'Bungee',Impact,sans-serif;font-size:13px;font-weight:400}
+.mt small{font-size:10px;opacity:.6;letter-spacing:.08em}
+.mt span{font-size:11px;opacity:.8}
+.mbar{height:8px;background:rgba(0,0,0,.5);border-radius:5px;overflow:hidden}
+.mbar i{display:block;height:100%;background:var(--g)}
+.gift .mbar i{background:var(--gold)}
+.mclaim{font-size:12px;padding:8px 10px;min-width:96px}
 .opts{display:flex;gap:6px;justify-content:center}
 .opts button{background:transparent;border:2px solid rgba(255,255,255,.2);padding:6px 10px;border-radius:10px;font-size:11px;opacity:.75}
 .opts button.sel{border-color:var(--gold);color:var(--gold);opacity:1}
@@ -161,8 +180,16 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
     <div class="carsel"><button id="prevCar">◀</button><div class="mid"><div id="carName"></div><div id="carStats"></div></div><button id="nextCar">▶</button></div>
     <div id="boros"><button data-b="MANHATTAN">MANHATTAN</button><button data-b="BROOKLYN">BROOKLYN</button><button data-b="QUEENS">QUEENS</button><button data-b="BRONX">THE BRONX</button><button data-b="STATEN ISLAND">STATEN ISLAND</button></div>
     <button id="playBtn">PLAY</button>
+    <button id="misBtn">MISSIONS &amp; GIFTS <i id="misBadge"></i></button>
     <div class="opts"><button id="optNight">AFTER DARK</button><button id="optSound">SOUND</button><button id="optShadow">SHADOWS</button></div>
     <div class="tip">Hold LEFT / RIGHT side to steer · both = brake · keys ← → ↓<br>Smash stuff = heat · Drive into <b style="color:var(--gold)">CASH RULES CUSTOMS</b> to respray or repair and lose the cops</div>
+  </div>
+</div>
+
+<div id="missions" class="ov">
+  <div class="sheet">
+    <div class="mhead"><span class="disp">SIDE HUSTLES</span><span class="pill">BANK <b id="misBank">$0</b></span><button id="misClose">✕</button></div>
+    <div id="misList"></div>
   </div>
 </div>
 
@@ -485,9 +512,13 @@ function fillPoly(arr, pts, val, landOnly) {
 const toW = a => a.map(PL);
 
 // ---------- street grids ----------
+// Roads were widened for arcade driving: every avenue +ROAD_WA, every street +ROAD_WS (taken out of the
+// blocks), sidewalks GRID_SW wide. GRID_SW is also baked into the ground shader (gl.js).
+const GRID_SW = 0.6, ROAD_WA = 1.2, ROAD_WS = 0.8, HWY_K = 1.25, BRIDGE_K = 1.2;
 function mkGrid(boro, thDeg, A, S, wa, ws, oLat, oLon, style) {
   const th = thDeg * Math.PI / 180, o = P(oLat, oLon);
-  return { boro, A, S, wa, ws, sw: 0.7, ox: o[0], oz: o[1], dx: Math.sin(th), dz: -Math.cos(th), ex: Math.cos(th), ez: Math.sin(th), th, style };
+  wa += ROAD_WA; ws += ROAD_WS;
+  return { boro, A, S, wa, ws, sw: GRID_SW, ox: o[0], oz: o[1], dx: Math.sin(th), dz: -Math.cos(th), ex: Math.cos(th), ez: Math.sin(th), th, style };
 }
 const GRIDS = [];
 GRIDS[1] = mkGrid(1, 29, 15.5, 9, 3.6, 2.8, 40.7681, -73.9819, 'city');
@@ -549,12 +580,12 @@ function segHit(x, z) {
 function buildRoads() {
   for (const r of GEO.ROADS) {
     const pts = toW(r[2]);
-    for (let i = 0; i + 1 < pts.length; i++) addSeg(pts[i], pts[i + 1], r[1], r[0] === 1 ? SEG_HWY : r[0] === 2 ? SEG_AVE : SEG_RUN);
+    for (let i = 0; i + 1 < pts.length; i++) addSeg(pts[i], pts[i + 1], r[1] * HWY_K, r[0] === 1 ? SEG_HWY : r[0] === 2 ? SEG_AVE : SEG_RUN);
   }
   for (const b of GEO.BRIDGES) {
     const a = PL(b[5]), c = PL(b[6]);
     const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
-    const br = { name: b[0], style: b[1], w: b[2], H: b[3], color: b[4], a, b: c, len, ramp: Math.min(16, len * 0.28) };
+    const br = { name: b[0], style: b[1], w: b[2] * BRIDGE_K, H: b[3], color: b[4], a, b: c, len, ramp: Math.min(16, len * 0.28) };
     br.dx = (c[0] - a[0]) / len; br.dz = (c[1] - a[1]) / len;
     // find water span along the bridge (for towers)
     let w0 = -1, w1 = -1;
@@ -904,7 +935,7 @@ function initWorldData() {
 }
 function blockClean(g, i, j) {
   const bu = g.A - g.wa - 2 * g.sw, bv = g.S - g.ws - 2 * g.sw;
-  if (bu < 5.5 || bv < 4.2) return false;
+  if (bu < 4.8 || bv < 4.0) return false;
   for (let a = -1; a <= 1; a += 0.5) for (let b = -1; b <= 1; b += 0.5) {
     const q = gWorld(g, (i + 0.5) * g.A + a * bu * 0.45, (j + 0.5) * g.S + b * bv * 0.45);
     if (tileAt(q[0], q[1]) !== T_LOT || boroAt(q[0], q[1]) !== g.boro) return false;
@@ -917,6 +948,51 @@ function lmExcluded(x, z, pad) {
   for (let k = 0; k < LM.length; k++) { const L = LM[k]; if (L.r > 0) { const dx = x - L.x, dz = z - L.z; if (dx * dx + dz * dz < (L.r + pad) * (L.r + pad)) return true; } }
   return false;
 }
+// ---------- jump ramps ----------
+// A ramp is a two-sided hump across an avenue, mid-block. rampValid(g,i,j) says whether avenue line i has
+// one at block j; rampHeight(x,z) is the deck height under a point (0 if none). Both are pure, so the chunk
+// worker (visuals) and the main thread (physics) agree without sharing data.
+const RAMP_L = 3.2, RAMP_H = 0.62, RAMP_P = 0.13; // length along the road, crest height, share of mid-blocks
+const RAMPC = new Map();
+function rampValid(g, i, j) {
+  const k = g.boro * 1e8 + (i + 5000) * 1e4 + (j + 5000);
+  let r = RAMPC.get(k); if (r !== undefined) return r;
+  r = false;
+  if ((ihash(i, j, g.boro * 31 + 7) % 1000) / 1000 < RAMP_P && g.S - g.ws > RAMP_L + 2) {
+    r = true;
+    for (const dv of [-RAMP_L / 2 - 0.6, 0, RAMP_L / 2 + 0.6]) for (const du of [-g.wa * 0.4, 0, g.wa * 0.4]) {
+      const q = gWorld(g, i * g.A + du, (j + 0.5) * g.S + dv);
+      if (tileAt(q[0], q[1]) !== T_ROAD || boroAt(q[0], q[1]) !== g.boro || lmExcluded(q[0], q[1], 1)) { r = false; break; }
+    }
+    if (r) { const q = gWorld(g, i * g.A, (j + 0.5) * g.S); for (const S of SHOPS) if (Math.hypot(S.x - q[0], S.z - q[1]) < 8) r = false; }
+  }
+  if (RAMPC.size > 20000) RAMPC.clear();
+  RAMPC.set(k, r); return r;
+}
+function rampHeight(x, z) {
+  const b = boroAt(x, z); if (!b) return 0;
+  const g = GRIDS[b], l = gLocal(g, x, z);
+  const i = Math.round(l[0] / g.A), du = l[0] - i * g.A;
+  if (Math.abs(du) > g.wa * 0.45) return 0;
+  const j = Math.floor(l[1] / g.S), dv = l[1] - (j + 0.5) * g.S;
+  if (Math.abs(dv) > RAMP_L / 2) return 0;
+  if (!rampValid(g, i, j)) return 0;
+  return RAMP_H * (1 - Math.abs(dv) / (RAMP_L / 2));
+}
+function buildRamp(g, i, j) {
+  const yaw = -g.th, half = RAMP_L / 2, len = Math.hypot(half, RAMP_H), ang = Math.atan2(RAMP_H, half), w = g.wa * 0.9;
+  const Y = hex('#f2b01e'), K = hex('#1b1c20');
+  for (const sd of [-1, 1]) { // local z = -v; slab centred at v = -sd*half/2 rises toward the crest
+    const c = gWorld(g, i * g.A, (j + 0.5) * g.S - sd * half / 2);
+    boxQ(c[0], RAMP_H / 2 - 0.04, c[1], w, 0.1, len, qm(qy(yaw), qa(1, 0, 0, sd * ang)), Y, 0);
+    for (const o of [-0.32, 0, 0.32]) { // black chevron stripes
+      const c2 = gWorld(g, i * g.A, (j + 0.5) * g.S - sd * half / 2 + sd * o * half);
+      boxQ(c2[0], RAMP_H * (0.5 + o) - 0.02, c2[1], w + 0.02, 0.1, 0.22, qm(qy(yaw), qa(1, 0, 0, sd * ang)), K, 0);
+    }
+    for (const su of [-1, 1]) { const e = gWorld(g, i * g.A + su * w / 2, (j + 0.5) * g.S - sd * half / 2); boxQ(e[0], RAMP_H / 4, e[1], 0.12, RAMP_H / 2, half, qy(yaw), K, 0); }
+  }
+}
+
 function tsqBlock(b, i, j) {
   if (b !== 1) return false;
   for (const L of LM) if (L.type === 'tsq') for (const q of L.blocks) if (q[0] === i && q[1] === j) return true;
@@ -1007,6 +1083,7 @@ function placeBlocks(g, ctx) {
       const tsq = tsqBlock(b, i, j);
       // ---- buildings ----
       if (!shop && !tsq) placeLots(g, b, i, j, uc, vc, bu, bv, R, ctx);
+      if (rampValid(g, i, j)) buildRamp(g, i, j);
       // ---- street props around the block perimeter (none around Customs: keep the way in clear) ----
       if (!shop) blockProps(g, b, i, j, uc, vc, bu, bv, R, ctx, yaw);
     }
@@ -1020,14 +1097,14 @@ function blockFence(g, b, uc, vc, bu, bv, yaw, ctx) {
   let full = true; // sample every ~0.9 units so a diagonal like Broadway can't slip between samples
   const na = Math.ceil(bu / 0.9), nc = Math.ceil(bv / 0.9);
   for (let a = 0; a <= na && full; a++) for (let c = 0; c <= nc; c++) if (!lotAt(uc - bu / 2 + 0.1 + a * (bu - 0.2) / na, vc - bv / 2 + 0.1 + c * (bv - 0.2) / nc)) { full = false; break; }
-  if (full) { const w = gWorld(g, uc, vc); addCol(ctx, w[0], w[1], yaw, bu / 2, bv / 2, 3); return; }
+  if (full) { const w = gWorld(g, uc, vc); addCol(ctx, w[0], w[1], yaw, bu / 2, bv / 2, 40); return; }
   const nu = Math.max(1, Math.round(bu / 2.5)), nv = Math.max(1, Math.round(bv / 2.5)), cu = bu / nu, cv = bv / nv;
   for (let a = 0; a < nu; a++) for (let c = 0; c < nv; c++) {
     const u = uc - bu / 2 + (a + 0.5) * cu, v = vc - bv / 2 + (c + 0.5) * cv;
     let ok = true;
     for (let p = -1; p <= 1 && ok; p++) for (let q = -1; q <= 1; q++) if (!lotAt(u + p * cu * 0.49, v + q * cv * 0.49)) { ok = false; break; }
     if (!ok) continue;
-    const w = gWorld(g, u, v); addCol(ctx, w[0], w[1], yaw, cu / 2, cv / 2, 3);
+    const w = gWorld(g, u, v); addCol(ctx, w[0], w[1], yaw, cu / 2, cv / 2, 40);
   }
 }
 
@@ -1293,9 +1370,9 @@ function buildLandmark(L, ctx) {
   switch (L.type) {
     case 'esb': {
       const yaw = -GRIDS[1].th, s = hex('#d6cdb8'), s2 = hex('#c9bfa8');
-      box(x, 0.8, z, 9, 1.6, 4.6, yaw, s2, 1);                        // 5-storey base fills the block
-      box(x, 1.6 + 2.6, z, 6.8, 5.2, 4.0, yaw, s, 9);                 // lower setback mass
-      box(x, 6.8 + 5.6, z, 4.6, 11.2, 3.2, yaw, s, 9);                // main shaft
+      box(x, 0.8, z, 9, 1.6, 4.1, yaw, s2, 1);                        // 5-storey base fills the block
+      box(x, 1.6 + 2.6, z, 6.8, 5.2, 3.7, yaw, s, 9);                 // lower setback mass
+      box(x, 6.8 + 5.6, z, 4.6, 11.2, 3.0, yaw, s, 9);                // main shaft
       box(x, 18.0 + 0.8, z, 3.4, 1.6, 2.5, yaw, s, 9);               // 72nd-81st floor steps
       box(x, 19.6 + 0.5, z, 2.6, 1.0, 1.9, yaw, s, 9);
       box(x, 20.6 + 0.6, z, 1.7, 1.2, 1.4, yaw, hex('#efe6cf'), 5);  // observatory crown (lit at night)
@@ -1303,13 +1380,13 @@ function buildLandmark(L, ctx) {
       box(x, 23.6 + 0.6, z, 0.6, 1.2, 0.6, yaw, C.silver, 6);
       box(x, 24.8 + 2.0, z, 0.16, 4.0, 0.16, yaw, C.white, 0);       // antenna
       box(x, 28.9, z, 0.3, 0.3, 0.3, yaw, C.red, 2);
-      addCol(ctx, x, z, yaw, 4.5, 2.3, 30);
+      addCol(ctx, x, z, yaw, 4.5, 2.05, 30);
       break;
     }
     case 'chrysler': {
       const yaw = -GRIDS[1].th, s = hex('#d9d4cb'), sil = hex('#dfe4ea');
-      box(x, 0.9, z, 5.4, 1.8, 4.6, yaw, hex('#c9c1b4'), 1);
-      box(x, 1.8 + 3.4, z, 4.0, 6.8, 4.0, yaw, s, 9);
+      box(x, 0.9, z, 5.4, 1.8, 4.1, yaw, hex('#c9c1b4'), 1);
+      box(x, 1.8 + 3.4, z, 3.8, 6.8, 3.8, yaw, s, 9);
       box(x, 8.6 + 2.4, z, 3.2, 4.8, 3.2, yaw, s, 9);
       // eagles at the 61st-floor corners
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) lr(yaw, sx * 1.65, 13.2, sz * 1.65, 0.5, 0.25, 0.5, yaw + Math.PI / 4, sil, 6);
@@ -1330,12 +1407,12 @@ function buildLandmark(L, ctx) {
       }
       box(x, y + 0.3, z, 0.4, 0.6, 0.4, yaw, sil, 6);
       box(x, y + 2.2, z, 0.14, 3.2, 0.14, yaw, sil, 6);               // needle spire
-      addCol(ctx, x, z, yaw, 2.7, 2.3, 20);
+      addCol(ctx, x, z, yaw, 2.7, 2.05, 20);
       break;
     }
     case 'wtc': {
-      const yaw = -GRIDS[1].th, gl = hex('#9cc1dc'), W = 4.4, H0 = 1.4, H = 21.5, N = 12;
-      box(x, H0 / 2, z, W + 2.0, H0, W + 0.2, yaw, hex('#c7ccd1'), 0); // podium
+      const yaw = -GRIDS[1].th, gl = hex('#9cc1dc'), W = 4.0, H0 = 1.4, H = 21.5, N = 12;
+      box(x, H0 / 2, z, W + 2.0, H0, W + 0.1, yaw, hex('#c7ccd1'), 0); // podium
       for (let k = 0; k < N; k++) {
         const t = (k + 0.5) / N, y0 = H0 + k * H / N, hh = H / N + 0.02;
         const sA = W * (1 - 0.65 * t), sB = W * (0.45 + 0.27 * t);   // square shrinks while the 45deg square grows: twisting taper
@@ -1351,7 +1428,7 @@ function buildLandmark(L, ctx) {
       break;
     }
     case 'flatiron': {
-      const g = GRIDS[1], yaw = -g.th, Lz = 4.4, W = 4.4, H = 5.6, N = 7, col = hex('#e2d3b5');
+      const g = GRIDS[1], yaw = -g.th, Lz = 4.0, W = 4.4, H = 5.6, N = 7, col = hex('#e2d3b5');
       // triangle: straight 5th Ave side (+x), Broadway side tapers to a narrow prow pointing uptown (-z)
       for (let k = 0; k < N; k++) {
         const t = (k + 0.5) / N, w = W * (1 - t * 0.88), lz = Lz / 2 - (k + 0.5) * Lz / N;
@@ -1378,7 +1455,7 @@ function buildLandmark(L, ctx) {
       break;
     }
     case 'msg': { // round drum with vertical ribs, a dark window band and a white roof
-      const yaw = -GRIDS[1].th, Rr = 2.3, N = 20, conc = hex('#b9b4ab'), H = 3.0;
+      const yaw = -GRIDS[1].th, Rr = 2.0, N = 20, conc = hex('#b9b4ab'), H = 3.0;
       for (let k = 0; k < N; k++) {
         const a = k / N * Math.PI * 2, by = yaw - a - Math.PI / 2, cw = 2 * Rr * Math.sin(Math.PI / N) + 0.06;
         lr(yaw, Math.cos(a) * Rr, H / 2, Math.sin(a) * Rr, cw, H, 0.7, by, conc, 0);
@@ -1417,10 +1494,10 @@ function buildLandmark(L, ctx) {
     }
     case 'rock': { // 30 Rock slab + Rockefeller Plaza rink, Prometheus, flags and the Christmas tree
       const yaw = -GRIDS[1].th, ls = hex('#d2c8b2');
-      lb(-2.2, 3.0, 0, 5.4, 6.0, 3.4, yaw, ls, 9);
-      lb(-2.2, 6.0 + 5.2, 0, 4.4, 10.4, 2.0, yaw, ls, 9);
-      lb(-2.2, 16.4 + 0.5, 0, 2.6, 1.0, 1.4, yaw, ls, 9);
-      lb(-2.2, 17.5, 0, 1.6, 0.25, 1.0, yaw, hex('#c7ccd1'), 0);
+      lb(-2.1, 3.0, 0, 5.0, 6.0, 3.4, yaw, ls, 9);
+      lb(-2.1, 6.0 + 5.2, 0, 4.2, 10.4, 2.0, yaw, ls, 9);
+      lb(-2.1, 16.4 + 0.5, 0, 2.6, 1.0, 1.4, yaw, ls, 9);
+      lb(-2.1, 17.5, 0, 1.6, 0.25, 1.0, yaw, hex('#c7ccd1'), 0);
       lb(2.8, 0.08, 0, 2.9, 0.16, 2.1, yaw, hex('#9aa3ab'), 0);
       lb(2.8, 0.17, 0, 2.6, 0.03, 1.8, yaw, hex('#eef6fb'), 6);       // ice
       lb(2.8, 0.55, -1.1, 0.45, 0.6, 0.3, yaw, C.gold, 2);            // Prometheus
@@ -1429,7 +1506,7 @@ function buildLandmark(L, ctx) {
       for (let k = 0; k < 5; k++) lb(0.9, 0.5 + k * 0.7, 0, 1.6 - k * 0.3, 0.75, 1.6 - k * 0.3, yaw + k * 0.4, tg, 0);
       for (let k = 0; k < 14; k++) { const a = k * 2.4, h = 0.6 + (k / 14) * 3.0, r = 0.82 - (k / 14) * 0.6; lb(0.9 + Math.cos(a) * r, h, Math.sin(a) * r, 0.1, 0.1, 0.1, yaw, [C.red, C.gold, C.blue, C.white][k % 4], 2); }
       lb(0.9, 4.15, 0, 0.3, 0.3, 0.3, yaw, C.gold, 2);
-      const p = rot(x, z, yaw, -2.2, 0); addCol(ctx, p[0], p[1], yaw, 2.7, 1.7, 17);
+      const p = rot(x, z, yaw, -2.1, 0); addCol(ctx, p[0], p[1], yaw, 2.5, 1.7, 17);
       break;
     }
     case 'vessel': { // copper honeycomb bowl: rings widening upward + diagonal lattice
@@ -1828,7 +1905,7 @@ vec3 gridColor(int bo, vec3 lot){
   vec4 ga = uGa[bo], gb = uGb[bo];
   vec2 r = vW.xz - ga.xy;
   float u = dot(r, ga.zw), v = dot(r, vec2(ga.w, -ga.z));
-  float A = gb.x, S = gb.y, wa = gb.z, ws = gb.w, sw = 0.7;
+  float A = gb.x, S = gb.y, wa = gb.z, ws = gb.w, sw = ${GRID_SW.toFixed(3)};
   float fu = max(fwidth(u), 1e-3), fv = max(fwidth(v), 1e-3);
   float du = abs(u - A * floor(u / A + 0.5)), dv = abs(v - S * floor(v / S + 0.5));
   float n = h21(floor(vW.xz * 5.33));
@@ -2223,7 +2300,7 @@ const WORLD = {
     let maxH = 2;
     for (let i = 0; i < nc; i++) {
       const o = i * COLF, x = c.cols[o], z = c.cols[o + 1], r = Math.hypot(c.cols[o + 4], c.cols[o + 5]);
-      maxH = Math.max(maxH, c.cols[o + 6]);
+      if (c.cols[o + 6] < 39) maxH = Math.max(maxH, c.cols[o + 6]); // block force fields (h 40) are invisible
       this.cellsFor(ch, x, z, r, (ci) => ch.cellC[ci].push(i));
     }
     for (let i = 0; i < np; i++) { const o = i * PROPF; this.cellsFor(ch, c.props[o], c.props[o + 1], c.props[o + 2], (ci) => ch.cellP[ci].push(i)); }
@@ -2639,11 +2716,27 @@ function vSpeed(v) { return Math.hypot(v.vx, v.vz); }
 function angWrap(a) { return ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; }
 
 // ---------- physics ----------
+const AIR_G = 30;
+function groundH(x, z) {
+  const s = segHit(x, z);
+  if (s && s.type === SEG_BRIDGE) return bridgeH(s.br, SH.t);
+  return rampHeight(x, z);
+}
 function stepVehicle(v, dt) {
   const fx = Math.sin(v.h), fz = -Math.cos(v.h), rx = Math.cos(v.h), rz = Math.sin(v.h);
   let vf = v.vx * fx + v.vz * fz, vr = v.vx * rx + v.vz * rz;
   if (v.sink > 0) { v.sink += dt; v.y -= dt * 0.9; v.vx *= 0.94; v.vz *= 0.94; v.x += v.vx * dt; v.z += v.vz * dt; v.pitch += dt * 0.5; return; }
   if (!v.alive || v.wreck) { vf *= Math.exp(-2.5 * dt); vr *= Math.exp(-4 * dt); v.thr = 0; v.steer = 0; }
+  // airborne (off a jump ramp): ballistic, no grip or steering until it lands
+  if (v.air) {
+    v.vy -= AIR_G * dt; v.y += v.vy * dt; v.airT += dt;
+    v.x += v.vx * dt; v.z += v.vz * dt;
+    v.h += v.spin * dt; v.spin *= Math.exp(-1 * dt);
+    v.pitch = Math.max(-0.35, Math.min(0.45, -v.vy * 0.035));
+    const gh = groundH(v.x, v.z);
+    if (v.y <= gh) { v.y = gh; v.air = false; v.landed = v.airT; v.landV = -v.vy; v.vy = 0; v.pitch = 0; }
+    return;
+  }
   const t = tileAt(v.x, v.z);
   const surf = (t === T_PARK || t === T_SAND || t === T_CEM) ? 0.78 : (t === T_WALK || t === T_LOT) ? 0.92 : 1;
   const maxV = v.maxV * surf * (v.boost || 1);
@@ -2659,6 +2752,13 @@ function stepVehicle(v, dt) {
   const nfx = Math.sin(v.h), nfz = -Math.cos(v.h), nrx = Math.cos(v.h), nrz = Math.sin(v.h);
   v.vx = nfx * vf + nrx * vr; v.vz = nfz * vf + nrz * vr;
   v.x += v.vx * dt; v.z += v.vz * dt;
+  // jump ramps: follow the hump up; when it starts dropping away at speed, launch
+  const rh = rampHeight(v.x, v.z);
+  if (rh > 0) {
+    if (rh < (v.rampH || 0) - 0.001 && (v.rampH || 0) > RAMP_H * 0.45 && sp > 6) {
+      v.air = true; v.airT = 0; v.vy = Math.min(17, sp * 0.62); v.y = v.rampH; v.rampH = 0;
+    } else { v.rampH = rh; v.y = rh; }
+  } else if (v.rampH) { v.rampH = 0; }
   v.roll += ((-v.steer * Math.min(1, sp / 20) * 0.07) - v.roll) * Math.min(1, dt * 6);
   v.drifting = drift && Math.abs(vr) > 2.5;
 }
@@ -2670,8 +2770,9 @@ function collideWorld(v, dt, onProp) {
   const r = v.m.cr;
   for (const o of v.m.circles) {
     let cx = v.x + fx * o, cz = v.z + fz * o;
-    if (v.y > 0.6) continue; // on elevated bridge deck: only railings matter
+    if (v.y > 0.6 && !v.air) continue; // on elevated bridge deck: only railings matter
     WORLD.forCols(cx, cz, r + 0.2, (c, k) => {
+      if (v.air && c[k + 6] < v.y) return false; // flying over it
       const dx = cx - c[k], dz = cz - c[k + 1], ax = c[k + 2], az = c[k + 3], ha = c[k + 4], hb = c[k + 5];
       const lu = dx * ax + dz * az, lv = dx * az - dz * ax; // b axis = (az, -ax)?? keep consistent below
       // local b axis vector = (-az?); derive: a=(ax,az), b=(-az,ax) rotated +90; use lv2 = -dx*az + dz*ax
@@ -2695,7 +2796,7 @@ function collideWorld(v, dt, onProp) {
       }
       return false;
     });
-    WORLD.forProps(cx, cz, r + 1.1, (ch, id) => {
+    if (!v.air || v.y < 1.2) WORLD.forProps(cx, cz, r + 1.1, (ch, id) => {
       const k = id * PROPF, px = ch.props[k], pz = ch.props[k + 1], pr = ch.props[k + 2];
       const dx = cx - px, dz = cz - pz, d = Math.hypot(dx, dz);
       if (d >= r + pr || d < 1e-5) return;
@@ -2706,7 +2807,7 @@ function collideWorld(v, dt, onProp) {
   const s = segHit(v.x, v.z);
   if (s && s.type === SEG_BRIDGE) {
     const br = s.br, h = bridgeH(br, SH.t);
-    v.onBridge = br; v.y += (h - v.y) * Math.min(1, dt * 20);
+    v.onBridge = br; if (!v.air) v.y += (h - v.y) * Math.min(1, dt * 20);
     if (h > 0.25) {
       const lim = s.hw - v.m.wid * 0.5 - 0.1;
       if (Math.abs(SH.lat) > lim) {
@@ -2717,8 +2818,9 @@ function collideWorld(v, dt, onProp) {
     }
   } else {
     // left a bridge sideways at height? clamp down
-    v.onBridge = null; v.y += (0 - v.y) * Math.min(1, dt * 8);
-    if (v.y < 0.3 && tileAt(v.x, v.z) === T_WATER && v.sink === 0) v.sink = 0.001;
+    v.onBridge = null;
+    if (!v.air && !v.rampH) v.y += (0 - v.y) * Math.min(1, dt * 8);
+    if (!v.air && v.y < 0.3 && tileAt(v.x, v.z) === T_WATER && v.sink === 0) v.sink = 0.001;
   }
   return maxImp;
 }
@@ -2899,6 +3001,66 @@ const SAVE_KEY = 'crnyc_wanted_v1';
 let SAVE = { bank: 250, owned: ['sedan'], car: 'sedan', color: null, up: { engine: 0, armor: 0 }, best: 0, night: false, sound: true, shadows: true, boro: 'MANHATTAN' };
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s) SAVE = Object.assign(SAVE, s); } catch (e) { }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) { } }
+SAVE.stats = Object.assign({ cops: 0, cash: 0, airs: 0, nitros: 0, customs: 0, dist: 0, runs: 0 }, SAVE.stats || {});
+SAVE.mis = SAVE.mis || {}; SAVE.gift = SAVE.gift || { day: 0, hour: 0 }; SAVE.maxStars = SAVE.maxStars || 0;
+window.addEventListener('pagehide', save); document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+
+// ---------- side missions + gifts ----------
+// Each track is a ladder of tiers: hit the target, claim the cash, the next tier unlocks.
+const MISSIONS = [
+  { k: 'cops', name: 'WRECK COPS', t: [3, 10, 25, 60, 150, 400], r: [400, 1000, 2500, 5000, 10000, 20000] },
+  { k: 'cash', name: 'COLLECT CASH', t: [2000, 10000, 40000, 120000, 400000, 1000000], r: [300, 1200, 4000, 10000, 25000, 60000], money: true },
+  { k: 'airs', name: 'BIG AIRS OFF RAMPS', t: [3, 12, 35, 80, 200, 500], r: [400, 1000, 2500, 6000, 12000, 25000] },
+  { k: 'nitros', name: 'GRAB NITRO', t: [3, 12, 35, 80, 200, 500], r: [400, 1000, 2500, 6000, 12000, 25000] },
+  { k: 'customs', name: 'HIT CASH RULES CUSTOMS', t: [2, 8, 20, 50, 120, 300], r: [300, 900, 2000, 5000, 10000, 20000] },
+  { k: 'dist', name: 'DRIVE (KM)', t: [5, 25, 80, 200, 500, 1200], r: [300, 1000, 3000, 7000, 15000, 30000] },
+  { k: 'stars', name: 'HIT MAX HEAT', t: [2, 3, 4, 5], r: [500, 1000, 2500, 5000], fmt: (n) => n + '★', val: () => SAVE.maxStars },
+  { k: 'survive', name: 'SURVIVE ONE RUN', t: [60, 120, 180, 300, 450, 600], r: [400, 900, 2000, 4000, 8000, 15000], fmt: (n) => mmss(n), val: () => SAVE.best || 0 },
+];
+const GIFTS = [{ k: 'day', name: 'DAILY GIFT', every: 20 * 3600e3, amt: 1500 }, { k: 'hour', name: 'HOURLY GIFT', every: 3600e3, amt: 150 }];
+function misVal(m) { return m.val ? m.val() : SAVE.stats[m.k] || 0; }
+function misState(m) { const tier = SAVE.mis[m.k] || 0, done = tier >= m.t.length; return { tier, done, target: done ? m.t[m.t.length - 1] : m.t[tier], reward: done ? 0 : m.r[tier], ready: !done && misVal(m) >= m.t[tier] }; }
+function giftLeft(g) { return Math.max(0, (SAVE.gift[g.k] || 0) + g.every - Date.now()); }
+function claimable() { let n = 0; for (const m of MISSIONS) if (misState(m).ready) n++; for (const g of GIFTS) if (giftLeft(g) <= 0) n++; return n; }
+const MIS_SEEN = new Set();
+function stat(k, n) {
+  SAVE.stats[k] = (SAVE.stats[k] || 0) + n;
+  misCheck();
+}
+function misCheck() {
+  for (const m of MISSIONS) { const st = misState(m), key = m.k + st.tier; if (st.ready && !MIS_SEEN.has(key)) { MIS_SEEN.add(key); if (G.state === 'play') toast('MISSION COMPLETE · ' + m.name + ' · CLAIM ' + fmt$(st.reward)); save(); } }
+}
+function fmtMis(m, n) { return m.fmt ? m.fmt(n) : m.money ? fmt$(n) : (m.k === 'dist' ? (Math.floor(n * 10) / 10).toString() : Math.floor(n).toLocaleString('en-US')); }
+function hms(ms) { const s = Math.ceil(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); }
+function renderMissions() {
+  $('misBank').textContent = fmt$(SAVE.bank);
+  let h = '';
+  for (const g of GIFTS) {
+    const left = giftLeft(g);
+    h += `<div class="mrow gift"><div class="mt"><b>${g.name}</b><div class="mbar"><i style="width:${Math.round((1 - left / g.every) * 100)}%"></i></div><span>${left > 0 ? 'READY IN ' + hms(left) : 'READY!'}</span></div>` +
+      `<button class="btn mclaim" data-g="${g.k}" ${left > 0 ? 'disabled' : ''}>${fmt$(g.amt)}</button></div>`;
+  }
+  for (const m of MISSIONS) {
+    const st = misState(m), v = misVal(m), k = st.done ? 1 : Math.min(1, v / st.target);
+    h += `<div class="mrow${st.ready ? ' ready' : ''}"><div class="mt"><b>${m.name}</b><small>${st.done ? 'ALL TIERS DONE' : 'TIER ' + (st.tier + 1) + '/' + m.t.length}</small><div class="mbar"><i style="width:${Math.round(k * 100)}%"></i></div>` +
+      `<span>${fmtMis(m, Math.min(v, st.target))} / ${fmtMis(m, st.target)}</span></div>` +
+      `<button class="btn mclaim" data-m="${m.k}" ${st.ready ? '' : 'disabled'}>${st.done ? '✓' : (st.ready ? 'CLAIM ' : '') + fmt$(st.reward)}</button></div>`;
+  }
+  $('misList').innerHTML = h;
+  $('misList').querySelectorAll('button[data-m]').forEach(b => b.onclick = () => {
+    const m = MISSIONS.find(q => q.k === b.dataset.m), st = misState(m); if (!st.ready) return;
+    SAVE.bank += st.reward; SAVE.mis[m.k] = st.tier + 1; save(); AUD.init(); AUD.cash(); flash('#1fd65f'); renderMissions(); renderTitle();
+  });
+  $('misList').querySelectorAll('button[data-g]').forEach(b => b.onclick = () => {
+    const g = GIFTS.find(q => q.k === b.dataset.g); if (giftLeft(g) > 0) return;
+    SAVE.bank += g.amt; SAVE.gift[g.k] = Date.now(); save(); AUD.init(); AUD.cash(); flash('#e8b923'); renderMissions(); renderTitle();
+  });
+}
+let MIS_TIMER = 0;
+function openMissions(on) {
+  $('missions').classList.toggle('on', on); clearInterval(MIS_TIMER);
+  if (on) { renderMissions(); MIS_TIMER = setInterval(renderMissions, 1000); } else renderTitle();
+}
 
 // ---------- game state ----------
 const G = {
@@ -2960,7 +3122,7 @@ const AUD = {
 // ---------- helpers ----------
 function starsFor(h) { let s = 0; for (let i = 0; i < STAR_HEAT.length; i++) if (h >= STAR_HEAT[i]) s = i + 1; return s; }
 function addHeat(n) { if (G.state !== 'play') return; if (G.grace > 0 && G.stars === 0) return; G.heat = Math.min(240, Math.max(G.heat + n, n > 0 ? 1 : 0)); }
-function addCash(n, x, z) { G.runCash += n; SAVE.bank += n; popCash(n); }
+function addCash(n, x, z) { G.runCash += n; SAVE.bank += n; popCash(n); if (n > 0) stat('cash', n); }
 function findRoad(x, z, maxR) {
   for (let r = 0; r < maxR; r += 0.8) for (let a = 0; a < 24; a++) {
     const px = x + Math.cos(a / 24 * Math.PI * 2) * r, pz = z + Math.sin(a / 24 * Math.PI * 2) * r;
@@ -3069,7 +3231,7 @@ function explode(v) {
   const d = Math.hypot(v.x - G.P.x, v.z - G.P.z);
   if (d < 60) { AUD.boom(); G.shake = Math.max(G.shake, 1.2 * (1 - d / 60)); }
   v.vy = 0; v.spin += (Math.random() - 0.5) * 6;
-  if (v.role === 'cop') { G.wrecked++; addHeat(10); addCash(100); toast('COP WRECKED +$100'); }
+  if (v.role === 'cop') { G.wrecked++; stat('cops', 1); addHeat(10); addCash(100); toast('COP WRECKED +$100'); }
   if (v === G.P) setTimeout(() => gameOver('wasted'), 900);
 }
 function onPropHit(v, ch, id, nx, nz, pen) {
@@ -3128,7 +3290,7 @@ function updateShops(dt) {
 }
 function enterShop(s) {
   const P = G.P;
-  G.state = 'shop'; G.shop = s; G.shopT = 0;
+  G.state = 'shop'; G.shop = s; G.shopT = 0; stat('customs', 1);
   P.vx = P.vz = 0; P.spin = 0; P.thr = 0; P.steer = 0; P.nitro = 0; P.boost = 1;
   P.x = s.x; P.z = s.z;
   P.h = Math.atan2(s.g.dx * s.sd, -s.g.dz * s.sd);   // parked nose-out, facing the street
@@ -3264,7 +3426,7 @@ function stepPlay(dt) {
       v.splashed = true; puff(v.x, 0.2, v.z, hex('#e6f6ff'), 18, { size: 0.35, v: 5, vy: 5, life: 0.9, g: 12, spread: 1.5 });
       if (Math.hypot(v.x - P.x, v.z - P.z) < 50) AUD.noiseHit(0.3, 1200, 0.8);
       if (v === P) { setTimeout(() => gameOver('splash'), 1200); }
-      else if (v.role === 'cop') { toast('COP TOOK A SWIM +$100'); addCash(100); G.wrecked++; }
+      else if (v.role === 'cop') { toast('COP TOOK A SWIM +$100'); addCash(100); G.wrecked++; stat('cops', 1); }
     }
   }
 }
@@ -3311,13 +3473,21 @@ function updateWorldRules(dt) {
     if (Math.hypot(p.x - P.x, p.z - P.z) < 2.3 && P.alive) { addCash(p.v); AUD.cash(); puff(p.x, 0.8, p.z, hex('#2ee66f'), 8, { size: 0.18, v: 3, vy: 3, life: 0.6, m: 2, g: 4 }); return false; }
     return Math.hypot(p.x - P.x, p.z - P.z) < 90;
   });
+  // big air: cash for hang time off the ramps
+  if (P.landed !== undefined) {
+    const at = P.landed; P.landed = undefined;
+    G.shake = Math.max(G.shake, Math.min(0.7, (P.landV || 0) * 0.04)); AUD.crash(Math.min(12, (P.landV || 0) * 0.6));
+    puff(P.x, 0.3, P.z, hex('#c9c3b5'), 8, { size: 0.3, v: 3, vy: 1.5, life: 0.6, g: 1, spread: 1.2 });
+    if (at > 0.45 && P.alive) { const c = Math.round(at * 150 / 10) * 10 + 25 * G.stars; addCash(c); bigMsg(at > 1 ? 'HUGE AIR!' : 'BIG AIR!', 'cool'); toast('AIR TIME ' + at.toFixed(1) + 's  +' + fmt$(c)); stat('airs', 1); }
+  }
+  for (const c of G.cops) if (c.landed !== undefined) { c.landed = undefined; if (c.landV > 9) damage(c, (c.landV - 9) * 3); }
   // power-ups
   G.powT -= dt;
   if (G.powT <= 0 && G.powerups.length < 3) { spawnPowerup(); G.powT = 3.5; }
   G.powerups = G.powerups.filter(p => {
     p.t += dt;
     if (Math.hypot(p.x - P.x, p.z - P.z) < 2.4 && P.alive) {
-      P.nitro = NITRO_T; bigMsg('NITRO!', 'cool'); AUD.blip(200, 1400, 0.5, 'sawtooth', 0.06); flash('#2fa8ff'); G.shake = Math.max(G.shake, 0.3);
+      P.nitro = NITRO_T; stat('nitros', 1); bigMsg('NITRO!', 'cool'); AUD.blip(200, 1400, 0.5, 'sawtooth', 0.06); flash('#2fa8ff'); G.shake = Math.max(G.shake, 0.3);
       puff(p.x, 1.0, p.z, hex('#2fa8ff'), 12, { size: 0.2, v: 5, vy: 3, life: 0.6, m: 2, g: 3 });
       return false;
     }
@@ -3331,6 +3501,9 @@ function updateWorldRules(dt) {
   } else P.boost = 1;
   // high-speed bonus: hold close to top speed and the cash keeps coming
   const spd = vSpeed(P);
+  if (P.alive && P.sink === 0) SAVE.stats.dist += spd * dt * MPU / 1000;
+  if (G.stars > SAVE.maxStars) { SAVE.maxStars = G.stars; misCheck(); }
+  if ((G.misT = (G.misT || 0) + dt) > 1) { G.misT = 0; misCheck(); }
   if (spd > P.maxV * 0.88 && P.alive && P.sink === 0) {
     G.spdT += dt; G.spdAcc = (G.spdAcc || 0) + dt;
     if (G.spdAcc >= 1) { G.spdAcc -= 1; addCash(20 + 10 * G.stars + (P.nitro > 0 ? 20 : 0)); }
@@ -3652,6 +3825,7 @@ function pause(on) {
 // ---------- title / menus ----------
 let titleCar = SAVE.car;
 function renderTitle() {
+  { const n = claimable(), b = $('misBadge'); if (b) { b.textContent = n; b.style.display = n ? 'inline-flex' : 'none'; } }
   const m = MODELS[titleCar], owned = SAVE.owned.includes(titleCar);
   $('carName').textContent = m.name;
   const bars = [['SPEED', (m.maxV - 18) / 12], ['GRIP', (m.turn - 2) / 1.0], ['ARMOR', m.hp / 220]];
@@ -3678,7 +3852,7 @@ function goTitle() {
 }
 function startRun() {
   AUD.init();
-  SAVE.car = titleCar; save();
+  SAVE.car = titleCar; SAVE.stats.runs++; save();
   resetRun();
   const keep = G.P ? { x: G.P.x, z: G.P.z, h: G.P.h } : null;
   spawnPlayer(SAVE.boro);
@@ -3706,6 +3880,8 @@ function setupMenus() {
   $('quitBtn').onclick = () => goTitle();
   $('mini').onclick = () => pause(true);
   $('leaveBtn').onclick = () => leaveShop();
+  $('misBtn').onclick = () => { AUD.init(); openMissions(true); };
+  $('misClose').onclick = () => openMissions(false);
   $('fixBtn').onclick = () => doService('fix');
   $('engineBtn').onclick = () => buyUpgrade('engine');
   $('armorBtn').onclick = () => buyUpgrade('armor');

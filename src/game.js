@@ -15,6 +15,66 @@ const SAVE_KEY = 'crnyc_wanted_v1';
 let SAVE = { bank: 250, owned: ['sedan'], car: 'sedan', color: null, up: { engine: 0, armor: 0 }, best: 0, night: false, sound: true, shadows: true, boro: 'MANHATTAN' };
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s) SAVE = Object.assign(SAVE, s); } catch (e) { }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) { } }
+SAVE.stats = Object.assign({ cops: 0, cash: 0, airs: 0, nitros: 0, customs: 0, dist: 0, runs: 0 }, SAVE.stats || {});
+SAVE.mis = SAVE.mis || {}; SAVE.gift = SAVE.gift || { day: 0, hour: 0 }; SAVE.maxStars = SAVE.maxStars || 0;
+window.addEventListener('pagehide', save); document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+
+// ---------- side missions + gifts ----------
+// Each track is a ladder of tiers: hit the target, claim the cash, the next tier unlocks.
+const MISSIONS = [
+  { k: 'cops', name: 'WRECK COPS', t: [3, 10, 25, 60, 150, 400], r: [400, 1000, 2500, 5000, 10000, 20000] },
+  { k: 'cash', name: 'COLLECT CASH', t: [2000, 10000, 40000, 120000, 400000, 1000000], r: [300, 1200, 4000, 10000, 25000, 60000], money: true },
+  { k: 'airs', name: 'BIG AIRS OFF RAMPS', t: [3, 12, 35, 80, 200, 500], r: [400, 1000, 2500, 6000, 12000, 25000] },
+  { k: 'nitros', name: 'GRAB NITRO', t: [3, 12, 35, 80, 200, 500], r: [400, 1000, 2500, 6000, 12000, 25000] },
+  { k: 'customs', name: 'HIT CASH RULES CUSTOMS', t: [2, 8, 20, 50, 120, 300], r: [300, 900, 2000, 5000, 10000, 20000] },
+  { k: 'dist', name: 'DRIVE (KM)', t: [5, 25, 80, 200, 500, 1200], r: [300, 1000, 3000, 7000, 15000, 30000] },
+  { k: 'stars', name: 'HIT MAX HEAT', t: [2, 3, 4, 5], r: [500, 1000, 2500, 5000], fmt: (n) => n + '★', val: () => SAVE.maxStars },
+  { k: 'survive', name: 'SURVIVE ONE RUN', t: [60, 120, 180, 300, 450, 600], r: [400, 900, 2000, 4000, 8000, 15000], fmt: (n) => mmss(n), val: () => SAVE.best || 0 },
+];
+const GIFTS = [{ k: 'day', name: 'DAILY GIFT', every: 20 * 3600e3, amt: 1500 }, { k: 'hour', name: 'HOURLY GIFT', every: 3600e3, amt: 150 }];
+function misVal(m) { return m.val ? m.val() : SAVE.stats[m.k] || 0; }
+function misState(m) { const tier = SAVE.mis[m.k] || 0, done = tier >= m.t.length; return { tier, done, target: done ? m.t[m.t.length - 1] : m.t[tier], reward: done ? 0 : m.r[tier], ready: !done && misVal(m) >= m.t[tier] }; }
+function giftLeft(g) { return Math.max(0, (SAVE.gift[g.k] || 0) + g.every - Date.now()); }
+function claimable() { let n = 0; for (const m of MISSIONS) if (misState(m).ready) n++; for (const g of GIFTS) if (giftLeft(g) <= 0) n++; return n; }
+const MIS_SEEN = new Set();
+function stat(k, n) {
+  SAVE.stats[k] = (SAVE.stats[k] || 0) + n;
+  misCheck();
+}
+function misCheck() {
+  for (const m of MISSIONS) { const st = misState(m), key = m.k + st.tier; if (st.ready && !MIS_SEEN.has(key)) { MIS_SEEN.add(key); if (G.state === 'play') toast('MISSION COMPLETE · ' + m.name + ' · CLAIM ' + fmt$(st.reward)); save(); } }
+}
+function fmtMis(m, n) { return m.fmt ? m.fmt(n) : m.money ? fmt$(n) : (m.k === 'dist' ? (Math.floor(n * 10) / 10).toString() : Math.floor(n).toLocaleString('en-US')); }
+function hms(ms) { const s = Math.ceil(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); }
+function renderMissions() {
+  $('misBank').textContent = fmt$(SAVE.bank);
+  let h = '';
+  for (const g of GIFTS) {
+    const left = giftLeft(g);
+    h += `<div class="mrow gift"><div class="mt"><b>${g.name}</b><div class="mbar"><i style="width:${Math.round((1 - left / g.every) * 100)}%"></i></div><span>${left > 0 ? 'READY IN ' + hms(left) : 'READY!'}</span></div>` +
+      `<button class="btn mclaim" data-g="${g.k}" ${left > 0 ? 'disabled' : ''}>${fmt$(g.amt)}</button></div>`;
+  }
+  for (const m of MISSIONS) {
+    const st = misState(m), v = misVal(m), k = st.done ? 1 : Math.min(1, v / st.target);
+    h += `<div class="mrow${st.ready ? ' ready' : ''}"><div class="mt"><b>${m.name}</b><small>${st.done ? 'ALL TIERS DONE' : 'TIER ' + (st.tier + 1) + '/' + m.t.length}</small><div class="mbar"><i style="width:${Math.round(k * 100)}%"></i></div>` +
+      `<span>${fmtMis(m, Math.min(v, st.target))} / ${fmtMis(m, st.target)}</span></div>` +
+      `<button class="btn mclaim" data-m="${m.k}" ${st.ready ? '' : 'disabled'}>${st.done ? '✓' : (st.ready ? 'CLAIM ' : '') + fmt$(st.reward)}</button></div>`;
+  }
+  $('misList').innerHTML = h;
+  $('misList').querySelectorAll('button[data-m]').forEach(b => b.onclick = () => {
+    const m = MISSIONS.find(q => q.k === b.dataset.m), st = misState(m); if (!st.ready) return;
+    SAVE.bank += st.reward; SAVE.mis[m.k] = st.tier + 1; save(); AUD.init(); AUD.cash(); flash('#1fd65f'); renderMissions(); renderTitle();
+  });
+  $('misList').querySelectorAll('button[data-g]').forEach(b => b.onclick = () => {
+    const g = GIFTS.find(q => q.k === b.dataset.g); if (giftLeft(g) > 0) return;
+    SAVE.bank += g.amt; SAVE.gift[g.k] = Date.now(); save(); AUD.init(); AUD.cash(); flash('#e8b923'); renderMissions(); renderTitle();
+  });
+}
+let MIS_TIMER = 0;
+function openMissions(on) {
+  $('missions').classList.toggle('on', on); clearInterval(MIS_TIMER);
+  if (on) { renderMissions(); MIS_TIMER = setInterval(renderMissions, 1000); } else renderTitle();
+}
 
 // ---------- game state ----------
 const G = {
@@ -76,7 +136,7 @@ const AUD = {
 // ---------- helpers ----------
 function starsFor(h) { let s = 0; for (let i = 0; i < STAR_HEAT.length; i++) if (h >= STAR_HEAT[i]) s = i + 1; return s; }
 function addHeat(n) { if (G.state !== 'play') return; if (G.grace > 0 && G.stars === 0) return; G.heat = Math.min(240, Math.max(G.heat + n, n > 0 ? 1 : 0)); }
-function addCash(n, x, z) { G.runCash += n; SAVE.bank += n; popCash(n); }
+function addCash(n, x, z) { G.runCash += n; SAVE.bank += n; popCash(n); if (n > 0) stat('cash', n); }
 function findRoad(x, z, maxR) {
   for (let r = 0; r < maxR; r += 0.8) for (let a = 0; a < 24; a++) {
     const px = x + Math.cos(a / 24 * Math.PI * 2) * r, pz = z + Math.sin(a / 24 * Math.PI * 2) * r;
@@ -185,7 +245,7 @@ function explode(v) {
   const d = Math.hypot(v.x - G.P.x, v.z - G.P.z);
   if (d < 60) { AUD.boom(); G.shake = Math.max(G.shake, 1.2 * (1 - d / 60)); }
   v.vy = 0; v.spin += (Math.random() - 0.5) * 6;
-  if (v.role === 'cop') { G.wrecked++; addHeat(10); addCash(100); toast('COP WRECKED +$100'); }
+  if (v.role === 'cop') { G.wrecked++; stat('cops', 1); addHeat(10); addCash(100); toast('COP WRECKED +$100'); }
   if (v === G.P) setTimeout(() => gameOver('wasted'), 900);
 }
 function onPropHit(v, ch, id, nx, nz, pen) {
@@ -244,7 +304,7 @@ function updateShops(dt) {
 }
 function enterShop(s) {
   const P = G.P;
-  G.state = 'shop'; G.shop = s; G.shopT = 0;
+  G.state = 'shop'; G.shop = s; G.shopT = 0; stat('customs', 1);
   P.vx = P.vz = 0; P.spin = 0; P.thr = 0; P.steer = 0; P.nitro = 0; P.boost = 1;
   P.x = s.x; P.z = s.z;
   P.h = Math.atan2(s.g.dx * s.sd, -s.g.dz * s.sd);   // parked nose-out, facing the street
@@ -380,7 +440,7 @@ function stepPlay(dt) {
       v.splashed = true; puff(v.x, 0.2, v.z, hex('#e6f6ff'), 18, { size: 0.35, v: 5, vy: 5, life: 0.9, g: 12, spread: 1.5 });
       if (Math.hypot(v.x - P.x, v.z - P.z) < 50) AUD.noiseHit(0.3, 1200, 0.8);
       if (v === P) { setTimeout(() => gameOver('splash'), 1200); }
-      else if (v.role === 'cop') { toast('COP TOOK A SWIM +$100'); addCash(100); G.wrecked++; }
+      else if (v.role === 'cop') { toast('COP TOOK A SWIM +$100'); addCash(100); G.wrecked++; stat('cops', 1); }
     }
   }
 }
@@ -427,13 +487,21 @@ function updateWorldRules(dt) {
     if (Math.hypot(p.x - P.x, p.z - P.z) < 2.3 && P.alive) { addCash(p.v); AUD.cash(); puff(p.x, 0.8, p.z, hex('#2ee66f'), 8, { size: 0.18, v: 3, vy: 3, life: 0.6, m: 2, g: 4 }); return false; }
     return Math.hypot(p.x - P.x, p.z - P.z) < 90;
   });
+  // big air: cash for hang time off the ramps
+  if (P.landed !== undefined) {
+    const at = P.landed; P.landed = undefined;
+    G.shake = Math.max(G.shake, Math.min(0.7, (P.landV || 0) * 0.04)); AUD.crash(Math.min(12, (P.landV || 0) * 0.6));
+    puff(P.x, 0.3, P.z, hex('#c9c3b5'), 8, { size: 0.3, v: 3, vy: 1.5, life: 0.6, g: 1, spread: 1.2 });
+    if (at > 0.45 && P.alive) { const c = Math.round(at * 150 / 10) * 10 + 25 * G.stars; addCash(c); bigMsg(at > 1 ? 'HUGE AIR!' : 'BIG AIR!', 'cool'); toast('AIR TIME ' + at.toFixed(1) + 's  +' + fmt$(c)); stat('airs', 1); }
+  }
+  for (const c of G.cops) if (c.landed !== undefined) { c.landed = undefined; if (c.landV > 9) damage(c, (c.landV - 9) * 3); }
   // power-ups
   G.powT -= dt;
   if (G.powT <= 0 && G.powerups.length < 3) { spawnPowerup(); G.powT = 3.5; }
   G.powerups = G.powerups.filter(p => {
     p.t += dt;
     if (Math.hypot(p.x - P.x, p.z - P.z) < 2.4 && P.alive) {
-      P.nitro = NITRO_T; bigMsg('NITRO!', 'cool'); AUD.blip(200, 1400, 0.5, 'sawtooth', 0.06); flash('#2fa8ff'); G.shake = Math.max(G.shake, 0.3);
+      P.nitro = NITRO_T; stat('nitros', 1); bigMsg('NITRO!', 'cool'); AUD.blip(200, 1400, 0.5, 'sawtooth', 0.06); flash('#2fa8ff'); G.shake = Math.max(G.shake, 0.3);
       puff(p.x, 1.0, p.z, hex('#2fa8ff'), 12, { size: 0.2, v: 5, vy: 3, life: 0.6, m: 2, g: 3 });
       return false;
     }
@@ -447,6 +515,9 @@ function updateWorldRules(dt) {
   } else P.boost = 1;
   // high-speed bonus: hold close to top speed and the cash keeps coming
   const spd = vSpeed(P);
+  if (P.alive && P.sink === 0) SAVE.stats.dist += spd * dt * MPU / 1000;
+  if (G.stars > SAVE.maxStars) { SAVE.maxStars = G.stars; misCheck(); }
+  if ((G.misT = (G.misT || 0) + dt) > 1) { G.misT = 0; misCheck(); }
   if (spd > P.maxV * 0.88 && P.alive && P.sink === 0) {
     G.spdT += dt; G.spdAcc = (G.spdAcc || 0) + dt;
     if (G.spdAcc >= 1) { G.spdAcc -= 1; addCash(20 + 10 * G.stars + (P.nitro > 0 ? 20 : 0)); }
@@ -768,6 +839,7 @@ function pause(on) {
 // ---------- title / menus ----------
 let titleCar = SAVE.car;
 function renderTitle() {
+  { const n = claimable(), b = $('misBadge'); if (b) { b.textContent = n; b.style.display = n ? 'inline-flex' : 'none'; } }
   const m = MODELS[titleCar], owned = SAVE.owned.includes(titleCar);
   $('carName').textContent = m.name;
   const bars = [['SPEED', (m.maxV - 18) / 12], ['GRIP', (m.turn - 2) / 1.0], ['ARMOR', m.hp / 220]];
@@ -794,7 +866,7 @@ function goTitle() {
 }
 function startRun() {
   AUD.init();
-  SAVE.car = titleCar; save();
+  SAVE.car = titleCar; SAVE.stats.runs++; save();
   resetRun();
   const keep = G.P ? { x: G.P.x, z: G.P.z, h: G.P.h } : null;
   spawnPlayer(SAVE.boro);
@@ -822,6 +894,8 @@ function setupMenus() {
   $('quitBtn').onclick = () => goTitle();
   $('mini').onclick = () => pause(true);
   $('leaveBtn').onclick = () => leaveShop();
+  $('misBtn').onclick = () => { AUD.init(); openMissions(true); };
+  $('misClose').onclick = () => openMissions(false);
   $('fixBtn').onclick = () => doService('fix');
   $('engineBtn').onclick = () => buyUpgrade('engine');
   $('armorBtn').onclick = () => buyUpgrade('armor');

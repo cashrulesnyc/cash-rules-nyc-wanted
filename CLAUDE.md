@@ -55,6 +55,11 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 - Heights are deliberately exaggerated (ESB antenna ≈ 29, One WTC spire ≈ 34) so they read over the generic skyline. `r` also clears generic lots and park props around them.
 - The Brooklyn Bridge Gothic towers and cable web live in `buildBridgeGeometry()` (world.js, style `gothic`).
 
+## Roads, ramps, missions
+- **Road width**: `mkGrid` adds `ROAD_WA` (1.2) to every avenue and `ROAD_WS` (0.8) to every street, taken out of the blocks. Sidewalks are `GRID_SW` (0.6, baked into `GROUND_FS`). Highways ×`HWY_K` (1.25), bridges ×`BRIDGE_K` (1.2). Manhattan blocks are now 9.5×4.2, so landmarks must fit 4.2 deep.
+- **Jump ramps** (chunkgen.js): `rampValid(g,i,j)` (pure, cached, ~13% of mid-blocks on avenues that are road the whole way) and `rampHeight(x,z)` drive both the visuals (`buildRamp`) and the physics. `stepVehicle` (vehicles.js) follows the hump and launches when it starts dropping away at > 6 u/s (`vy = 0.62 × speed`, max 17, gravity `AIR_G` 30). In the air: ballistic, no grip; `collideWorld` only checks colliders taller than the car and skips props above 1.2. Landing sets `v.landed` (air time). game.js pays the big-air bonus (≥ 0.45 s), and hard landings damage cops. Block force fields are 40 tall, so you can't jump into backyards. Chunk `maxH` ignores colliders ≥ 39.
+- **Side missions + gifts** (game.js, `MISSIONS`, `GIFTS`): tiered ladders over lifetime `SAVE.stats` (cops, cash, airs, nitros, customs, dist km, runs), plus `SAVE.maxStars` and `SAVE.best`. Tier progress is in `SAVE.mis`, gift timestamps in `SAVE.gift` (daily 20 h $1,500, hourly $150). `stat(k, n)` increments a stat and toasts newly completed tiers. UI: `#misBtn` on the title (badge = `claimable()`) opens `#missions`.
+
 ## Gameplay tuning (game.js unless noted)
 - Stars: `STAR_HEAT = [1,16,40,80,140]`. Chasing cops per star level: `COPS_FOR = [0,2,3,5,6,8]`. The helicopter appears at 4★ and up.
 - Heat sources: smashing a prop +1.2 (parked car +3), hitting a cop +2 + 0.15×impact, hitting a civilian +1.5, wrecking a cop +10. Heat also rises +0.45/s while you're wanted.

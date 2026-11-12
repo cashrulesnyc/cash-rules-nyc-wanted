@@ -122,7 +122,7 @@ function initWorldData() {
 }
 function blockClean(g, i, j) {
   const bu = g.A - g.wa - 2 * g.sw, bv = g.S - g.ws - 2 * g.sw;
-  if (bu < 5.5 || bv < 4.2) return false;
+  if (bu < 4.8 || bv < 4.0) return false;
   for (let a = -1; a <= 1; a += 0.5) for (let b = -1; b <= 1; b += 0.5) {
     const q = gWorld(g, (i + 0.5) * g.A + a * bu * 0.45, (j + 0.5) * g.S + b * bv * 0.45);
     if (tileAt(q[0], q[1]) !== T_LOT || boroAt(q[0], q[1]) !== g.boro) return false;
@@ -135,6 +135,51 @@ function lmExcluded(x, z, pad) {
   for (let k = 0; k < LM.length; k++) { const L = LM[k]; if (L.r > 0) { const dx = x - L.x, dz = z - L.z; if (dx * dx + dz * dz < (L.r + pad) * (L.r + pad)) return true; } }
   return false;
 }
+// ---------- jump ramps ----------
+// A ramp is a two-sided hump across an avenue, mid-block. rampValid(g,i,j) says whether avenue line i has
+// one at block j; rampHeight(x,z) is the deck height under a point (0 if none). Both are pure, so the chunk
+// worker (visuals) and the main thread (physics) agree without sharing data.
+const RAMP_L = 3.2, RAMP_H = 0.62, RAMP_P = 0.13; // length along the road, crest height, share of mid-blocks
+const RAMPC = new Map();
+function rampValid(g, i, j) {
+  const k = g.boro * 1e8 + (i + 5000) * 1e4 + (j + 5000);
+  let r = RAMPC.get(k); if (r !== undefined) return r;
+  r = false;
+  if ((ihash(i, j, g.boro * 31 + 7) % 1000) / 1000 < RAMP_P && g.S - g.ws > RAMP_L + 2) {
+    r = true;
+    for (const dv of [-RAMP_L / 2 - 0.6, 0, RAMP_L / 2 + 0.6]) for (const du of [-g.wa * 0.4, 0, g.wa * 0.4]) {
+      const q = gWorld(g, i * g.A + du, (j + 0.5) * g.S + dv);
+      if (tileAt(q[0], q[1]) !== T_ROAD || boroAt(q[0], q[1]) !== g.boro || lmExcluded(q[0], q[1], 1)) { r = false; break; }
+    }
+    if (r) { const q = gWorld(g, i * g.A, (j + 0.5) * g.S); for (const S of SHOPS) if (Math.hypot(S.x - q[0], S.z - q[1]) < 8) r = false; }
+  }
+  if (RAMPC.size > 20000) RAMPC.clear();
+  RAMPC.set(k, r); return r;
+}
+function rampHeight(x, z) {
+  const b = boroAt(x, z); if (!b) return 0;
+  const g = GRIDS[b], l = gLocal(g, x, z);
+  const i = Math.round(l[0] / g.A), du = l[0] - i * g.A;
+  if (Math.abs(du) > g.wa * 0.45) return 0;
+  const j = Math.floor(l[1] / g.S), dv = l[1] - (j + 0.5) * g.S;
+  if (Math.abs(dv) > RAMP_L / 2) return 0;
+  if (!rampValid(g, i, j)) return 0;
+  return RAMP_H * (1 - Math.abs(dv) / (RAMP_L / 2));
+}
+function buildRamp(g, i, j) {
+  const yaw = -g.th, half = RAMP_L / 2, len = Math.hypot(half, RAMP_H), ang = Math.atan2(RAMP_H, half), w = g.wa * 0.9;
+  const Y = hex('#f2b01e'), K = hex('#1b1c20');
+  for (const sd of [-1, 1]) { // local z = -v; slab centred at v = -sd*half/2 rises toward the crest
+    const c = gWorld(g, i * g.A, (j + 0.5) * g.S - sd * half / 2);
+    boxQ(c[0], RAMP_H / 2 - 0.04, c[1], w, 0.1, len, qm(qy(yaw), qa(1, 0, 0, sd * ang)), Y, 0);
+    for (const o of [-0.32, 0, 0.32]) { // black chevron stripes
+      const c2 = gWorld(g, i * g.A, (j + 0.5) * g.S - sd * half / 2 + sd * o * half);
+      boxQ(c2[0], RAMP_H * (0.5 + o) - 0.02, c2[1], w + 0.02, 0.1, 0.22, qm(qy(yaw), qa(1, 0, 0, sd * ang)), K, 0);
+    }
+    for (const su of [-1, 1]) { const e = gWorld(g, i * g.A + su * w / 2, (j + 0.5) * g.S - sd * half / 2); boxQ(e[0], RAMP_H / 4, e[1], 0.12, RAMP_H / 2, half, qy(yaw), K, 0); }
+  }
+}
+
 function tsqBlock(b, i, j) {
   if (b !== 1) return false;
   for (const L of LM) if (L.type === 'tsq') for (const q of L.blocks) if (q[0] === i && q[1] === j) return true;
@@ -225,6 +270,7 @@ function placeBlocks(g, ctx) {
       const tsq = tsqBlock(b, i, j);
       // ---- buildings ----
       if (!shop && !tsq) placeLots(g, b, i, j, uc, vc, bu, bv, R, ctx);
+      if (rampValid(g, i, j)) buildRamp(g, i, j);
       // ---- street props around the block perimeter (none around Customs: keep the way in clear) ----
       if (!shop) blockProps(g, b, i, j, uc, vc, bu, bv, R, ctx, yaw);
     }
@@ -238,14 +284,14 @@ function blockFence(g, b, uc, vc, bu, bv, yaw, ctx) {
   let full = true; // sample every ~0.9 units so a diagonal like Broadway can't slip between samples
   const na = Math.ceil(bu / 0.9), nc = Math.ceil(bv / 0.9);
   for (let a = 0; a <= na && full; a++) for (let c = 0; c <= nc; c++) if (!lotAt(uc - bu / 2 + 0.1 + a * (bu - 0.2) / na, vc - bv / 2 + 0.1 + c * (bv - 0.2) / nc)) { full = false; break; }
-  if (full) { const w = gWorld(g, uc, vc); addCol(ctx, w[0], w[1], yaw, bu / 2, bv / 2, 3); return; }
+  if (full) { const w = gWorld(g, uc, vc); addCol(ctx, w[0], w[1], yaw, bu / 2, bv / 2, 40); return; }
   const nu = Math.max(1, Math.round(bu / 2.5)), nv = Math.max(1, Math.round(bv / 2.5)), cu = bu / nu, cv = bv / nv;
   for (let a = 0; a < nu; a++) for (let c = 0; c < nv; c++) {
     const u = uc - bu / 2 + (a + 0.5) * cu, v = vc - bv / 2 + (c + 0.5) * cv;
     let ok = true;
     for (let p = -1; p <= 1 && ok; p++) for (let q = -1; q <= 1; q++) if (!lotAt(u + p * cu * 0.49, v + q * cv * 0.49)) { ok = false; break; }
     if (!ok) continue;
-    const w = gWorld(g, u, v); addCol(ctx, w[0], w[1], yaw, cu / 2, cv / 2, 3);
+    const w = gWorld(g, u, v); addCol(ctx, w[0], w[1], yaw, cu / 2, cv / 2, 40);
   }
 }
 
@@ -511,9 +557,9 @@ function buildLandmark(L, ctx) {
   switch (L.type) {
     case 'esb': {
       const yaw = -GRIDS[1].th, s = hex('#d6cdb8'), s2 = hex('#c9bfa8');
-      box(x, 0.8, z, 9, 1.6, 4.6, yaw, s2, 1);                        // 5-storey base fills the block
-      box(x, 1.6 + 2.6, z, 6.8, 5.2, 4.0, yaw, s, 9);                 // lower setback mass
-      box(x, 6.8 + 5.6, z, 4.6, 11.2, 3.2, yaw, s, 9);                // main shaft
+      box(x, 0.8, z, 9, 1.6, 4.1, yaw, s2, 1);                        // 5-storey base fills the block
+      box(x, 1.6 + 2.6, z, 6.8, 5.2, 3.7, yaw, s, 9);                 // lower setback mass
+      box(x, 6.8 + 5.6, z, 4.6, 11.2, 3.0, yaw, s, 9);                // main shaft
       box(x, 18.0 + 0.8, z, 3.4, 1.6, 2.5, yaw, s, 9);               // 72nd-81st floor steps
       box(x, 19.6 + 0.5, z, 2.6, 1.0, 1.9, yaw, s, 9);
       box(x, 20.6 + 0.6, z, 1.7, 1.2, 1.4, yaw, hex('#efe6cf'), 5);  // observatory crown (lit at night)
@@ -521,13 +567,13 @@ function buildLandmark(L, ctx) {
       box(x, 23.6 + 0.6, z, 0.6, 1.2, 0.6, yaw, C.silver, 6);
       box(x, 24.8 + 2.0, z, 0.16, 4.0, 0.16, yaw, C.white, 0);       // antenna
       box(x, 28.9, z, 0.3, 0.3, 0.3, yaw, C.red, 2);
-      addCol(ctx, x, z, yaw, 4.5, 2.3, 30);
+      addCol(ctx, x, z, yaw, 4.5, 2.05, 30);
       break;
     }
     case 'chrysler': {
       const yaw = -GRIDS[1].th, s = hex('#d9d4cb'), sil = hex('#dfe4ea');
-      box(x, 0.9, z, 5.4, 1.8, 4.6, yaw, hex('#c9c1b4'), 1);
-      box(x, 1.8 + 3.4, z, 4.0, 6.8, 4.0, yaw, s, 9);
+      box(x, 0.9, z, 5.4, 1.8, 4.1, yaw, hex('#c9c1b4'), 1);
+      box(x, 1.8 + 3.4, z, 3.8, 6.8, 3.8, yaw, s, 9);
       box(x, 8.6 + 2.4, z, 3.2, 4.8, 3.2, yaw, s, 9);
       // eagles at the 61st-floor corners
       for (const sx of [-1, 1]) for (const sz of [-1, 1]) lr(yaw, sx * 1.65, 13.2, sz * 1.65, 0.5, 0.25, 0.5, yaw + Math.PI / 4, sil, 6);
@@ -548,12 +594,12 @@ function buildLandmark(L, ctx) {
       }
       box(x, y + 0.3, z, 0.4, 0.6, 0.4, yaw, sil, 6);
       box(x, y + 2.2, z, 0.14, 3.2, 0.14, yaw, sil, 6);               // needle spire
-      addCol(ctx, x, z, yaw, 2.7, 2.3, 20);
+      addCol(ctx, x, z, yaw, 2.7, 2.05, 20);
       break;
     }
     case 'wtc': {
-      const yaw = -GRIDS[1].th, gl = hex('#9cc1dc'), W = 4.4, H0 = 1.4, H = 21.5, N = 12;
-      box(x, H0 / 2, z, W + 2.0, H0, W + 0.2, yaw, hex('#c7ccd1'), 0); // podium
+      const yaw = -GRIDS[1].th, gl = hex('#9cc1dc'), W = 4.0, H0 = 1.4, H = 21.5, N = 12;
+      box(x, H0 / 2, z, W + 2.0, H0, W + 0.1, yaw, hex('#c7ccd1'), 0); // podium
       for (let k = 0; k < N; k++) {
         const t = (k + 0.5) / N, y0 = H0 + k * H / N, hh = H / N + 0.02;
         const sA = W * (1 - 0.65 * t), sB = W * (0.45 + 0.27 * t);   // square shrinks while the 45deg square grows: twisting taper
@@ -569,7 +615,7 @@ function buildLandmark(L, ctx) {
       break;
     }
     case 'flatiron': {
-      const g = GRIDS[1], yaw = -g.th, Lz = 4.4, W = 4.4, H = 5.6, N = 7, col = hex('#e2d3b5');
+      const g = GRIDS[1], yaw = -g.th, Lz = 4.0, W = 4.4, H = 5.6, N = 7, col = hex('#e2d3b5');
       // triangle: straight 5th Ave side (+x), Broadway side tapers to a narrow prow pointing uptown (-z)
       for (let k = 0; k < N; k++) {
         const t = (k + 0.5) / N, w = W * (1 - t * 0.88), lz = Lz / 2 - (k + 0.5) * Lz / N;
@@ -596,7 +642,7 @@ function buildLandmark(L, ctx) {
       break;
     }
     case 'msg': { // round drum with vertical ribs, a dark window band and a white roof
-      const yaw = -GRIDS[1].th, Rr = 2.3, N = 20, conc = hex('#b9b4ab'), H = 3.0;
+      const yaw = -GRIDS[1].th, Rr = 2.0, N = 20, conc = hex('#b9b4ab'), H = 3.0;
       for (let k = 0; k < N; k++) {
         const a = k / N * Math.PI * 2, by = yaw - a - Math.PI / 2, cw = 2 * Rr * Math.sin(Math.PI / N) + 0.06;
         lr(yaw, Math.cos(a) * Rr, H / 2, Math.sin(a) * Rr, cw, H, 0.7, by, conc, 0);
@@ -635,10 +681,10 @@ function buildLandmark(L, ctx) {
     }
     case 'rock': { // 30 Rock slab + Rockefeller Plaza rink, Prometheus, flags and the Christmas tree
       const yaw = -GRIDS[1].th, ls = hex('#d2c8b2');
-      lb(-2.2, 3.0, 0, 5.4, 6.0, 3.4, yaw, ls, 9);
-      lb(-2.2, 6.0 + 5.2, 0, 4.4, 10.4, 2.0, yaw, ls, 9);
-      lb(-2.2, 16.4 + 0.5, 0, 2.6, 1.0, 1.4, yaw, ls, 9);
-      lb(-2.2, 17.5, 0, 1.6, 0.25, 1.0, yaw, hex('#c7ccd1'), 0);
+      lb(-2.1, 3.0, 0, 5.0, 6.0, 3.4, yaw, ls, 9);
+      lb(-2.1, 6.0 + 5.2, 0, 4.2, 10.4, 2.0, yaw, ls, 9);
+      lb(-2.1, 16.4 + 0.5, 0, 2.6, 1.0, 1.4, yaw, ls, 9);
+      lb(-2.1, 17.5, 0, 1.6, 0.25, 1.0, yaw, hex('#c7ccd1'), 0);
       lb(2.8, 0.08, 0, 2.9, 0.16, 2.1, yaw, hex('#9aa3ab'), 0);
       lb(2.8, 0.17, 0, 2.6, 0.03, 1.8, yaw, hex('#eef6fb'), 6);       // ice
       lb(2.8, 0.55, -1.1, 0.45, 0.6, 0.3, yaw, C.gold, 2);            // Prometheus
@@ -647,7 +693,7 @@ function buildLandmark(L, ctx) {
       for (let k = 0; k < 5; k++) lb(0.9, 0.5 + k * 0.7, 0, 1.6 - k * 0.3, 0.75, 1.6 - k * 0.3, yaw + k * 0.4, tg, 0);
       for (let k = 0; k < 14; k++) { const a = k * 2.4, h = 0.6 + (k / 14) * 3.0, r = 0.82 - (k / 14) * 0.6; lb(0.9 + Math.cos(a) * r, h, Math.sin(a) * r, 0.1, 0.1, 0.1, yaw, [C.red, C.gold, C.blue, C.white][k % 4], 2); }
       lb(0.9, 4.15, 0, 0.3, 0.3, 0.3, yaw, C.gold, 2);
-      const p = rot(x, z, yaw, -2.2, 0); addCol(ctx, p[0], p[1], yaw, 2.7, 1.7, 17);
+      const p = rot(x, z, yaw, -2.1, 0); addCol(ctx, p[0], p[1], yaw, 2.5, 1.7, 17);
       break;
     }
     case 'vessel': { // copper honeycomb bowl: rings widening upward + diagonal lattice

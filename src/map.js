@@ -44,9 +44,13 @@ function fillPoly(arr, pts, val, landOnly) {
 const toW = a => a.map(PL);
 
 // ---------- street grids ----------
+// Roads were widened for arcade driving: every avenue +ROAD_WA, every street +ROAD_WS (taken out of the
+// blocks), sidewalks GRID_SW wide. GRID_SW is also baked into the ground shader (gl.js).
+const GRID_SW = 0.6, ROAD_WA = 1.2, ROAD_WS = 0.8, HWY_K = 1.25, BRIDGE_K = 1.2;
 function mkGrid(boro, thDeg, A, S, wa, ws, oLat, oLon, style) {
   const th = thDeg * Math.PI / 180, o = P(oLat, oLon);
-  return { boro, A, S, wa, ws, sw: 0.7, ox: o[0], oz: o[1], dx: Math.sin(th), dz: -Math.cos(th), ex: Math.cos(th), ez: Math.sin(th), th, style };
+  wa += ROAD_WA; ws += ROAD_WS;
+  return { boro, A, S, wa, ws, sw: GRID_SW, ox: o[0], oz: o[1], dx: Math.sin(th), dz: -Math.cos(th), ex: Math.cos(th), ez: Math.sin(th), th, style };
 }
 const GRIDS = [];
 GRIDS[1] = mkGrid(1, 29, 15.5, 9, 3.6, 2.8, 40.7681, -73.9819, 'city');
@@ -108,12 +112,12 @@ function segHit(x, z) {
 function buildRoads() {
   for (const r of GEO.ROADS) {
     const pts = toW(r[2]);
-    for (let i = 0; i + 1 < pts.length; i++) addSeg(pts[i], pts[i + 1], r[1], r[0] === 1 ? SEG_HWY : r[0] === 2 ? SEG_AVE : SEG_RUN);
+    for (let i = 0; i + 1 < pts.length; i++) addSeg(pts[i], pts[i + 1], r[1] * HWY_K, r[0] === 1 ? SEG_HWY : r[0] === 2 ? SEG_AVE : SEG_RUN);
   }
   for (const b of GEO.BRIDGES) {
     const a = PL(b[5]), c = PL(b[6]);
     const len = Math.hypot(c[0] - a[0], c[1] - a[1]);
-    const br = { name: b[0], style: b[1], w: b[2], H: b[3], color: b[4], a, b: c, len, ramp: Math.min(16, len * 0.28) };
+    const br = { name: b[0], style: b[1], w: b[2] * BRIDGE_K, H: b[3], color: b[4], a, b: c, len, ramp: Math.min(16, len * 0.28) };
     br.dx = (c[0] - a[0]) / len; br.dz = (c[1] - a[1]) / len;
     // find water span along the bridge (for towers)
     let w0 = -1, w1 = -1;

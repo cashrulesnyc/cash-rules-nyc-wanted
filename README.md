@@ -11,6 +11,8 @@ A blocky, Smashy Road–style police chase across the **real map of all five NYC
 - 1–5 wanted stars: NYPD cruisers, then ESU SUVs, then ESU heavies and a helicopter. You end a run WASTED, BUSTED, or sleeping with the fishes.
 - ~180 **Cash Rules Customs** drive-on pads across all five boroughs (look for the floating gold wrench and green beam), including the real auto-repair areas: Willets Point, Jerome Ave, Hell's Kitchen, Gowanus, Hunts Point and more. Roll onto the pad to respray or repair and lose the cops, or buy engine and armor upgrades. It won't trigger while a cop is on your bumper.
 - Floating cash stacks and briefcases, **nitro** lightning-bolt power-ups and a high-speed cash bonus.
+- Wide arcade roads with **jump ramps** on the avenues (big-air cash bonus).
+- **Side hustles**: tiered missions (wreck cops, collect cash, big airs, nitro, Customs visits, distance, max heat, survival) plus daily and hourly gifts.
 - Only cops and the water can hurt you. Every block is solid, so there's no squeezing through backyards.
 - 5 unlockable rides: Street Sedan, Yellow Cab, Electric Crossover, Muscle Coupe, Box Truck.
 - After Dark night mode, a rotating minimap and full map, and progress that saves on the device.

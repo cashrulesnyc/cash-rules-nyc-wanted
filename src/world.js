@@ -38,7 +38,7 @@ const WORLD = {
     let maxH = 2;
     for (let i = 0; i < nc; i++) {
       const o = i * COLF, x = c.cols[o], z = c.cols[o + 1], r = Math.hypot(c.cols[o + 4], c.cols[o + 5]);
-      maxH = Math.max(maxH, c.cols[o + 6]);
+      if (c.cols[o + 6] < 39) maxH = Math.max(maxH, c.cols[o + 6]); // block force fields (h 40) are invisible
       this.cellsFor(ch, x, z, r, (ci) => ch.cellC[ci].push(i));
     }
     for (let i = 0; i < np; i++) { const o = i * PROPF; this.cellsFor(ch, c.props[o], c.props[o + 1], c.props[o + 2], (ci) => ch.cellP[ci].push(i)); }
