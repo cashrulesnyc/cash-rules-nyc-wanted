@@ -832,9 +832,7 @@ function lmAdd(type, lat, lon, r, extra) { const p = P(lat, lon); LM.push(Object
 let SHOPS = [];
 function initWorldData() {
   LM.length = 0;
-  lmAdd('esb', 40.7484, -73.9857, 7.5, { name: 'EMPIRE STATE BUILDING' });
-  lmAdd('wtc', 40.7130, -74.0132, 7, { name: 'ONE WORLD TRADE CENTER' });
-  lmAdd('chrysler', 40.7516, -73.9755, 5.5, { name: 'CHRYSLER BUILDING' });
+
   lmAdd('liberty', 40.6892, -74.0445, 0, { name: 'STATUE OF LIBERTY', nr: 14 });
   lmAdd('yankee', 40.8296, -73.9262, 11, { name: 'YANKEE STADIUM' });
   lmAdd('citi', 40.7571, -73.8458, 11, { name: 'CITI FIELD' });
@@ -847,7 +845,8 @@ function initWorldData() {
   lmAdd('hy30', 40.7541, -74.0004, 3.6, { name: 'EDGE · 30 HUDSON YARDS' });
   for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
     ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
-    ['rock', 40.7587, -73.9787, 5.0, 'ROCKEFELLER CENTER', 0]]) {
+    ['rock', 40.7587, -73.9787, 5.0, 'ROCKEFELLER CENTER', 0], ['esb', 40.7484, -73.9857, 5.5, 'EMPIRE STATE BUILDING', 0],
+    ['chrysler', 40.7516, -73.9755, 4.5, 'CHRYSLER BUILDING', 0], ['wtc', 40.7130, -74.0132, 4.5, 'ONE WORLD TRADE CENTER', 0]]) {
     const g = GRIDS[1], b = blockOf(g, lat, lon), c = gWorld(g, (b[0] + 0.5) * g.A, (b[1] + 0.5) * g.S + dv);
     LM.push({ type, x: c[0], z: c[1], r, name });
   }
@@ -977,19 +976,42 @@ function placeBlocks(g, ctx) {
   for (const c of cs) { umin = Math.min(umin, c[0]); umax = Math.max(umax, c[0]); vmin = Math.min(vmin, c[1]); vmax = Math.max(vmax, c[1]); }
   const yaw = -g.th;
   const bu = g.A - g.wa - 2 * g.sw, bv = g.S - g.ws - 2 * g.sw;
+  const br = Math.hypot(bu, bv) / 2;
   for (let i = Math.floor(umin / g.A) - 1; i <= Math.ceil(umax / g.A); i++) {
     for (let j = Math.floor(vmin / g.S) - 1; j <= Math.ceil(vmax / g.S); j++) {
       const uc = (i + 0.5) * g.A, vc = (j + 0.5) * g.S;
       const wc = gWorld(g, uc, vc);
-      if (!inChunk(ctx, wc[0], wc[1])) continue;
-      const R = rng(ihash(i, j, b * 7 + 1));
+      const own = inChunk(ctx, wc[0], wc[1]);
+      // blocks that only hang over this chunk still get their barrier here (collision lookups are per chunk)
+      if (!own && (wc[0] < ctx.x0 - br || wc[0] > ctx.x0 + CH + br || wc[1] < ctx.z0 - br || wc[1] > ctx.z0 + CH + br)) continue;
       const shop = shopAtBlock(b, i, j);
+      if (!shop) blockFence(g, b, uc, vc, bu, bv, yaw, ctx);
+      if (!own) continue;
+      const R = rng(ihash(i, j, b * 7 + 1));
       const tsq = tsqBlock(b, i, j);
       // ---- buildings ----
       if (!shop && !tsq) placeLots(g, b, i, j, uc, vc, bu, bv, R, ctx);
       // ---- street props around the block perimeter ----
       blockProps(g, b, i, j, uc, vc, bu, bv, R, ctx, yaw);
     }
+  }
+}
+// Solid blocks: the whole lot area inside the sidewalks is a collider ("force field"), so cars can't
+// squeeze between buildings or through backyards. Full blocks get one box; blocks cut by water, parks,
+// highways or landmark plazas get one box per ~2.5-unit cell that is entirely lot.
+function blockFence(g, b, uc, vc, bu, bv, yaw, ctx) {
+  const lotAt = (u, v) => { const q = gWorld(g, u, v); return tileAt(q[0], q[1]) === T_LOT && boroAt(q[0], q[1]) === b && !lmExcluded(q[0], q[1], 0); };
+  let full = true; // sample every ~0.9 units so a diagonal like Broadway can't slip between samples
+  const na = Math.ceil(bu / 0.9), nc = Math.ceil(bv / 0.9);
+  for (let a = 0; a <= na && full; a++) for (let c = 0; c <= nc; c++) if (!lotAt(uc - bu / 2 + 0.1 + a * (bu - 0.2) / na, vc - bv / 2 + 0.1 + c * (bv - 0.2) / nc)) { full = false; break; }
+  if (full) { const w = gWorld(g, uc, vc); addCol(ctx, w[0], w[1], yaw, bu / 2, bv / 2, 3); return; }
+  const nu = Math.max(1, Math.round(bu / 2.5)), nv = Math.max(1, Math.round(bv / 2.5)), cu = bu / nu, cv = bv / nv;
+  for (let a = 0; a < nu; a++) for (let c = 0; c < nv; c++) {
+    const u = uc - bu / 2 + (a + 0.5) * cu, v = vc - bv / 2 + (c + 0.5) * cv;
+    let ok = true;
+    for (let p = -1; p <= 1 && ok; p++) for (let q = -1; q <= 1; q++) if (!lotAt(u + p * cu * 0.49, v + q * cv * 0.49)) { ok = false; break; }
+    if (!ok) continue;
+    const w = gWorld(g, u, v); addCol(ctx, w[0], w[1], yaw, cu / 2, cv / 2, 3);
   }
 }
 
@@ -1255,8 +1277,8 @@ function buildLandmark(L, ctx) {
   switch (L.type) {
     case 'esb': {
       const yaw = -GRIDS[1].th, s = hex('#d6cdb8'), s2 = hex('#c9bfa8');
-      box(x, 0.8, z, 9, 1.6, 5.6, yaw, s2, 1);                        // 5-storey base fills the block
-      box(x, 1.6 + 2.6, z, 6.8, 5.2, 4.4, yaw, s, 9);                 // lower setback mass
+      box(x, 0.8, z, 9, 1.6, 4.6, yaw, s2, 1);                        // 5-storey base fills the block
+      box(x, 1.6 + 2.6, z, 6.8, 5.2, 4.0, yaw, s, 9);                 // lower setback mass
       box(x, 6.8 + 5.6, z, 4.6, 11.2, 3.2, yaw, s, 9);                // main shaft
       box(x, 18.0 + 0.8, z, 3.4, 1.6, 2.5, yaw, s, 9);               // 72nd-81st floor steps
       box(x, 19.6 + 0.5, z, 2.6, 1.0, 1.9, yaw, s, 9);
@@ -1265,12 +1287,12 @@ function buildLandmark(L, ctx) {
       box(x, 23.6 + 0.6, z, 0.6, 1.2, 0.6, yaw, C.silver, 6);
       box(x, 24.8 + 2.0, z, 0.16, 4.0, 0.16, yaw, C.white, 0);       // antenna
       box(x, 28.9, z, 0.3, 0.3, 0.3, yaw, C.red, 2);
-      addCol(ctx, x, z, yaw, 4.5, 2.8, 30);
+      addCol(ctx, x, z, yaw, 4.5, 2.3, 30);
       break;
     }
     case 'chrysler': {
       const yaw = -GRIDS[1].th, s = hex('#d9d4cb'), sil = hex('#dfe4ea');
-      box(x, 0.9, z, 5.2, 1.8, 5.2, yaw, hex('#c9c1b4'), 1);
+      box(x, 0.9, z, 5.4, 1.8, 4.6, yaw, hex('#c9c1b4'), 1);
       box(x, 1.8 + 3.4, z, 4.0, 6.8, 4.0, yaw, s, 9);
       box(x, 8.6 + 2.4, z, 3.2, 4.8, 3.2, yaw, s, 9);
       // eagles at the 61st-floor corners
@@ -1292,12 +1314,12 @@ function buildLandmark(L, ctx) {
       }
       box(x, y + 0.3, z, 0.4, 0.6, 0.4, yaw, sil, 6);
       box(x, y + 2.2, z, 0.14, 3.2, 0.14, yaw, sil, 6);               // needle spire
-      addCol(ctx, x, z, yaw, 2.6, 2.6, 20);
+      addCol(ctx, x, z, yaw, 2.7, 2.3, 20);
       break;
     }
     case 'wtc': {
-      const yaw = -GRIDS[1].th, gl = hex('#9cc1dc'), W = 5.2, H0 = 1.4, H = 21.5, N = 12;
-      box(x, H0 / 2, z, W + 0.4, H0, W + 0.4, yaw, hex('#c7ccd1'), 0); // podium
+      const yaw = -GRIDS[1].th, gl = hex('#9cc1dc'), W = 4.4, H0 = 1.4, H = 21.5, N = 12;
+      box(x, H0 / 2, z, W + 2.0, H0, W + 0.2, yaw, hex('#c7ccd1'), 0); // podium
       for (let k = 0; k < N; k++) {
         const t = (k + 0.5) / N, y0 = H0 + k * H / N, hh = H / N + 0.02;
         const sA = W * (1 - 0.65 * t), sB = W * (0.45 + 0.27 * t);   // square shrinks while the 45deg square grows: twisting taper
@@ -1340,7 +1362,7 @@ function buildLandmark(L, ctx) {
       break;
     }
     case 'msg': { // round drum with vertical ribs, a dark window band and a white roof
-      const yaw = -GRIDS[1].th, Rr = 3.7, N = 22, conc = hex('#b9b4ab'), H = 3.2;
+      const yaw = -GRIDS[1].th, Rr = 2.3, N = 20, conc = hex('#b9b4ab'), H = 3.0;
       for (let k = 0; k < N; k++) {
         const a = k / N * Math.PI * 2, by = yaw - a - Math.PI / 2, cw = 2 * Rr * Math.sin(Math.PI / N) + 0.06;
         lr(yaw, Math.cos(a) * Rr, H / 2, Math.sin(a) * Rr, cw, H, 0.7, by, conc, 0);
@@ -1351,8 +1373,8 @@ function buildLandmark(L, ctx) {
         const a = (k + 0.5) / N * Math.PI * 2, cw = 2 * Rr * Math.sin(Math.PI / N) + 0.08;
         lr(yaw, Math.cos(a) * Rr * 0.5, H + 0.02, Math.sin(a) * Rr * 0.5, Rr, 0.12, cw, yaw - a, hex('#dfe2e6'), 0);
       }
-      for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; lr(yaw, Math.cos(a) * 1.3, H + 0.16, Math.sin(a) * 1.3, 0.75, 0.1, 0.25, yaw - a - Math.PI / 2, hex('#b3b9c0'), 0); }
-      lb(0, 0.6, Rr + 0.5, 3.0, 1.2, 0.6, yaw, hex('#1d3557'), 8);   // entrance canopy on the street
+      for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2; lr(yaw, Math.cos(a) * 0.85, H + 0.16, Math.sin(a) * 0.85, 0.6, 0.1, 0.22, yaw - a - Math.PI / 2, hex('#b3b9c0'), 0); }
+      lr(yaw, Rr + 0.9, 0.5, 0, 1.0, 1.0, 2.4, yaw, hex('#1d3557'), 8); // entrance pavilion
       addCol(ctx, x, z, yaw, Rr, Rr, H);
       break;
     }
@@ -1437,9 +1459,18 @@ function buildLandmark(L, ctx) {
       const g = GRIDS[1], yaw = -g.th, bu = g.A - g.wa - 2 * g.sw, bv = g.S - g.ws - 2 * g.sw;
       for (const q of L.blocks) {
         const uc = (q[0] + 0.5) * g.A, vc = (q[1] + 0.5) * g.S, w = gWorld(g, uc, vc);
-        const h = 10 + R() * 3;
-        box(w[0], h / 2, w[1], bu, h, bv, yaw, PAL.tower[Math.floor(R() * 10)], 1);
-        addCol(ctx, w[0], w[1], yaw, bu / 2, bv / 2, h);
+        const h = 10 + R() * 3, col = PAL.tower[Math.floor(R() * 10)];
+        // built from cells so Broadway stays open through the square
+        const ncu = Math.round(bu / 1.5), ncv = Math.round(bv / 1.6), cu = bu / ncu, cv = bv / ncv;
+        const cellOK = (a, c) => { const u = uc - bu / 2 + (a + 0.5) * cu, v = vc - bv / 2 + (c + 0.5) * cv;
+          for (let p = -1; p <= 1; p++) for (let r = -1; r <= 1; r++) { const t = gWorld(g, u + p * cu * 0.45, v + r * cv * 0.45); if (tileAt(t[0], t[1]) !== T_LOT) return false; } return true; };
+        let all = true; for (let a = 0; a < ncu && all; a++) for (let c = 0; c < ncv; c++) if (!cellOK(a, c)) { all = false; break; }
+        const piece = (a0, a1, c0, c1) => { // one box over cells [a0,a1) x [c0,c1)
+          const u = uc - bu / 2 + (a0 + a1) / 2 * cu, v = vc - bv / 2 + (c0 + c1) / 2 * cv, sw = (a1 - a0) * cu, sd = (c1 - c0) * cv, q = gWorld(g, u, v);
+          box(q[0], h / 2, q[1], sw, h, sd, yaw, col, 1); addCol(ctx, q[0], q[1], yaw, sw / 2, sd / 2, h);
+        };
+        if (all) piece(0, ncu, 0, ncv);
+        else for (let c = 0; c < ncv; c++) { let a = 0; while (a < ncu) { if (!cellOK(a, c)) { a++; continue; } let e = a; while (e < ncu && cellOK(e, c)) e++; piece(a, e, c, c + 1); a = e; } } // Broadway cuts it: row runs
         const su = Math.sign(L.iu * g.A - uc), sv = Math.sign(L.iv * g.S - vc);
         const fu = gWorld(g, uc + su * (bu / 2 + 0.05), vc), fv = gWorld(g, uc, vc + sv * (bv / 2 + 0.05));
         const nu = [g.ex * su, g.ez * su], nv = [g.dx * sv, g.dz * sv];
