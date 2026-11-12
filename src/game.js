@@ -15,7 +15,7 @@ const SAVE_KEY = 'crnyc_wanted_v1';
 let SAVE = { bank: 250, owned: ['sedan'], car: 'sedan', color: null, up: { engine: 0, armor: 0 }, best: 0, night: false, sound: true, shadows: true, boro: 'MANHATTAN' };
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s) SAVE = Object.assign(SAVE, s); } catch (e) { }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) { } }
-SAVE.stats = Object.assign({ cops: 0, cash: 0, airs: 0, nitros: 0, customs: 0, dist: 0, runs: 0 }, SAVE.stats || {});
+SAVE.stats = Object.assign({ cops: 0, cash: 0, airs: 0, nitros: 0, gears: 0, dist: 0, runs: 0 }, SAVE.stats || {});
 SAVE.mis = SAVE.mis || {}; SAVE.gift = SAVE.gift || { day: 0, hour: 0 }; SAVE.maxStars = SAVE.maxStars || 0;
 window.addEventListener('pagehide', save); document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 
@@ -26,7 +26,7 @@ const MISSIONS = [
   { k: 'cash', name: 'COLLECT CASH', t: [2000, 10000, 40000, 120000, 400000, 1000000], r: [300, 1200, 4000, 10000, 25000, 60000], money: true },
   { k: 'airs', name: 'BIG AIRS OFF RAMPS', t: [3, 12, 35, 80, 200, 500], r: [400, 1000, 2500, 6000, 12000, 25000] },
   { k: 'nitros', name: 'GRAB NITRO', t: [3, 12, 35, 80, 200, 500], r: [400, 1000, 2500, 6000, 12000, 25000] },
-  { k: 'customs', name: 'HIT CASH RULES CUSTOMS', t: [2, 8, 20, 50, 120, 300], r: [300, 900, 2000, 5000, 10000, 20000] },
+  { k: 'gears', name: 'GRAB REPAIR GEARS', t: [2, 8, 20, 50, 120, 300], r: [300, 900, 2000, 5000, 10000, 20000] },
   { k: 'dist', name: 'DRIVE (KM)', t: [5, 25, 80, 200, 500, 1200], r: [300, 1000, 3000, 7000, 15000, 30000] },
   { k: 'stars', name: 'HIT MAX HEAT', t: [2, 3, 4, 5], r: [500, 1000, 2500, 5000], fmt: (n) => n + '★', val: () => SAVE.maxStars },
   { k: 'survive', name: 'SURVIVE ONE RUN', t: [60, 120, 180, 300, 450, 600], r: [400, 900, 2000, 4000, 8000, 15000], fmt: (n) => mmss(n), val: () => SAVE.best || 0 },
@@ -78,8 +78,8 @@ function openMissions(on) {
 
 // ---------- game state ----------
 const G = {
-  state: 'boot', t: 0, P: null, cops: [], civs: [], wrecks: [], pickups: [], powerups: [], powT: 0, spdT: 0, heat: 0, stars: 0, maxStars: 0, runCash: 0, runTime: 0, wrecked: 0,
-  bust: 0, grace: 0, spawnT: 0, civT: 0, pickT: 0, shop: null, shopT: 0, heli: null, shake: 0, hoodT: 0, hood: '', toastT: 0,
+  state: 'boot', t: 0, P: null, cops: [], civs: [], wrecks: [], pickups: [], powerups: [], gears: [], powT: 0, spdT: 0, heat: 0, stars: 0, maxStars: 0, runCash: 0, runTime: 0, wrecked: 0,
+  bust: 0, grace: 0, spawnT: 0, civT: 0, pickT: 0, gearT: 0, heli: null, shake: 0, hoodT: 0, hood: '', toastT: 0,
   cam: { x: 0, z: 0, tx: 0, tz: 0, dist: 48, orbit: 0 }, input: { l: false, r: false, b: false, keys: {} }, fountains: [], lastCrash: 0, msgT: 0,
 };
 const DYN = { data: new Float32Array(INST * 4096), n: 0 };
@@ -150,7 +150,6 @@ function findRoad(x, z, maxR) {
   }
   return { x, z, h: 0 };
 }
-function nearestShop(x, z) { let best = null, bd = 1e9; for (const s of SHOPS) { const d = Math.hypot(s.x - x, s.z - z); if (d < bd) { bd = d; best = s; } } return [best, bd]; }
 function nearestCopDist(x, z) { let bd = 1e9; for (const c of G.cops) if (c.alive && !c.wreck && c.sink === 0 && !c.ai.lost) bd = Math.min(bd, Math.hypot(c.x - x, c.z - z)); return bd; }
 
 // ---------- player ----------
@@ -168,7 +167,7 @@ function spawnPlayer(boro) {
 }
 function resetRun() {
   G.cops = []; G.civs = []; G.wrecks = []; G.pickups = []; G.powerups = []; G.powT = 1.5; G.spdT = 0; PARTS.length = 0; G.heat = 0; G.stars = 0; G.maxStars = 0; G.runCash = 0; G.runTime = 0; G.wrecked = 0;
-  G.bust = 0; G.grace = 2; G.heli = null; G.fountains = []; G.shop = null;
+  G.bust = 0; G.grace = 2; G.heli = null; G.fountains = []; G.gears = []; G.gearT = 3;
 }
 
 // ---------- spawning ----------
@@ -215,6 +214,16 @@ function spawnPickup() {
     const big = Math.random() < 0.1;
     G.pickups.push({ x, z, v: big ? 500 : 50 + Math.floor(Math.random() * 5) * 25, big, t: Math.random() * 6 });
     return;
+  }
+}
+function spawnGear() {
+  const P = G.P;
+  for (let tries = 0; tries < 10; tries++) {
+    const a = P.h + (Math.random() - 0.5) * 2.6, r = 24 + Math.random() * 40;
+    const x = P.x + Math.sin(a) * r, z = P.z - Math.cos(a) * r;
+    const t = tileAt(x, z); if (t !== T_ROAD && t !== T_HWY && t !== T_PLAZA && t !== T_PARK) continue;
+    if (WORLD.pointBlocked(x, z, 0.8)) continue;
+    G.gears.push({ x, z, t: Math.random() * 6 }); return;
   }
 }
 // nitro power-ups: floating lightning bolts on the road ahead
@@ -285,102 +294,13 @@ function onVehHit(a, b, rv) {
 }
 function armorK() { return 1; }
 
-// ---------- shops ----------
-function shopLocal(s, x, z) { const dx = x - s.x, dz = z - s.z, g = s.g; return [dx * g.ex + dz * g.ez, (dx * g.dx + dz * g.dz) * s.sd]; }
-function updateShops(dt) {
-  // Drive-on pads: roll onto the pad and the car parks itself and the Customs menu opens.
-  // Only blocked while a cop is right on your bumper (so it can't be used as an instant escape mid-ram).
-  const P = G.P, nc = nearestCopDist(P.x, P.z);
-  DYNCOLS.length = 0;
-  G.nearShop = null;
-  const hot = G.stars > 0 && nc < 6;
-  for (const s of SHOPS) {
-    const dx = s.x - P.x, dz = s.z - P.z; if (Math.abs(dx) > 30 || Math.abs(dz) > 30) continue;
-    const d = Math.hypot(dx, dz);
-    if (s.cool && d > SHOP_PAD) s.cool = false;          // must leave the pad before it can trigger again
-    if (d < 18 && (!G.nearShop || d < G.nearShop.d)) G.nearShop = { s, hot, d };
-    if (G.state === 'play' && d < SHOP_PAD * 0.55 && !s.cool && !hot && P.alive && P.sink === 0) enterShop(s);
-  }
-}
-function enterShop(s) {
-  const P = G.P;
-  G.state = 'shop'; G.shop = s; G.shopT = 0; stat('customs', 1);
-  P.vx = P.vz = 0; P.spin = 0; P.thr = 0; P.steer = 0; P.nitro = 0; P.boost = 1;
-  P.x = s.x; P.z = s.z;
-  P.h = Math.atan2(s.g.dx * s.sd, -s.g.dz * s.sd);   // parked nose-out, facing the street
-  AUD.blip(300, 120, 0.4, 'sawtooth', 0.05); flash('#1fd65f');
-  setTimeout(() => openShopUI(), 450);
-}
-const PAINTS = [['CASH GREEN', '#1fd65f'], ['TAXI YELLOW', '#f7c412'], ['MIDNIGHT', '#14161c'], ['CANDY RED', '#d3202a'], ['ICE WHITE', '#f4f6f8'], ['ROYAL BLUE', '#1f4fd8'],
-['GOLD RUSH', '#d4a017'], ['GRAPE', '#6c2bd9'], ['GUNMETAL', '#4a5059'], ['SUNSET', '#ff7a1a'], ['HOT PINK', '#ff3ea5'], ['TEAL', '#0fb5ae']];
-function serviceCost(kind) {
-  const P = G.P;
-  if (kind === 'paint') return 120 + G.stars * 100;
-  if (kind === 'fix') return 60 + Math.round((P.maxHp - P.hp) * 1.6) + G.stars * 40;
-  return 0;
-}
-function openShopUI() {
-  if (G.state !== 'shop') return;
-  const s = G.shop, P = G.P, el = $('shop');
-  el.classList.add('on'); $('hud').classList.remove('on');
-  $('shopName').textContent = 'CASH RULES CUSTOMS · ' + s.name;
-  renderShopUI();
-}
-function renderShopUI() {
-  const P = G.P, wanted = G.stars > 0;
-  $('shopHeat').innerHTML = wanted ? `<span class="hotstars">${'★'.repeat(G.stars)}${'☆'.repeat(5 - G.stars)}</span> HEAT ON YOU — PAINT OR FIX TO LOSE IT` : '<span class="cool">NO HEAT</span> — CUSTOMIZE YOUR RIDE';
-  $('shopWallet').textContent = fmt$(SAVE.bank);
-  const pc = serviceCost('paint'), fc = serviceCost('fix');
-  $('paintCost').textContent = fmt$(pc); $('fixCost').textContent = fmt$(fc);
-  $('fixHp').style.width = Math.round(P.hp / P.maxHp * 100) + '%';
-  $('fixBtn').disabled = SAVE.bank < fc || (P.hp >= P.maxHp && !wanted);
-  $('fixBtn').textContent = P.hp >= P.maxHp && !wanted ? 'MINT CONDITION' : (SAVE.bank < fc ? 'NEED ' + fmt$(fc) : 'REPAIR ' + fmt$(fc));
-  const sw = $('swatches'); sw.innerHTML = '';
-  for (const p of PAINTS) {
-    const b = document.createElement('button'); b.className = 'sw'; b.style.background = p[1]; b.title = p[0];
-    b.disabled = SAVE.bank < pc;
-    b.onclick = () => doService('paint', p[1], p[0]);
-    sw.appendChild(b);
-  }
-  $('paintNote').textContent = SAVE.bank < pc ? 'NEED ' + fmt$(pc) + ' FOR A RESPRAY' : 'TAP A COLOR · NEW PAINT + PLATES';
-  for (const k of ['engine', 'armor']) {
-    const lv = SAVE.up[k], cost = upCost(k);
-    $(k + 'Lv').textContent = 'LV ' + lv + '/3';
-    const b = $(k + 'Btn'); b.disabled = lv >= 3 || SAVE.bank < cost; b.textContent = lv >= 3 ? 'MAXED' : 'UPGRADE ' + fmt$(cost);
-  }
-}
+// ---------- upgrades (bought on the title screen) ----------
 function upCost(k) { const lv = SAVE.up[k]; return k === 'engine' ? [700, 1500, 3000][lv] || 0 : [500, 1100, 2400][lv] || 0; }
-function doService(kind, color, name) {
-  const P = G.P, cost = serviceCost(kind);
-  if (SAVE.bank < cost) return;
-  SAVE.bank -= cost; G.runCash -= cost;
-  const wasWanted = G.stars > 0;
-  if (kind === 'paint') { P.color = hex(color); SAVE.color = P.color.slice(); AUD.spray(); flash('#ffffff'); burstPaint(P, P.color); }
-  if (kind === 'fix') { P.hp = P.maxHp; AUD.blip(200, 600, 0.3, 'square', 0.05); flash('#9effa0'); }
-  if (wasWanted) clearWanted(kind === 'paint' ? 'FRESH PAINT — COPS LOST YOUR DESCRIPTION' : 'FRESH TAGS — WANTED LEVEL CLEARED');
-  save(); renderShopUI();
-}
 function buyUpgrade(k) {
   const c = upCost(k); if (SAVE.up[k] >= 3 || SAVE.bank < c) return;
   SAVE.bank -= c; SAVE.up[k]++; save();
-  const st = playerStats(), P = G.P; const ratio = P.hp / P.maxHp; P.maxV = st.maxV; P.maxHp = st.hp; P.hp = Math.round(st.hp * ratio);
-  AUD.blip(300, 900, 0.25, 'square', 0.05); renderShopUI();
-}
-function clearWanted(msg) {
-  G.heat = 0; G.stars = 0; G.bust = 0;
-  for (const c of G.cops) c.ai.lost = true;
-  if (G.heli) G.heli.leaving = true;
-  bigMsg('WANTED LEVEL CLEARED', 'cool'); toast(msg);
-}
-function burstPaint(P, col) { for (let i = 0; i < 4; i++) puff(P.x, 0.6 + i * 0.3, P.z, col, 6, { size: 0.35, v: 3, vy: 1, life: 1.4, g: -0.2, spread: 1.6 }); }
-function leaveShop() {
-  const s = G.shop, P = G.P; if (!s) return;
-  $('shop').classList.remove('on'); $('hud').classList.add('on');
-  P.x = s.x; P.z = s.z; P.h = Math.atan2(s.g.dx * s.sd, -s.g.dz * s.sd);
-  P.vx = Math.sin(P.h) * 6; P.vz = -Math.cos(P.h) * 6;   // roll straight out toward the street
-  s.cool = true;
-  G.state = 'play'; G.shop = null; G.grace = G.stars === 0 ? 4 : 0; G.godT = 1.5;
-  save();
+  if (G.P) { const st = playerStats(), P = G.P; P.maxV = st.maxV; P.maxHp = P.hp = st.hp; }
+  AUD.init(); AUD.blip(300, 900, 0.25, 'square', 0.05); renderTitle();
 }
 
 // ---------- outcomes ----------
@@ -449,7 +369,7 @@ function updateWorldRules(dt) {
   // heat & stars
   if (G.stars > 0) G.heat = Math.min(240, G.heat + dt * 0.45);
   const ns = starsFor(G.heat);
-  if (ns > G.stars) { AUD.star(); bigMsg('★'.repeat(ns), 'stars'); if (G.stars === 0) toast('NYPD IS ON YOU — HIT A CASH RULES CUSTOMS TO LOSE THE HEAT'); }
+  if (ns > G.stars) { AUD.star(); bigMsg('★'.repeat(ns), 'stars'); if (G.stars === 0) toast('NYPD IS ON YOU — KEEP MOVING · GRAB ⚙ GEARS TO REPAIR'); }
   G.stars = ns; G.maxStars = Math.max(G.maxStars, ns);
   if (G.stars > 0) { G.wantedT = (G.wantedT || 0) + dt; if (G.wantedT > 1) { G.wantedT = 0; addCash(G.stars * 2); } }
   // spawn cops
@@ -507,6 +427,18 @@ function updateWorldRules(dt) {
     }
     return Math.hypot(p.x - P.x, p.z - P.z) < 95;
   });
+  // repair gears: spawn more often when you're beat up; grabbing one is an instant full repair
+  G.gearT -= dt * (P.hp < P.maxHp * 0.6 ? 2.5 : 1);
+  if (G.gearT <= 0 && G.gears.length < 2) { spawnGear(); G.gearT = 7; }
+  G.gears = G.gears.filter(p => {
+    p.t += dt;
+    if (Math.hypot(p.x - P.x, p.z - P.z) < 2.4 && P.alive && P.sink === 0) {
+      P.hp = P.maxHp; stat('gears', 1); bigMsg('FULL REPAIR', 'cool'); flash('#ffb347'); AUD.blip(200, 600, 0.3, 'square', 0.06);
+      puff(p.x, 1.2, p.z, hex('#ffb347'), 12, { size: 0.2, v: 4, vy: 3, life: 0.6, m: 2, g: 3 });
+      return false;
+    }
+    return Math.hypot(p.x - P.x, p.z - P.z) < 95;
+  });
   // nitro: higher top speed + harder acceleration, flames out the back
   if (P.nitro > 0 && P.alive) {
     P.nitro = Math.max(0, P.nitro - dt); P.boost = NITRO_BOOST;
@@ -535,8 +467,6 @@ function updateWorldRules(dt) {
   const sp = vSpeed(P), nc = nearestCopDist(P.x, P.z);
   if (G.stars > 0 && sp < 2.4 && nc < 4.2 && P.alive && P.sink === 0) G.bust += dt; else G.bust = Math.max(0, G.bust - dt * 1.5);
   if (G.bust > 2.4 && G.state === 'play' && !G.noBust) { gameOver('busted'); }
-  // shops
-  updateShops(dt);
   // neighborhood toast
   G.hoodT -= dt;
   if (G.hoodT <= 0) {
@@ -619,20 +549,18 @@ function buildDynamic(t) {
     for (let j = 0; j < 10; j++) { const b2 = a * 0.6 + j * Math.PI / 5; dpush(p.x + Math.cos(b2) * 1.4, y + Math.sin(p.t * 5 + j) * 0.12, p.z + Math.sin(b2) * 1.4, 0.2, 0.2, 0.2, qYaw(b2), B, 2); }
     dpush(p.x, 0.04, p.z, 2.2, 0.02, 2.2, qYaw(a), hex('#123f66'), 2);
   }
-  // Cash Rules Customs: big floating wrench, pulsing pad, light beam you can spot from blocks away
-  for (const s of SHOPS) {
-    const dx = s.x - (P ? P.x : 0), dz = s.z - (P ? P.z : 0); if (!P || Math.abs(dx) > 75 || Math.abs(dz) > 75) continue;
-    const a = t * 1.8, y = 3.8 + Math.sin(t * 2.2 + s.x) * 0.25, q = qYaw(a), k = 1.7;
-    const hot = G.nearShop && G.nearShop.s === s && G.nearShop.hot;
-    const W = hot ? hex('#ff4a4a') : hex('#e8b923'), at = (lx, ly) => [s.x + Math.cos(a) * lx * k, y + ly * k, s.z - Math.sin(a) * lx * k];
-    dpush(s.x, y, s.z, 0.34 * k, 1.7 * k, 0.3, q, W, 2);                              // handle
-    let c = at(0, 1.0); dpush(c[0], c[1], c[2], 1.0 * k, 0.3 * k, 0.3, q, W, 2);       // jaw
-    c = at(-0.36, 1.32); dpush(c[0], c[1], c[2], 0.28 * k, 0.5 * k, 0.3, q, W, 2);
-    c = at(0.36, 1.32); dpush(c[0], c[1], c[2], 0.28 * k, 0.5 * k, 0.3, q, W, 2);
-    c = at(0, -0.95); dpush(c[0], c[1], c[2], 0.6 * k, 0.36 * k, 0.3, q, W, 2);        // ring end
-    dpush(s.x, 9, s.z, 0.2, 12, 0.2, qYaw(0), hot ? hex('#ff4a4a') : hex('#1fd65f'), 2); // beam
-    const pulse = 0.5 + 0.5 * Math.sin(t * 5);
-    dpush(s.x, 0.08, s.z, SHOP_PAD - 0.5, 0.02, SHOP_PAD - 0.5, qYaw(s.yaw), hot ? [0.6, 0.1, 0.1] : [0.1, 0.45 + 0.4 * pulse, 0.22], 2);
+  // repair gears: spinning steel cog with an orange hub, tilted toward the camera
+  for (const p of G.gears) {
+    const a = p.t * 2.0, y = 1.5 + Math.sin(p.t * 3.2) * 0.18, base = qMul(qYaw(a), qAxis(1, 0, 0, -0.5)), S = 1.3;
+    const steel = hex('#8f9aa6'), dk = hex('#3b4048'), hub = hex('#ff9f1a');
+    for (const r of [0, Math.PI / 4]) dpush(p.x, y, p.z, 1.0 * S, 1.0 * S, 0.34, qMul(base, qAxis(0, 0, 1, r)), steel, 6);   // octagonal body
+    for (let k = 0; k < 8; k++) { // 8 square teeth
+      const ang = k * Math.PI / 4, o = qRot(base, [Math.cos(ang) * 0.68 * S, Math.sin(ang) * 0.68 * S, 0]);
+      dpush(p.x + o[0], y + o[1], p.z + o[2], 0.42 * S, 0.3 * S, 0.34, qMul(base, qAxis(0, 0, 1, ang)), steel, 6);
+    }
+    const f = qRot(base, [0, 0, 0.12]); dpush(p.x + f[0], y + f[1], p.z + f[2], 0.5 * S, 0.5 * S, 0.14, qMul(base, qAxis(0, 0, 1, Math.PI / 4)), hub, 2);
+    const h = qRot(base, [0, 0, 0.2]); dpush(p.x + h[0], y + h[1], p.z + h[2], 0.22 * S, 0.22 * S, 0.1, base, dk, 0);       // axle hole
+    dpush(p.x, 0.04, p.z, 2.1, 0.02, 2.1, qYaw(-a), hex('#7a4a10'), 2);
   }
   // particles
   for (const p of PARTS) {
@@ -669,16 +597,10 @@ function render(t, dt) {
     G.cam.orbit += dt * 0.1; az = CAM_AZ + G.cam.orbit; dist = portrait ? 46 : 40; pitch = 54 * Math.PI / 180;
     tx = G.cam.tx = P.x; tz = G.cam.tz = P.z;
     if (portrait) { const f = [Math.sin(az), -Math.cos(az)]; tx += f[0] * 7; tz += f[1] * 7; }
-  } else if (G.state === 'shop') {
-    G.shopT += dt; const s = G.shop;
-    const out = gWorld(s.g, (s.i + 0.5) * s.g.A, (s.j + 0.5) * s.g.S + s.sd * (s.bv / 2 + 4));
-    az = Math.atan2(s.x - out[0], -(s.z - out[1])) + Math.sin(G.shopT * 0.4) * 0.25; dist = portrait ? 26 : 18; pitch = 42 * Math.PI / 180;
-    const fa = [Math.sin(az), -Math.cos(az)], k = portrait ? 11 : 3.5;
-    tx = G.cam.tx = s.x - fa[0] * k; tz = G.cam.tz = s.z - fa[1] * k;
   }
   const f = [Math.sin(az), -Math.cos(az)];
   let ex = tx - f[0] * dist * Math.cos(pitch), ez = tz - f[1] * dist * Math.cos(pitch), ey = dist * Math.sin(pitch);
-  let ty = G.state === 'shop' ? (portrait ? -3 : 0.5) : (G.state === 'title' ? 1.2 : 0);
+  let ty = G.state === 'title' ? 1.2 : 0;
   if (G.shake > 0) { const s = G.shake; ex += (Math.random() - 0.5) * s; ey += (Math.random() - 0.5) * s; ez += (Math.random() - 0.5) * s; G.shake = Math.max(0, G.shake - dt * 2.5); }
   const L = GFX.night ? LIGHT.night : LIGHT.day;
   const silN = buildDynamic(t);
@@ -692,7 +614,7 @@ function render(t, dt) {
     shadowCenter: [tx, 0, tz], shadowHalf: portrait ? 52 : 46,
     chunks, statics: STATIC_BR ? [STATIC_BR] : [], bills, billTex: BILL_TEX,
     sil: (G.state === 'play') ? { col: [1, 0.85, 0.2, 0.55] } : null,
-    slice: P && G.state !== 'shop' ? { x: P.x, z: P.z, minH: 2.7, fx: f[0], fz: f[1], slope: Math.tan(pitch) * 0.92 } : null,
+    slice: P ? { x: P.x, z: P.z, minH: 2.7, fx: f[0], fz: f[1], slope: Math.tan(pitch) * 0.92 } : null,
   });
 }
 
@@ -703,7 +625,7 @@ function makeBillboards() {
     ['#0b0b0b', 'CASH RULES', 'NYC', '#1fd65f', '#e8b923'], ['#0a2a7a', 'BLUESCREENU', 'NAS100 · GOLD · S&P', '#ffffff', '#5fd0ff'],
     ['#2a0d4a', 'AI BEEN HERE', 'OG WISDOM DAILY', '#e9d5ff', '#ffcc33'], ['#0f3d1f', 'GAS GADGETS', 'ELEVATE YOUR SESSION', '#9effa0', '#ffd23a'],
     ['#ff2e7e', 'NYC DJ', 'LIVE ALL 5 BOROUGHS', '#ffffff', '#111111'], ['#111111', 'MINITECH101', 'APPS THAT MOVE', '#00e5ff', '#ffffff'],
-    ['#111111', 'CASH RULES', 'CUSTOMS', '#e8b923', '#1fd65f'], ['#d3202a', 'WANTED', '★★★★★', '#ffffff', '#ffd23a'],
+    ['#111111', 'CASH RULES', 'RECORDS', '#e8b923', '#1fd65f'], ['#d3202a', 'WANTED', '★★★★★', '#ffffff', '#ffd23a'],
   ];
   cells.forEach((cl, i) => {
     const cx = (i % 2) * 512, cy = (i >> 1) * 256;
@@ -741,10 +663,9 @@ function drawMini(t) {
   x.translate(R, R); x.rotate(-CAM_AZ); x.scale(sc, sc);
   x.imageSmoothingEnabled = false;
   x.drawImage(MAPC, WX0 - P.x, WZ0 - P.z, MW * MAP_RES, MH * MAP_RES);
-  // shops
-  for (const s of SHOPS) { const dx = s.x - P.x, dz = s.z - P.z; if (Math.abs(dx) > 140 || Math.abs(dz) > 140) continue; drawShopIcon(x, dx, dz, 1 / sc); }
   for (const p of G.pickups) { x.fillStyle = '#2ee66f'; x.fillRect(p.x - P.x - 1.5, p.z - P.z - 1.5, 3, 3); }
   for (const p of G.powerups) { x.fillStyle = '#2fa8ff'; x.fillRect(p.x - P.x - 2, p.z - P.z - 2, 4, 4); }
+  for (const p of G.gears) { x.fillStyle = '#ff9f1a'; x.beginPath(); x.arc(p.x - P.x, p.z - P.z, 2.6, 0, Math.PI * 2); x.fill(); }
   const blink = Math.floor(t * 6) % 2;
   for (const c of G.cops) { if (!c.alive || c.ai.lost) continue; x.fillStyle = blink ? '#ff3030' : '#3a6bff'; x.beginPath(); x.arc(c.x - P.x, c.z - P.z, 3.4, 0, Math.PI * 2); x.fill(); }
   if (G.heli) { x.strokeStyle = '#ff3030'; x.lineWidth = 1.5; x.beginPath(); x.arc(G.heli.x - P.x, G.heli.z - P.z, 5, 0, Math.PI * 2); x.stroke(); }
@@ -752,21 +673,7 @@ function drawMini(t) {
   x.rotate(P.h); x.fillStyle = '#fff'; x.strokeStyle = '#000'; x.lineWidth = 1.2;
   x.beginPath(); x.moveTo(0, -6); x.lineTo(4.5, 5); x.lineTo(0, 2.5); x.lineTo(-4.5, 5); x.closePath(); x.fill(); x.stroke();
   x.restore();
-  // nearest shop at edge when wanted
-  const [ns, nd] = nearestShop(P.x, P.z);
-  if (ns) {
-    const dx = ns.x - P.x, dz = ns.z - P.z, a = Math.atan2(dz, dx) - CAM_AZ;
-    const rr = Math.hypot(dx, dz) * sc;
-    if (rr > R - 10) { const ex = R + Math.cos(a) * (R - 11), ey = R + Math.sin(a) * (R - 11); x.save(); x.translate(ex, ey); drawShopIcon(x, 0, 0, 1.2, true); x.restore(); }
-  }
   x.strokeStyle = 'rgba(0,0,0,.6)'; x.lineWidth = 3; x.beginPath(); x.arc(R, R, R - 1.5, 0, Math.PI * 2); x.stroke();
-}
-function drawShopIcon(x, px, pz, s, edge) {
-  x.save(); x.translate(px, pz); x.rotate(edge ? 0 : CAM_AZ); x.scale(s, s);
-  x.fillStyle = G.stars > 0 ? '#1fd65f' : '#e8b923'; x.strokeStyle = '#000'; x.lineWidth = 2;
-  x.beginPath(); x.arc(0, 0, 8, 0, Math.PI * 2); x.fill(); x.stroke();
-  x.fillStyle = '#000'; x.font = 'bold 11px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('$', 0, 1);
-  x.restore();
 }
 function drawBigMap() {
   const cv = $('bigmap'), x = cv.getContext('2d'), P = G.P;
@@ -777,7 +684,6 @@ function drawBigMap() {
   x.imageSmoothingEnabled = true; x.drawImage(MAPC, ox, oz, MW * MAP_RES * sc, MH * MAP_RES * sc);
   const toS = (wx, wz) => [ox + (wx - WX0) * sc, oz + (wz - WZ0) * sc];
   x.font = `bold ${Math.round(W / 60)}px Arial`; x.textAlign = 'center';
-  for (const s of SHOPS) { const p = toS(s.x, s.z); drawShopIcon(x, p[0], p[1], W / 900, true); }
   for (const [n, ll] of Object.entries({ MANHATTAN: [40.79, -73.965], BRONX: [40.86, -73.87], BROOKLYN: [40.645, -73.95], QUEENS: [40.72, -73.82], 'STATEN ISLAND': [40.585, -74.15], 'NEW JERSEY': [40.75, -74.13] })) {
     const p = toS(...P(ll[0], ll[1])); x.fillStyle = 'rgba(0,0,0,.55)'; x.fillText(n, p[0] + 1, p[1] + 1); x.fillStyle = '#fff'; x.fillText(n, p[0], p[1]);
   }
@@ -798,19 +704,9 @@ function updateHUD(t) {
   let hint = '';
   if (G.bust > 0.4) hint = 'GET MOVING OR GET BUSTED!';
   else if (P.nitro > 0) hint = 'NITRO ' + '▮'.repeat(Math.ceil(P.nitro / NITRO_T * 8));
-  else if (G.nearShop && G.nearShop.hot) hint = 'COP ON YOUR BUMPER — SHAKE ’EM, THEN HIT THE PAD';
-  else if (G.nearShop && G.nearShop.d < 12) hint = 'DRIVE ONTO THE PAD · CASH RULES CUSTOMS';
+  else if (P.hp < P.maxHp * 0.35 && G.gears.length) hint = 'LOW HEALTH — GRAB A ⚙ GEAR';
   else if (G.spdT > 0.5) hint = 'HIGH-SPEED BONUS';
   const he = $('hint'); if (he.textContent !== hint) he.textContent = hint; he.classList.toggle('on', !!hint);
-  // compass to nearest shop
-  const cp = $('compass');
-  if (G.stars > 0 && G.state === 'play') {
-    const [s, d] = nearestShop(P.x, P.z);
-    if (s) {
-      const a = Math.atan2(s.x - P.x, -(s.z - P.z)) - CAM_AZ;
-      cp.style.display = 'flex'; $('compArrow').style.transform = `rotate(${a}rad)`; $('compDist').textContent = Math.round(d * MPU) + 'm';
-    }
-  } else cp.style.display = 'none';
 }
 
 // ---------- input ----------
@@ -850,6 +746,7 @@ function renderTitle() {
   $('bank').textContent = fmt$(SAVE.bank);
   $('best').textContent = SAVE.best ? 'BEST RUN ' + mmss(SAVE.best) : ''; $('best').style.visibility = SAVE.best ? 'visible' : 'hidden';
   document.querySelectorAll('#boros button').forEach(b => b.classList.toggle('sel', b.dataset.b === SAVE.boro));
+  for (const k of ['engine', 'armor']) { const lv = SAVE.up[k], c = upCost(k), b = $(k + 'Btn'); b.innerHTML = `${k === 'engine' ? 'ENGINE' : 'ARMOR'} <small>LV ${lv}/3</small> <b>${lv >= 3 ? 'MAX' : fmt$(c)}</b>`; b.disabled = lv >= 3 || SAVE.bank < c; }
   $('optNight').classList.toggle('sel', SAVE.night); $('optSound').classList.toggle('sel', SAVE.sound); $('optShadow').classList.toggle('sel', SAVE.shadows);
 }
 function loadingPct() { return G.P ? Math.min(1, WORLD.loadedAround(G.P.x, G.P.z, 1.6) / 0.999) : 0; }
@@ -861,7 +758,7 @@ function previewCar() {
   G.P = v;
 }
 function goTitle() {
-  $('over').classList.remove('on'); $('pause').classList.remove('on'); $('shop').classList.remove('on');
+  $('over').classList.remove('on'); $('pause').classList.remove('on');
   resetRun(); G.state = 'title'; titleCar = SAVE.car; spawnPlayer(SAVE.boro); $('title').classList.add('on'); $('hud').classList.remove('on'); renderTitle();
 }
 function startRun() {
@@ -872,7 +769,7 @@ function startRun() {
   spawnPlayer(SAVE.boro);
   G.state = 'play'; $('title').classList.remove('on'); $('hud').classList.add('on'); $('over').classList.remove('on');
   G.hood = ''; G.hoodT = 0; G.spawnT = 2; G.civT = 0;
-  bigMsg('ALL 5 BOROUGHS', 'cool'); toast('SMASH = HEAT · CASH RULES CUSTOMS CLEARS IT');
+  bigMsg('ALL 5 BOROUGHS', 'cool'); toast('SMASH = HEAT · ⚙ GEARS = INSTANT REPAIR');
 }
 function setupMenus() {
   $('prevCar').onclick = () => { const i = PLAYER_CARS.indexOf(titleCar); titleCar = PLAYER_CARS[(i + PLAYER_CARS.length - 1) % PLAYER_CARS.length]; previewCar(); renderTitle(); };
@@ -893,10 +790,8 @@ function setupMenus() {
   $('resumeBtn').onclick = () => pause(false);
   $('quitBtn').onclick = () => goTitle();
   $('mini').onclick = () => pause(true);
-  $('leaveBtn').onclick = () => leaveShop();
   $('misBtn').onclick = () => { AUD.init(); openMissions(true); };
   $('misClose').onclick = () => openMissions(false);
-  $('fixBtn').onclick = () => doService('fix');
   $('engineBtn').onclick = () => buyUpgrade('engine');
   $('armorBtn').onclick = () => buyUpgrade('armor');
   $('pNight').onclick = () => { SAVE.night = !SAVE.night; GFX.night = SAVE.night ? 1 : 0; save(); };
@@ -919,10 +814,10 @@ function frame(now) {
   } else if (G.state === 'title') {
     if (Math.floor(t * 4) !== Math.floor((t - dt) * 4)) renderTitle();
   }
-  if (G.state !== 'pause') { updateParts(dt); updateBoats(dt); if (G.state !== 'play') updateShops(dt); }
+  if (G.state !== 'pause') { updateParts(dt); updateBoats(dt); }
   GFX.resize(G.renderScale);
   render(t, dt);
-  if (G.state === 'play' || G.state === 'over' || G.state === 'shop') {
+  if (G.state === 'play' || G.state === 'over') {
     if ((fpsN & 1) === 0) drawMini(t);
     updateHUD(t);
     const nc = nearestCopDist(P.x, P.z);

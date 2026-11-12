@@ -1,6 +1,6 @@
 # CLAUDE.md — CASH RULES NYC: WANTED
 
-A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all five NYC boroughs (plus the Jersey waterfront), with GTA-style auto shops ("Cash Rules Customs") where a respray or a repair wipes your wanted level. Owner: DJ / CASH RULES NYC LLC. Everything here was written from scratch: no Smashy Road code or assets, no third-party engine, so it is 100% owned IP.
+A arcade police-chase game set on a real, drivable map of all five NYC boroughs (plus the Jersey waterfront): survive as the heat climbs, grab cash, nitro and repair gears, hit the ramps. Owner: DJ / CASH RULES NYC LLC. Everything here was written from scratch: no Smashy Road code or assets, no third-party engine, so it is 100% owned IP.
 
 ## Hard rules
 - **The output is one self-contained file: `dist/index.html`.** Don't add JS libraries or CDN scripts. External JS is unreliable in Claude artifacts and it complicates ownership. The renderer is hand-written WebGL2. The only outside request is the Google Fonts stylesheet (Bungee + Russo One), and the game falls back cleanly without it.
@@ -18,14 +18,14 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 ## File map
 | File | What it does |
 |---|---|
-| `src/data.js` | `GEO`: hand-traced lat/lon polygons for MAN/BRX/BKN/QNS/SI/NJ, islands, zones (parks, beaches, airports, cemeteries, plazas), highways and runways, 25 bridges, 17 shop sites, spawn points, ~150 neighborhood labels |
+| `src/data.js` | `GEO`: hand-traced lat/lon polygons for MAN/BRX/BKN/QNS/SI/NJ, islands, zones (parks, beaches, airports, cemeteries, plazas), highways and runways, 25 bridges, spawn points, ~150 neighborhood labels |
 | `src/map.js` | Projection `P(lat,lon)`, the master raster (`BORO`/`ZONE` at 2 units/px via scanline `fillPoly`), smooth coastline lookup (`LANDB` blurred land mask → `landVal`/`landIdx`; `boroAt`/`zoneAt`/`tileAt` all go through it), shore band mask `NEARL`, per-borough street grids (`GRIDS`, `gLocal`/`gWorld`), segment buckets + `segHit`, `tileAt()`, `texel()` ground painter (anti-aliased markings via `cov`/`paint`/`dash`), `bridgeH()` deck profile |
-| `src/chunkgen.js` | `genChunk(cx,cz)` builds the 256px ground texture, building/prop box instances, colliders, props and billboards. Building styles live in `tower()`: glass or masonry tiered towers with deco crowns/penthouses, cornices, storefront bands + awnings, fire escapes, brownstone stoops, roof caps. `faceZ` is the lot's street-facing local-z side. Also landmarks (`LM`), shop placement (`SHOPS`, `initWorldData`), palettes, `box()`/`lbox()` helpers |
+| `src/chunkgen.js` | `genChunk(cx,cz)` builds the 256px ground texture, building/prop box instances, colliders, props and billboards. Building styles live in `tower()`: glass or masonry tiered towers with deco crowns/penthouses, cornices, storefront bands + awnings, fire escapes, brownstone stoops, roof caps. `faceZ` is the lot's street-facing local-z side. Also landmarks (`LM`), `initWorldData`, palettes, `box()`/`lbox()` helpers |
 | `src/gl.js` | `GFX` renderer: instanced **chamfered** cube (world-size bevel `GFX.bevel`), plain cube for the shadow pass, shadow map (`sampler2DShadow`, PCF), chunk ground quads, billboard quads, **building slicing** (see below), hemisphere ambient + ground-contact AO, player silhouette pass, `M4` math |
 | `src/world.js` | `WORLD`: chunk streaming via workers (main-thread fallback), spatial cells, `forCols`/`forProps`/`pointBlocked`/`killProp`. Also quaternions, bridge 3D geometry, boats (Staten Island Ferry etc.) |
 | `src/vehicles.js` | `MODELS` (player cars, cops, ESU SUV/heavy, bus, heli), arcade physics `stepVehicle`, OBB collisions `collideWorld`, car-vs-car `collideVehicles`, cop AI, grid-following civilian AI, particles |
-| `src/game.js` | State machine (`boot → title → play ⇄ pause/shop → over`), heat/stars, spawning, damage, shops UI, HUD, minimap and big map, synth audio (`AUD`), saves, input, camera, main loop, debug hooks |
-| `src/index.html` | All CSS and the DOM overlays (title, HUD, shop sheet, pause map, game over) |
+| `src/game.js` | State machine (`boot → title → play ⇄ pause → over`), heat/stars, spawning, damage, pickups (cash, nitro, gears), missions, HUD, minimap and big map, synth audio (`AUD`), saves, input, camera, main loop, debug hooks |
+| `src/index.html` | All CSS and the DOM overlays (title + upgrades, missions sheet, HUD, pause map, game over) |
 
 ## Coordinates and conventions (read before touching the math)
 - **1 world unit = 18 m.** X points east, **Z points south (north = −Z)**, Y is up. `P(lat,lon)` → `[x,z]`, origin at 40.71, −73.98. World bounds `WX0..WX1`, `WZ0..WZ1` (about 2860×2750 units).
@@ -40,14 +40,14 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 - **Collider** (`COLF` = 7): `cx cz ax az ha hb h`. Axis a = `(ax,az)` = local X, b = `(−az, ax)` = local Z, with half-extents `ha`/`hb`.
 - **Prop** (`PROPF` = 8): `x z radius type instStart instCount yaw mass`. Types are in `PT` (tree, lamp, hydrant, trash, news box, bench, parked car, halal cart, tombstone, umbrella, bush, cone).
 - **Vehicle part** (`MODELS[k].parts`): `[x y z  sx sy sz  color|'body'|'bodyDk'  mat  flag  pitch]`. `pitch` tilts the part about the car's X axis (used for raked glass; build these with `rake(y0,z0,y1,z1,w,col,mat)`). `wheels(xs,zs,r,w)` adds tyre + rim + hub. Keep the player car ≤ 64 parts (silhouette buffer).
-- **Billboard**: `[x y z w h nx nz atlasIndex]`. Atlas: 0 CASH RULES NYC · 1 BLUESCREENU · 2 AI BEEN HERE · 3 GAS GADGETS · 4 NYC DJ · 5 MINITECH101 · 6 CASH RULES CUSTOMS (shop sign) · 7 WANTED. Edit `makeBillboards()` in game.js to change them.
+- **Billboard**: `[x y z w h nx nz atlasIndex]`. Atlas: 0 CASH RULES NYC · 1 BLUESCREENU · 2 AI BEEN HERE · 3 GAS GADGETS · 4 NYC DJ · 5 MINITECH101 · 6 CASH RULES RECORDS · 7 WANTED. Edit `makeBillboards()` in game.js to change them.
 - **Ground texture alpha**: `32 × borough` where the street grid decides the tile (road/sidewalk/lot), 255 elsewhere. For grid tiles, `GROUND_FS` draws roads, sidewalks, curbs, crosswalks, stop bars, lane dashes and double yellows **analytically per pixel** (`gridColor`, derivative AA), so they stay sharp at any screen resolution. Grid params come from `GRIDS` via `uGa`/`uGb`. Alpha 224 marks highway/avenue/runway texels: `segColor()` draws those analytically from the 32 nearest non-bridge `SEGS`, uploaded as `uSegA`/`uSegB` and refreshed when the view moves 8+ units. Bridges, zones and water still come from the texture. If you change marking positions in `texel()`, mirror them in `gridColor()`.
 - **Chunks**: `CH` = 48 units, `CTEX` = 256 px (0.19 units/texel; keep markings ≥ 1 texel wide), stream radius `WORLD.wantR` = 2.4 chunks, spatial cells of 6 units.
 
 ## Camera and tall buildings (no see-through)
 - Camera pitch is `CAM_PITCH` (66°, game.js), steeper than a typical chase cam so towers lean away from the car, like the classic top-down city games.
 - Anything still between the camera and the car is **sliced**: `BOX_VS` in gl.js caps the height of chunk boxes in front of the player at `minH + distance × tan(pitch)`. The cut top renders as a solid, slightly darker roof, and boxes that sit fully above the cut are dropped. Billboards follow the same rule in `BILL_VS`. Shadows still use the full-height city. Tune it via the `slice` object passed in `render()` (game.js): `minH` 2.7 and `slope`. The lateral factor (2.2) and the margins (1.6) live in the shader.
-- Only chunk geometry is sliced. Bridges (`statics`), vehicles, particles and the player are not. The shop camera doesn't slice.
+- Only chunk geometry is sliced. Bridges (`statics`), vehicles, particles and the player are not.
 
 ## Landmarks
 - Defined in `initWorldData()` (chunkgen.js) with `name` (shown as the location label when you're within `nr` or `r + 9` units; see `hoodName` in game.js) and built in `buildLandmark()`. Flatiron, Washington Square Arch, Madison Square Garden, Grand Central, MetLife and Rockefeller Center (30 Rock + rink + Christmas tree) are anchored to their Manhattan grid block. The Vessel and 30 Hudson Yards (Edge) are placed by lat/lon.
@@ -58,7 +58,7 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 ## Roads, ramps, missions
 - **Road width**: `mkGrid` adds `ROAD_WA` (1.2) to every avenue and `ROAD_WS` (0.8) to every street, taken out of the blocks. Sidewalks are `GRID_SW` (0.6, baked into `GROUND_FS`). Highways ×`HWY_K` (1.25), bridges ×`BRIDGE_K` (1.2). Manhattan blocks are now 9.5×4.2, so landmarks must fit 4.2 deep.
 - **Jump ramps** (chunkgen.js): `rampValid(g,i,j)` (pure, cached, ~13% of mid-blocks on avenues that are road the whole way) and `rampHeight(x,z)` drive both the visuals (`buildRamp`) and the physics. `stepVehicle` (vehicles.js) follows the hump and launches when it starts dropping away at > 6 u/s (`vy = 0.62 × speed`, max 17, gravity `AIR_G` 30). In the air: ballistic, no grip; `collideWorld` only checks colliders taller than the car and skips props above 1.2. Landing sets `v.landed` (air time). game.js pays the big-air bonus (≥ 0.45 s), and hard landings damage cops. Block force fields are 40 tall, so you can't jump into backyards. Chunk `maxH` ignores colliders ≥ 39.
-- **Side missions + gifts** (game.js, `MISSIONS`, `GIFTS`): tiered ladders over lifetime `SAVE.stats` (cops, cash, airs, nitros, customs, dist km, runs), plus `SAVE.maxStars` and `SAVE.best`. Tier progress is in `SAVE.mis`, gift timestamps in `SAVE.gift` (daily 20 h $1,500, hourly $150). `stat(k, n)` increments a stat and toasts newly completed tiers. UI: `#misBtn` on the title (badge = `claimable()`) opens `#missions`.
+- **Side missions + gifts** (game.js, `MISSIONS`, `GIFTS`): tiered ladders over lifetime `SAVE.stats` (cops, cash, airs, nitros, gears, dist km, runs), plus `SAVE.maxStars` and `SAVE.best`. Tier progress is in `SAVE.mis`, gift timestamps in `SAVE.gift` (daily 20 h $1,500, hourly $150). `stat(k, n)` increments a stat and toasts newly completed tiers. UI: `#misBtn` on the title (badge = `claimable()`) opens `#missions`.
 
 ## Gameplay tuning (game.js unless noted)
 - Stars: `STAR_HEAT = [1,16,40,80,140]`. Chasing cops per star level: `COPS_FOR = [0,2,3,5,6,8]`. The helicopter appears at 4★ and up.
@@ -66,20 +66,19 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 - Cash: floating bill stacks $50–$150 (briefcase $500, 10%), $2×stars per second while wanted, +$100 per cop wrecked or drowned. **High-speed bonus**: above 88% of top speed you earn $20 + $10×stars per second (+$20 during nitro).
 - **Nitro power-ups** (`spawnPowerup`, `G.powerups`): floating lightning bolts on roads ahead, up to 3 at a time. Pickup gives `NITRO_T` = 4.5 s of `P.boost = NITRO_BOOST` (1.5× top speed and acceleration via `v.boost` in `stepVehicle`), with flames.
 - **Player damage comes only from live cops** (car-vs-car in `onVehHit`) **and water** (sinking). Walls and buildings (`collideWorld` impacts), props, parked cars, civilians and wrecks don't hurt the player. NPC damage is unchanged, so cops still wreck on walls and on you.
-- **Solid blocks**: `blockFence()` (chunkgen.js) makes each block's whole lot area one collider, so cars can't squeeze between buildings or through yards. Blocks cut by water, parks, highways, Broadway or landmark plazas get per-cell colliders, and only for cells that are entirely lot. Customs blocks are skipped (the bay stays open). Every chunk a block overlaps adds the block's barrier, because collision lookups are per chunk. Times Square towers are built from lot cells so Broadway stays open. ESB, Chrysler, One WTC and MSG are snapped to their blocks and sized to fit them.
+- **Solid blocks**: `blockFence()` (chunkgen.js) makes each block's whole lot area one collider, so cars can't squeeze between buildings or through yards. Blocks cut by water, parks, highways, Broadway or landmark plazas get per-cell colliders, and only for cells that are entirely lot. Every chunk a block overlaps adds the block's barrier, because collision lookups are per chunk. Times Square towers are built from lot cells so Broadway stays open. ESB, Chrysler, One WTC and MSG are snapped to their blocks and sized to fit them.
 - **Busted**: speed < 2.4 with a cop within 4.2 units for 2.4 s. Bail is 50 + 25×stars.
-- **Cash Rules Customs are open drive-on pads** (`buildShop` in chunkgen.js: paved lot, pad of size `SHOP_PAD`, booth, tyre stack, sign). The floating wrench, pulsing pad and light beam are dynamic (`buildDynamic`). Rolling within `SHOP_PAD × 0.55` of the pad centre parks the car nose-out and opens the menu (`updateShops` → `enterShop`). A pad won't trigger while a cop is within **6 units** while you're wanted, or until you've left it after a visit (`s.cool`). Sites: the 17 named ones in `GEO.SHOPS`, plus a lattice every `SP` = 110 units across the five boroughs, named after the nearest neighborhood (≈178 total). `SHOPKEY` indexes shop blocks; shop blocks get no fence and no sidewalk props.
-- Respray costs 120 + 100×stars. Repair costs 60 + 1.6×missing HP + 40×stars. **Both clear the wanted level** (`clearWanted`): cops switch to `ai.lost` and the helicopter leaves.
-- Upgrades: engine `[700,1500,3000]` (+6% top speed per level), armor `[500,1100,2400]` (+22% HP per level). Car stats and prices live in `MODELS` (vehicles.js). The player garage is `PLAYER_CARS`.
+- **No Customs/shops** (removed). Heat only goes up during a run. **Repair gears** (`spawnGear`, `G.gears`): floating steel cogs on roads ahead, up to 2 at a time, spawning 2.5× faster when you're below 60% HP. Driving through one is an instant full repair. **Engine/armor upgrades** are bought on the title screen (`#engineBtn`/`#armorBtn` → `buyUpgrade`).
+- Upgrades (title screen): engine `[700,1500,3000]` (+6% top speed per level), armor `[500,1100,2400]` (+22% HP per level). Car stats and prices live in `MODELS` (vehicles.js). The player garage is `PLAYER_CARS`.
 - Cop rubber-banding is `v.boost` in `copAI` (vehicles.js).
 - Saves go to localStorage key `crnyc_wanted_v1`: bank, owned cars, current car, paint, upgrades, best time and settings.
 
 ## Testing
 - `node test/maptest.js` renders the master map and close-up ground crops to `test/out/*.png`. Use it to check coastlines, grids and bridges after editing `data.js`/`map.js`.
-- `node test/chunktest.js` reports shop placement and per-chunk generation time and counts.
+- `node test/chunktest.js` reports per-chunk generation time and counts.
 - Browser tests need Playwright (`pip install playwright && playwright install chromium`; set `CHROME_PATH` to use a system Chrome). Run them from the repo root:
   - `node test/flow_node.js` runs flow + chaos + night screenshots with Node Playwright (no Python needed).
-  - `python3 test/flow.py` covers drive → wanted → chase → enter shop → respray clears stars → leave → drive into the Hudson.
+  - `python3 test/flow.py` covers drive → wanted → chase → drive into the Hudson.
   - `python3 test/chaos.py` does 20 s of random driving at 5★ in every borough (catches NaNs and exceptions).
   - `python3 test/bridge.py`, `test/quick.py W H tag` and `test/shots.py W H tag` take screenshots.
 - **Phone perf**: open the game with `?fps=1` (e.g. `https://hotcarnyc.netlify.app/?fps=1`) for an overlay with fps, worst frame, render size, shadow size, boxes drawn, draw calls and chunks.
@@ -96,5 +95,5 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 - Real street geometry baked from OpenStreetMap into a compact binary (Broadway is already a special case).
 - More heat at 5★: roadblocks, spike strips, an armored "tank" tier, police boats on the rivers.
 - Missions and deliveries per borough. Daily challenges. Online leaderboard (needs a backend, e.g. Netlify Functions).
-- More rides and cosmetic packs: wraps, rims, neon underglow, plus more Cash Rules Customs services.
+- More rides and cosmetic packs: wraps, rims, neon underglow.
 - Possibly a shared lobby with the Shaolin City multiplayer project later.

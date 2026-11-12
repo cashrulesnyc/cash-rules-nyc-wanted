@@ -16,21 +16,11 @@ const path = require('path'); const html = process.argv[2] || path.resolve(__dir
   for (const k of [0,1,0,-1,0,1]) await sim(1.5,k);
   console.log('wanted', JSON.stringify(await st()));
   await pg.waitForTimeout(600); await pg.screenshot({path:out+'_chase.png'});
-  const r=await pg.evaluate(`(()=>{const [s]=nearestShop(G.P.x,G.P.z);const g=s.g;
-    const p=gWorld(g,(s.i+0.5)*g.A,(s.j+0.5)*g.S+s.sd*(s.bv/2+g.sw+g.ws*0.5));G.P.x=p[0];G.P.z=p[1];
-    G.P.h=Math.atan2(-g.dx*s.sd,g.dz*s.sd);G.P.vx=Math.sin(G.P.h)*6;G.P.vz=-Math.cos(G.P.h)*6;
-    for(const c of G.cops){c.x+=200;} G.cam.tx=G.P.x;G.cam.tz=G.P.z; return s.name})()`);
-  console.log('shop target', r);
-  await pg.waitForTimeout(800);
-  for (let i=0;i<6;i++){ await pg.evaluate('__sim(0.15,0)'); await pg.waitForTimeout(120); }
-  console.log('after drive-in', JSON.stringify(await st()));
-  await pg.waitForTimeout(2500); await pg.screenshot({path:out+'_shop.png'});
-  await pg.evaluate("SAVE.bank=Math.max(SAVE.bank,2000);renderShopUI();");
-  await pg.click('#swatches .sw:nth-child(1)'); await pg.waitForTimeout(500);
-  console.log('after respray', JSON.stringify(await st()));
-  await pg.click('#leaveBtn'); await pg.waitForTimeout(800);
-  console.log('left shop', JSON.stringify(await st()));
-  await sim(2,0);
+  // repair gear: take damage, drop a gear in front of the car, drive through it
+  const gear=await pg.evaluate(`(()=>{G.godT=0;G.P.hp=20;const P0=G.P;G.cops.forEach(c=>c.x+=300);
+    G.gears=[{x:P0.x+Math.sin(P0.h)*1.0,z:P0.z-Math.cos(P0.h)*1.0,t:0}];const before=P0.hp;__sim(0.2,0);return {before,after:P0.hp,max:P0.maxHp,left:G.gears.length,stat:SAVE.stats.gears};})()`);
+  console.log('gear repair', JSON.stringify(gear));
+  await pg.waitForTimeout(600); await pg.screenshot({path:out+'_gears.png'});
   await pg.evaluate("(()=>{const p=P(40.745,-74.0075);G.P.x=p[0];G.P.z=p[1];G.P.h=-Math.PI/2+0.4;G.P.vx=-20;G.P.vz=0;G.cam.tx=G.P.x;G.cam.tz=G.P.z;})()");
   await sim(2.5,0); await pg.waitForTimeout(2500);
   console.log('water', JSON.stringify(await st()));

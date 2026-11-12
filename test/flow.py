@@ -23,26 +23,6 @@ async def main():
         for k in range(6): await sim(1.5, [0,1,0,-1,0,1][k])
         print('wanted', await st())
         await pg.wait_for_timeout(600); await pg.screenshot(path=f'{OUT}/f2_chase.png')
-        # shop flow: teleport in front of nearest shop door, facing in
-        r=await pg.evaluate("""()=>{const [s]=nearestShop(G.P.x,G.P.z);const g=s.g;
-          const p=gWorld(g,(s.i+0.5)*g.A,(s.j+0.5)*g.S+s.sd*(s.bv/2+g.sw+g.ws*0.5));G.P.x=p[0];G.P.z=p[1];
-          G.P.h=Math.atan2(-g.dx*s.sd,g.dz*s.sd);G.P.vx=Math.sin(G.P.h)*6;G.P.vz=-Math.cos(G.P.h)*6;
-          for(const c of G.cops){c.x+=200;} G.cam.tx=G.P.x;G.cam.tz=G.P.z; return s.name}""")
-        print('shop target', r)
-        await pg.wait_for_timeout(800)
-        for i in range(6):
-            await pg.evaluate("()=>__sim(0.15,0)"); await pg.wait_for_timeout(120)
-        print('after drive-in', await st())
-        await pg.wait_for_timeout(2000)
-        await pg.screenshot(path=f'{OUT}/f3_shop.png')
-        await pg.evaluate("()=>{SAVE.bank=Math.max(SAVE.bank,2000);renderShopUI();}")
-        await pg.click('#swatches .sw:nth-child(1)'); await pg.wait_for_timeout(500)
-        print('after respray', await st())
-        await pg.screenshot(path=f'{OUT}/f4_respray.png')
-        await pg.click('#leaveBtn'); await pg.wait_for_timeout(800)
-        print('left shop', await st())
-        await sim(2,0)
-        await pg.screenshot(path=f'{OUT}/f5_after.png')
         # water test: teleport onto Hudson heading west
         await pg.evaluate("()=>{const p=P(40.745,-74.0075);G.P.x=p[0];G.P.z=p[1];G.P.h=-Math.PI/2+0.4;G.P.vx=-20;G.P.vz=0;G.cam.tx=G.P.x;G.cam.tz=G.P.z;}")
         await sim(2.5,0)

@@ -44,9 +44,6 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
 @keyframes loc{0%{opacity:0;transform:translate(-50%,10px)}10%{opacity:1;transform:translate(-50%,0)}75%{opacity:1}100%{opacity:0}}
 #hint{position:absolute;left:50%;bottom:calc(150px + var(--safe-b));transform:translateX(-50%);background:var(--glass);padding:8px 14px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .2s;white-space:nowrap;border:1px solid rgba(255,255,255,.15)}
 #hint.on{opacity:1}
-#compass{position:absolute;right:calc(58px + var(--safe-r));top:calc(146px + var(--safe-t));display:none;align-items:center;gap:6px;background:var(--glass);border:2px solid var(--g);padding:5px 10px 5px 6px;border-radius:20px;font-size:13px}
-#compArrow{width:22px;height:22px;display:flex;align-items:center;justify-content:center;color:var(--g);font-size:18px}
-#compass b{color:var(--g)}
 #big{position:fixed;left:0;right:0;top:32%;text-align:center;font-family:'Bungee',Impact,sans-serif;font-size:44px;z-index:6;pointer-events:none;opacity:0;text-shadow:0 4px 0 #000,0 0 20px rgba(0,0,0,.6);-webkit-text-stroke:2px #000}
 #big.on{animation:big 1.8s ease forwards}
 #big.stars{color:#ffd23a;font-size:54px}#big.cool{color:var(--g)}
@@ -110,30 +107,15 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
 .opts button{background:transparent;border:2px solid rgba(255,255,255,.2);padding:6px 10px;border-radius:10px;font-size:11px;opacity:.75}
 .opts button.sel{border-color:var(--gold);color:var(--gold);opacity:1}
 .tip{text-align:center;font-size:11.5px;opacity:.7;line-height:1.5}
-/* shop */
-#shop{align-items:flex-end;justify-content:center;background:linear-gradient(180deg,rgba(0,0,0,0) 30%,rgba(0,0,0,.6))}
+.upg{display:flex;gap:6px}
+.upg button{flex:1;background:#141820;border:2px solid rgba(255,255,255,.25);border-radius:12px;padding:7px 6px;font-size:12px;display:flex;gap:6px;align-items:center;justify-content:center}
+.upg button small{opacity:.6;font-size:10px}.upg button b{color:var(--g)}
+.upg button:disabled{opacity:.45}
 .sheet{width:100%;max-width:560px;max-height:66vh;overflow:auto;background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:2px solid rgba(255,255,255,.12);border-bottom:0;border-radius:20px 20px 0 0;padding:16px 16px calc(16px + var(--safe-b));display:flex;flex-direction:column;gap:10px;touch-action:pan-y}
-#shopName{font-family:'Bungee',Impact,sans-serif;font-size:18px;color:var(--gold)}
-#shopHeat{font-size:12px;opacity:.95}
 .hotstars{color:#ffd23a;font-size:16px}.cool{color:var(--g)}
-.wal{display:flex;justify-content:space-between;align-items:center;font-size:13px}
-#shopWallet{font-family:'Bungee',Impact,sans-serif;color:var(--g);font-size:20px}
-.card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px}
-.card h3{margin:0;font-family:'Bungee',Impact,sans-serif;font-size:16px;display:flex;justify-content:space-between}
-.card h3 b{color:var(--g)}
-.card p{margin:0;font-size:11.5px;opacity:.75}
-#swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
-.sw{aspect-ratio:1;border-radius:10px;border:3px solid rgba(0,0,0,.6);box-shadow:inset 0 -6px 0 rgba(0,0,0,.25)}
-.sw:disabled{opacity:.3}
-.hpw2{height:10px;background:rgba(0,0,0,.5);border-radius:5px;overflow:hidden}
-#fixHp{height:100%;background:var(--g)}
 .btn{font-family:'Bungee',Impact,sans-serif;background:var(--g);color:#06140a;border:2px solid #000;border-radius:12px;padding:10px;font-size:15px;box-shadow:0 4px 0 #000}
 .btn:disabled{background:#3b4a40;color:#9fb3a5;box-shadow:0 4px 0 #000}
 .btn.alt{background:#fff;color:#111}
-.ups{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.up{display:flex;flex-direction:column;gap:6px;font-size:12px}
-.up .btn{font-size:12px;padding:8px}
-#leaveBtn{background:var(--gold)}
 /* pause / over */
 #pause,#over{align-items:center;justify-content:center;background:rgba(5,6,8,.78);flex-direction:column;gap:14px;padding:calc(16px + var(--safe-t)) 16px calc(16px + var(--safe-b))}
 #bigmap{width:min(92vw,560px);height:min(56vh,560px);border-radius:16px;border:3px solid #000;box-shadow:0 0 0 2px rgba(255,255,255,.3)}
@@ -147,7 +129,7 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
 #overStats .best,#overStats .bail{grid-column:1/3;color:var(--gold);font-size:14px}
 #overStats .bail{color:#7fb2ff}
 #err{display:none;position:fixed;inset:0;z-index:99;background:#111;color:#fff;padding:40px 20px;font-size:16px;text-align:center}
-@media (min-width:900px){#mini{width:170px;height:170px}#compass{top:calc(190px + var(--safe-t))}#pauseBtn{top:calc(190px + var(--safe-t))}#stars{font-size:36px}.tind{display:none}}
+@media (min-width:900px){#mini{width:170px;height:170px}#pauseBtn{top:calc(190px + var(--safe-t))}#stars{font-size:36px}.tind{display:none}}
 @media (max-height:500px) and (orientation:landscape){
 #title{flex-direction:row;align-items:center;justify-content:space-between;gap:16px;background:linear-gradient(90deg,rgba(5,6,8,.15) 0%,rgba(5,6,8,0) 40%,rgba(5,6,8,.9) 62%)}
 #title>div:first-child{width:42%;align-self:stretch;display:flex;flex-direction:column;justify-content:center}
@@ -165,7 +147,6 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
   <div id="topl"><div id="stars"></div><div id="cash">$0</div><div id="hpw"><div id="hpbar"></div></div><div id="timer">0:00</div></div>
   <button id="pauseBtn" aria-label="Pause">❚❚</button>
   <canvas id="mini"></canvas>
-  <div id="compass"><div id="compArrow">▲</div><span>CUSTOMS <b id="compDist"></b></span></div>
   <div id="hint"></div>
   <div id="loc"></div>
 </div>
@@ -180,9 +161,10 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
     <div class="carsel"><button id="prevCar">◀</button><div class="mid"><div id="carName"></div><div id="carStats"></div></div><button id="nextCar">▶</button></div>
     <div id="boros"><button data-b="MANHATTAN">MANHATTAN</button><button data-b="BROOKLYN">BROOKLYN</button><button data-b="QUEENS">QUEENS</button><button data-b="BRONX">THE BRONX</button><button data-b="STATEN ISLAND">STATEN ISLAND</button></div>
     <button id="playBtn">PLAY</button>
+    <div class="upg"><button id="engineBtn"></button><button id="armorBtn"></button></div>
     <button id="misBtn">MISSIONS &amp; GIFTS <i id="misBadge"></i></button>
     <div class="opts"><button id="optNight">AFTER DARK</button><button id="optSound">SOUND</button><button id="optShadow">SHADOWS</button></div>
-    <div class="tip">Hold LEFT / RIGHT side to steer · both = brake · keys ← → ↓<br>Smash stuff = heat · Drive into <b style="color:var(--gold)">CASH RULES CUSTOMS</b> to respray or repair and lose the cops</div>
+    <div class="tip">Hold LEFT / RIGHT side to steer · both = brake · keys ← → ↓<br>Smash stuff = heat · grab <b style="color:var(--g)">$</b> cash, <b style="color:#2fa8ff">⚡</b> nitro and <b style="color:#ff9f1a">⚙</b> gears for instant repair</div>
   </div>
 </div>
 
@@ -193,24 +175,10 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
   </div>
 </div>
 
-<div id="shop" class="ov">
-  <div class="sheet">
-    <div id="shopName">CASH RULES CUSTOMS</div>
-    <div id="shopHeat"></div>
-    <div class="wal"><span>WALLET</span><span id="shopWallet">$0</span></div>
-    <div class="card"><h3>RESPRAY <b id="paintCost"></b></h3><p>New paint, new plates. Cops lose your description — wanted level wiped.</p><div id="swatches"></div><p id="paintNote"></p></div>
-    <div class="card"><h3>REPAIR <b id="fixCost"></b></h3><p>Body work + fresh tags. Fully fixes your ride and clears your wanted level.</p><div class="hpw2"><div id="fixHp"></div></div><button class="btn" id="fixBtn">REPAIR</button></div>
-    <div class="card"><h3>PERFORMANCE</h3>
-      <div class="ups"><div class="up"><span>ENGINE · <b id="engineLv"></b></span><button class="btn alt" id="engineBtn"></button></div><div class="up"><span>ARMOR · <b id="armorLv"></b></span><button class="btn alt" id="armorBtn"></button></div></div>
-    </div>
-    <button class="btn" id="leaveBtn">HIT THE STREETS</button>
-  </div>
-</div>
-
 <div id="pause" class="ov">
   <div class="disp" style="font-size:26px">PAUSED</div>
   <canvas id="bigmap"></canvas>
-  <div class="tip">$ = CASH RULES CUSTOMS · pink arrow = you</div>
+  <div class="tip">pink arrow = you</div>
   <div class="row"><button class="btn" id="resumeBtn">RESUME</button><button class="btn alt" id="pNight">DAY / NIGHT</button><button class="btn alt" id="quitBtn">QUIT</button></div>
 </div>
 

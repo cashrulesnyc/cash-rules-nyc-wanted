@@ -538,7 +538,7 @@ const GFX = {
       for (const b of S.bills) {
         gl.uniform3f(pl.u.uPos, b[0], b[1], b[2]); gl.uniform2f(pl.u.uSize, b[3], b[4]); gl.uniform2f(pl.u.uN, b[5], b[6]);
         const k = b[7] | 0, col = k % 2, row = k >> 1; gl.uniform4f(pl.u.uUV, col * 0.5, row * 0.25, 0.5, 0.25);
-        gl.uniform1f(pl.u.uBillSlice, k === 6 ? 0 : 1); // Customs signs never get cut
+        gl.uniform1f(pl.u.uBillSlice, 1);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
       gl.enable(gl.CULL_FACE);
