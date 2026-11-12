@@ -192,6 +192,7 @@ precision highp float;
 in vec2 vUV; in vec3 vW; in vec4 vS; out vec4 o;
 uniform sampler2D uTex; uniform vec3 uFlat; uniform float uUseTex;
 uniform vec4 uGa[7]; uniform vec4 uGb[7];
+uniform vec4 uSegA[32]; uniform vec4 uSegB[32]; uniform int uSegN; // nearby highway/avenue/runway segments
 ${LIGHT_FS}
 float cov(float d, float hw, float f){ return clamp((hw - d) / f + 0.5, 0.0, 1.0) * clamp(2.0 * hw / f, 0.0, 1.0); }
 float dsh(float a, float p, float f){ float x = fract(a / p) * p; return cov(abs(x - p * 0.5), p * 0.25, f); }
@@ -234,11 +235,44 @@ vec3 gridColor(int bo, vec3 lot){
   float walkM = max(cov(du, wa * 0.5 + sw, fu), cov(dv, ws * 0.5 + sw, fv));
   return mix(mix(lot, walk, walkM), road, roadM);
 }
+// highways (type 1), avenues like Broadway (2) and runways (3), same priority rule as segHit()
+vec3 segColor(vec3 base){
+  int best = -1; float bp = 0.0, bt = 0.0, bl = 0.0;
+  for (int i = 0; i < 32; i++) {
+    if (i >= uSegN) break;
+    vec4 A = uSegA[i], B = uSegB[i];
+    vec2 r = vW.xz - A.xy; float t = dot(r, A.zw), lat = r.x * A.w - r.y * A.z;
+    if (t < -B.y * 0.3 || t > B.x + B.y * 0.3 || abs(lat) > B.y) continue;
+    float pr = B.z > 1.5 && B.z < 2.5 ? 1.0 : B.z > 2.5 ? 1.0 : 2.0;
+    if (pr > bp) { bp = pr; best = i; bt = t; bl = lat; }
+  }
+  if (best < 0) return base;
+  vec4 B = uSegB[best]; float hw = B.y, a = abs(bl), ty = B.z;
+  float fa = max(fwidth(bl), 1e-3), ft = max(fwidth(bt), 1e-3), n = h21(floor(vW.xz * 5.33));
+  vec3 W = vec3(236.0) / 255.0, Y = vec3(240.0, 196.0, 56.0) / 255.0;
+  vec3 c;
+  if (ty > 2.5) { // runway
+    c = vec3(58.0, 60.0, 66.0) / 255.0 * (0.94 + 0.12 * n);
+    c = mix(c, W, cov(abs(a - (hw - 0.32)), 0.12, fa));
+    c = mix(c, W, cov(a, 0.14, fa) * dsh(bt, 3.0, ft));
+  } else if (ty > 1.5) { // avenue
+    c = vec3(66.0, 68.0, 76.0) / 255.0 * (0.94 + 0.12 * n);
+    c = mix(c, Y, cov(abs(a - 0.16), 0.08, fa));
+    c = mix(c, W, cov(abs(a - hw * 0.5), 0.09, fa) * dsh(bt, 2.2, ft));
+  } else { // highway
+    c = vec3(56.0, 58.0, 64.0) / 255.0 * (0.94 + 0.12 * n);
+    c = mix(c, W, cov(abs(a - (hw - 0.3)), 0.1, fa));
+    c = mix(c, Y, cov(abs(a - 0.16), 0.08, fa));
+    c = mix(c, W, cov(abs(a - hw * 0.5), 0.09, fa) * dsh(bt, 2.4, ft));
+  }
+  return mix(base, c, cov(a, hw, fa));
+}
 void main(){
   vec3 base = uUseTex > 0.5 ? texture(uTex, vUV).rgb : uFlat;
   if (uUseTex > 0.5) {
     float a = texelFetch(uTex, clamp(ivec2(vUV * 256.0), ivec2(0), ivec2(255)), 0).a * 255.0;
-    if (a < 250.0) base = gridColor(int(a / 32.0 + 0.5), base);
+    if (a < 210.0) base = gridColor(int(a / 32.0 + 0.5), base);
+    else if (a < 240.0) base = segColor(base);
   }
   float sh = shadowAt(vS);
   vec3 c = base * (uAmb + uSunCol * uSun.y * sh);
@@ -462,6 +496,24 @@ const GFX = {
       for (let i = 1; i < 7; i++) { const g = GRIDS[i]; if (!g) continue; this.gridA.set([g.ox, g.oz, g.ex, g.ez], i * 4); this.gridB.set([g.A, g.S, g.wa, g.ws], i * 4); }
     }
     if (this.gridA) { gl.uniform4fv(pg.u['uGa[0]'] || pg.u.uGa, this.gridA); gl.uniform4fv(pg.u['uGb[0]'] || pg.u.uGb, this.gridB); }
+    // nearest 32 non-bridge segments to the view centre (refreshed when the view moves 8+ units)
+    if (typeof SEGS !== 'undefined') {
+      const tx = S.target[0], tz = S.target[2];
+      if (!this.segA || Math.hypot(tx - this.segX, tz - this.segZ) > 8) {
+        this.segX = tx; this.segZ = tz; this.segA = new Float32Array(128); this.segB = new Float32Array(128);
+        const near = [];
+        for (const sg of SEGS) {
+          if (sg.type === SEG_BRIDGE) continue;
+          let t = (tx - sg.ax) * sg.dx + (tz - sg.az) * sg.dz; t = Math.max(0, Math.min(sg.len, t));
+          const d = Math.hypot(tx - sg.ax - sg.dx * t, tz - sg.az - sg.dz * t) - sg.hw;
+          if (d < 140) near.push([d, sg]);
+        }
+        near.sort((a, b) => a[0] - b[0]);
+        this.segN = Math.min(32, near.length);
+        for (let i = 0; i < this.segN; i++) { const sg = near[i][1]; this.segA.set([sg.ax, sg.az, sg.dx, sg.dz], i * 4); this.segB.set([sg.len, sg.hw, sg.type === SEG_HWY ? 1 : sg.type === SEG_AVE ? 2 : 3, 0], i * 4); }
+      }
+      gl.uniform4fv(pg.u['uSegA[0]'], this.segA); gl.uniform4fv(pg.u['uSegB[0]'], this.segB); gl.uniform1i(pg.u.uSegN, this.segN);
+    }
     gl.bindVertexArray(this.quadVAO); gl.uniform1i(pg.u.uTex, 0); gl.activeTexture(gl.TEXTURE0);
     gl.uniform1f(pg.u.uUseTex, 0); gl.uniform3fv(pg.u.uFlat, S.waterCol);
     gl.disable(gl.CULL_FACE);

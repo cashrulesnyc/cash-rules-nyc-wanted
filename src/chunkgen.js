@@ -61,7 +61,11 @@ function initWorldData() {
   lmAdd('parachute', 40.5738, -73.9845, 3, { name: 'PARACHUTE JUMP' });
   lmAdd('unisphere', 40.7465, -73.8448, 7, { name: 'UNISPHERE' });
   // block-anchored landmarks: centred on the Manhattan grid block that holds them
-  for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0]]) {
+  lmAdd('vessel', 40.7537, -74.0021, 3.4, { name: 'THE VESSEL · HUDSON YARDS' });
+  lmAdd('hy30', 40.7541, -74.0004, 3.6, { name: 'EDGE · 30 HUDSON YARDS' });
+  for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
+    ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
+    ['rock', 40.7587, -73.9787, 5.0, 'ROCKEFELLER CENTER', 0]]) {
     const g = GRIDS[1], b = blockOf(g, lat, lon), c = gWorld(g, (b[0] + 0.5) * g.A, (b[1] + 0.5) * g.S + dv);
     LM.push({ type, x: c[0], z: c[1], r, name });
   }
@@ -134,7 +138,7 @@ function genChunk(cx, cz) {
       // alpha: 32*borough where the street grid decides the tile (the ground shader then draws roads,
       // sidewalks and markings analytically, sharp at any resolution); 255 = use the texture colour as-is
       const k = (j * CTEX + i) * 4; tex[k] = o[0]; tex[k + 1] = o[1]; tex[k + 2] = o[2];
-      tex[k + 3] = (t === T_ROAD || t === T_WALK || t === T_LOT) && LASTG ? LASTG.boro * 32 : 255;
+      tex[k + 3] = (t === T_ROAD || t === T_WALK || t === T_LOT) && LASTG ? LASTG.boro * 32 : (t === T_HWY || t === T_RUNWAY) ? 224 : 255; // 224 = highway/avenue/runway segment
       if (t !== T_WATER) land++;
     }
   }
@@ -551,6 +555,82 @@ function buildLandmark(L, ctx) {
       for (const r of [0, Math.PI / 8, Math.PI / 4, 3 * Math.PI / 8]) lr(yaw, 0, 0.06, 1.0, 3.6, 0.06, 3.6, yaw + r, hex('#5fb3e0'), 6);
       lb(0, 0.7, 1.0, 0.3, 1.4, 0.3, yaw, hex('#e8f6ff'), 2);
       for (const sx of [-1, 1]) { const p = rot(x, z, yaw, sx * 1.45, az); addCol(ctx, p[0], p[1], yaw, 0.55, 0.5, 3.2); }
+      break;
+    }
+    case 'msg': { // round drum with vertical ribs, a dark window band and a white roof
+      const yaw = -GRIDS[1].th, Rr = 3.7, N = 22, conc = hex('#b9b4ab'), H = 3.2;
+      for (let k = 0; k < N; k++) {
+        const a = k / N * Math.PI * 2, by = yaw - a - Math.PI / 2, cw = 2 * Rr * Math.sin(Math.PI / N) + 0.06;
+        lr(yaw, Math.cos(a) * Rr, H / 2, Math.sin(a) * Rr, cw, H, 0.7, by, conc, 0);
+        lr(yaw, Math.cos(a) * (Rr + 0.05), 2.3, Math.sin(a) * (Rr + 0.05), cw, 0.55, 0.62, by, hex('#2c3e55'), 6);
+        if (k % 2 === 0) lr(yaw, Math.cos(a) * (Rr + 0.12), H / 2, Math.sin(a) * (Rr + 0.12), 0.14, H + 0.1, 0.2, by, hex('#e9e6df'), 0);
+      }
+      for (let k = 0; k < N; k++) { // round roof from pie slices (each slice: centre -> rim)
+        const a = (k + 0.5) / N * Math.PI * 2, cw = 2 * Rr * Math.sin(Math.PI / N) + 0.08;
+        lr(yaw, Math.cos(a) * Rr * 0.5, H + 0.02, Math.sin(a) * Rr * 0.5, Rr, 0.12, cw, yaw - a, hex('#dfe2e6'), 0);
+      }
+      for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; lr(yaw, Math.cos(a) * 1.3, H + 0.16, Math.sin(a) * 1.3, 0.75, 0.1, 0.25, yaw - a - Math.PI / 2, hex('#b3b9c0'), 0); }
+      lb(0, 0.6, Rr + 0.5, 3.0, 1.2, 0.6, yaw, hex('#1d3557'), 8);   // entrance canopy on the street
+      addCol(ctx, x, z, yaw, Rr, Rr, H);
+      break;
+    }
+    case 'gct': { // beaux-arts terminal: three giant arched windows on 42nd St, copper roof, clock + statues
+      const yaw = -GRIDS[1].th, cr = hex('#e3d7bd'), cr2 = hex('#efe6d2');
+      lb(0, 1.25, 0, 6.4, 2.5, 3.8, yaw, cr, 0);
+      lb(0, 2.62, 0, 6.2, 0.26, 3.6, yaw, hex('#6fa58a'), 0);
+      for (const lx of [-1.7, 0, 1.7]) { lb(lx, 1.25, 1.91, 1.0, 1.8, 0.06, yaw, hex('#2c3e55'), 6); lb(lx, 2.2, 1.91, 0.7, 0.25, 0.07, yaw, hex('#2c3e55'), 6); }
+      for (const lx of [-2.6, -0.85, 0.85, 2.6]) lb(lx, 1.2, 1.97, 0.28, 2.3, 0.14, yaw, cr2, 0); // columns
+      lb(0, 3.05, 1.55, 1.6, 0.8, 0.5, yaw, hex('#b08a3c'), 0);    // sculpture group
+      lb(0, 2.55, 1.94, 0.5, 0.5, 0.08, yaw, hex('#f4f1e8'), 2);    // clock
+      addCol(ctx, x, z, yaw, 3.2, 1.9, 2.6);
+      break;
+    }
+    case 'metlife': { // broad slab straddling Park Ave, chamfered ends
+      const yaw = -GRIDS[1].th, col = hex('#a39d90');
+      lb(0, 1.1, 0, 7.0, 2.2, 4.0, yaw, hex('#b8b2a6'), 1);
+      lb(0, 2.2 + 6.4, 0, 5.4, 12.8, 2.8, yaw, col, 1);
+      for (const sx of [-1, 1]) lr(yaw, sx * 2.7, 8.6, 0, 1.98, 12.8, 1.98, yaw + Math.PI / 4, col, 1);
+      lb(0, 15.2, 0, 5.6, 0.4, 2.9, yaw, hex('#4b4e55'), 0);
+      lb(0, 15.5, 0, 3.2, 0.5, 1.6, yaw, hex('#8d9196'), 0);
+      addCol(ctx, x, z, yaw, 3.5, 2.0, 15);
+      break;
+    }
+    case 'rock': { // 30 Rock slab + Rockefeller Plaza rink, Prometheus, flags and the Christmas tree
+      const yaw = -GRIDS[1].th, ls = hex('#d2c8b2');
+      lb(-2.2, 3.0, 0, 5.4, 6.0, 3.4, yaw, ls, 9);
+      lb(-2.2, 6.0 + 5.2, 0, 4.4, 10.4, 2.0, yaw, ls, 9);
+      lb(-2.2, 16.4 + 0.5, 0, 2.6, 1.0, 1.4, yaw, ls, 9);
+      lb(-2.2, 17.5, 0, 1.6, 0.25, 1.0, yaw, hex('#c7ccd1'), 0);
+      lb(2.8, 0.08, 0, 2.9, 0.16, 2.1, yaw, hex('#9aa3ab'), 0);
+      lb(2.8, 0.17, 0, 2.6, 0.03, 1.8, yaw, hex('#eef6fb'), 6);       // ice
+      lb(2.8, 0.55, -1.1, 0.45, 0.6, 0.3, yaw, C.gold, 2);            // Prometheus
+      for (let k = 0; k < 10; k++) { const lx = 1.35 + (k % 5) * 0.72, lz = k < 5 ? -1.25 : 1.25; lb(lx, 0.7, lz, 0.05, 1.4, 0.05, yaw, C.white, 0); lb(lx + 0.12, 1.25, lz, 0.22, 0.14, 0.03, yaw, [C.red, C.blue, C.yellow, C.green, C.white][k % 5], 0); }
+      const tg = hex('#1f6b3a'); // Christmas tree
+      for (let k = 0; k < 5; k++) lb(0.9, 0.5 + k * 0.7, 0, 1.6 - k * 0.3, 0.75, 1.6 - k * 0.3, yaw + k * 0.4, tg, 0);
+      for (let k = 0; k < 14; k++) { const a = k * 2.4, h = 0.6 + (k / 14) * 3.0, r = 0.82 - (k / 14) * 0.6; lb(0.9 + Math.cos(a) * r, h, Math.sin(a) * r, 0.1, 0.1, 0.1, yaw, [C.red, C.gold, C.blue, C.white][k % 4], 2); }
+      lb(0.9, 4.15, 0, 0.3, 0.3, 0.3, yaw, C.gold, 2);
+      const p = rot(x, z, yaw, -2.2, 0); addCol(ctx, p[0], p[1], yaw, 2.7, 1.7, 17);
+      break;
+    }
+    case 'vessel': { // copper honeycomb bowl: rings widening upward + diagonal lattice
+      const cu = hex('#b8692e'), N = 12, L = 8;
+      const P3 = (k, i) => { const r = 1.0 + k * 0.22, a = (i + (k % 2) * 0.5) / N * Math.PI * 2; return [x + Math.cos(a) * r, 0.3 + k * 0.62, z + Math.sin(a) * r]; };
+      for (let k = 0; k < L; k++) for (let i = 0; i < N; i++) {
+        beam(P3(k, i), P3(k, i + 1), 0.12, cu, 6);
+        if (k + 1 < L) { beam(P3(k, i), P3(k + 1, i), 0.09, cu, 6); beam(P3(k, i + 1), P3(k + 1, i), 0.09, cu, 6); }
+      }
+      box(x, 0.12, z, 2.4, 0.24, 2.4, 0.3, hex('#9b8f84'), 0);
+      addCol(ctx, x, z, 0, 2.2, 2.2, 5);
+      break;
+    }
+    case 'hy30': { // tall glass tower with the Edge's triangular sky deck jutting out near the top
+      const yaw = -GRIDS[1].th, gl = hex('#7fa6c2'), H = 19;
+      lb(0, H / 2, 0, 4.0, H, 3.6, yaw, gl, 7);
+      lr(yaw, 1.3, H + 0.8, 0, 2.4, 1.6, 3.0, yaw + 0.5, gl, 7);       // slanted crown
+      const q = qm(qy(yaw + Math.PI / 4), qa(1, 0, 0, 0));
+      const e = rot(x, z, yaw, -2.3, 1.6); boxQ(e[0], H - 1.6, e[1], 2.6, 0.18, 2.6, q, hex('#dfe4ea'), 0);   // Edge deck
+      boxQ(e[0], H - 1.3, e[1], 2.6, 0.4, 2.6, q, hex('#bfe4ff'), 6);
+      addCol(ctx, x, z, yaw, 2.0, 1.8, H);
       break;
     }
     case 'liberty': {

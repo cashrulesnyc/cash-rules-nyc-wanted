@@ -41,7 +41,7 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 - **Prop** (`PROPF` = 8): `x z radius type instStart instCount yaw mass`. Types are in `PT` (tree, lamp, hydrant, trash, news box, bench, parked car, halal cart, tombstone, umbrella, bush, cone).
 - **Vehicle part** (`MODELS[k].parts`): `[x y z  sx sy sz  color|'body'|'bodyDk'  mat  flag  pitch]`. `pitch` tilts the part about the car's X axis (used for raked glass; build these with `rake(y0,z0,y1,z1,w,col,mat)`). `wheels(xs,zs,r,w)` adds tyre + rim + hub. Keep the player car ≤ 64 parts (silhouette buffer).
 - **Billboard**: `[x y z w h nx nz atlasIndex]`. Atlas: 0 CASH RULES NYC · 1 BLUESCREENU · 2 AI BEEN HERE · 3 GAS GADGETS · 4 NYC DJ · 5 MINITECH101 · 6 CASH RULES CUSTOMS (shop sign) · 7 WANTED. Edit `makeBillboards()` in game.js to change them.
-- **Ground texture alpha**: `32 × borough` where the street grid decides the tile (road/sidewalk/lot), 255 elsewhere. For grid tiles, `GROUND_FS` draws roads, sidewalks, curbs, crosswalks, stop bars, lane dashes and double yellows **analytically per pixel** (`gridColor`, derivative AA), so they stay sharp at any screen resolution. Grid params come from `GRIDS` via `uGa`/`uGb`. Highways, bridges, zones and water still come from the texture. If you change marking positions in `texel()`, mirror them in `gridColor()`.
+- **Ground texture alpha**: `32 × borough` where the street grid decides the tile (road/sidewalk/lot), 255 elsewhere. For grid tiles, `GROUND_FS` draws roads, sidewalks, curbs, crosswalks, stop bars, lane dashes and double yellows **analytically per pixel** (`gridColor`, derivative AA), so they stay sharp at any screen resolution. Grid params come from `GRIDS` via `uGa`/`uGb`. Alpha 224 marks highway/avenue/runway texels: `segColor()` draws those analytically from the 32 nearest non-bridge `SEGS`, uploaded as `uSegA`/`uSegB` and refreshed when the view moves 8+ units. Bridges, zones and water still come from the texture. If you change marking positions in `texel()`, mirror them in `gridColor()`.
 - **Chunks**: `CH` = 48 units, `CTEX` = 256 px (0.19 units/texel; keep markings ≥ 1 texel wide), stream radius `WORLD.wantR` = 2.4 chunks, spatial cells of 6 units.
 
 ## Camera and tall buildings (no see-through)
@@ -50,7 +50,7 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 - Only chunk geometry is sliced. Bridges (`statics`), vehicles, particles and the player are not. The shop camera doesn't slice.
 
 ## Landmarks
-- Defined in `initWorldData()` (chunkgen.js) with `name` (shown as the location label when you're within `nr` or `r + 9` units; see `hoodName` in game.js) and built in `buildLandmark()`. Flatiron and Washington Square Arch are anchored to their Manhattan grid block.
+- Defined in `initWorldData()` (chunkgen.js) with `name` (shown as the location label when you're within `nr` or `r + 9` units; see `hoodName` in game.js) and built in `buildLandmark()`. Flatiron, Washington Square Arch, Madison Square Garden, Grand Central, MetLife and Rockefeller Center (30 Rock + rink + Christmas tree) are anchored to their Manhattan grid block. The Vessel and 30 Hudson Yards (Edge) are placed by lat/lon.
 - Helpers: `lb` (part in the landmark frame), `lr` (frame position + its own yaw; use it whenever a part's yaw differs from the frame yaw), `beam(a,b,th)` (bar between two 3D points), `qy/qa/qm` quaternions.
 - Heights are deliberately exaggerated (ESB antenna ≈ 29, One WTC spire ≈ 34) so they read over the generic skyline. `r` also clears generic lots and park props around them.
 - The Brooklyn Bridge Gothic towers and cable web live in `buildBridgeGeometry()` (world.js, style `gothic`).
@@ -59,6 +59,7 @@ A Smashy Road: Wanted 2–style chase game set on a real, drivable map of all fi
 - Stars: `STAR_HEAT = [1,16,40,80,140]`. Chasing cops per star level: `COPS_FOR = [0,2,3,5,6,8]`. The helicopter appears at 4★ and up.
 - Heat sources: smashing a prop +1.2 (parked car +3), hitting a cop +2 + 0.15×impact, hitting a civilian +1.5, wrecking a cop +10. Heat also rises +0.45/s while you're wanted.
 - Cash: pickups $20–$60 (briefcase $250), $2×stars per second while wanted, +$100 per cop wrecked or drowned.
+- **Player damage comes only from live cops** (car-vs-car in `onVehHit`) **and water** (sinking). Walls and buildings (`collideWorld` impacts), props, parked cars, civilians and wrecks don't hurt the player. NPC damage is unchanged, so cops still wreck on walls and on you.
 - **Busted**: speed < 2.4 with a cop within 4.2 units for 2.4 s. Bail is 50 + 25×stars.
 - **Shop door** stays shut while any chasing cop is within **9 units** (`updateShops`). The door is a dynamic collider in `DYNCOLS`.
 - Respray costs 120 + 100×stars. Repair costs 60 + 1.6×missing HP + 40×stars. **Both clear the wanted level** (`clearWanted`): cops switch to `ai.lost` and the helicopter leaves.

@@ -184,7 +184,7 @@ function onPropHit(v, ch, id, nx, nz, pen) {
     spawnDebris(boxes, v.vx, v.vz, sp);
     const slow = Math.max(0.55, 1 - 0.07 * mass * v.m.mass ** -0.5);
     v.vx *= slow; v.vz *= slow;
-    if (type === PT.PCAR) { damage(v, 4 / Math.sqrt(v.mass)); puff(ch.props[k], 0.6, ch.props[k + 1], hex('#cfcfcf'), 5, { size: 0.3 }); }
+    if (type === PT.PCAR) { if (v !== G.P) damage(v, 4 / Math.sqrt(v.mass)); puff(ch.props[k], 0.6, ch.props[k + 1], hex('#cfcfcf'), 5, { size: 0.3 }); }
     if (type === PT.HYDRANT) G.fountains.push({ x: ch.props[k], z: ch.props[k + 1], t: 4 });
     if (v === G.P) {
       AUD.smash(); G.shake = Math.max(G.shake, 0.15);
@@ -197,7 +197,9 @@ function onVehHit(a, b, rv) {
   const P = G.P;
   if (rv > 3.5) {
     const da = (rv - 3.5) * 1.5 * b.mass / a.mass, db = (rv - 3.5) * 1.5 * a.mass / b.mass;
-    damage(a, a === P ? da / armorK() : da); damage(b, b === P ? db / armorK() : db);
+    // the player only takes damage from cops (walls, props, civilians and wrecks don't hurt you)
+    if (a !== P || (b.role === 'cop' && !b.wreck)) damage(a, a === P ? da / armorK() : da);
+    if (b !== P || (a.role === 'cop' && !a.wreck)) damage(b, b === P ? db / armorK() : db);
     const d = Math.hypot(a.x - P.x, a.z - P.z);
     if (d < 40 && G.t - G.lastCrash > 0.12) { AUD.crash(rv); G.lastCrash = G.t; }
     puff((a.x + b.x) / 2, 0.6, (a.z + b.z) / 2, hex('#ffe08a'), Math.min(8, rv | 0), { size: 0.12, v: 8, vy: 3, life: 0.4, m: 2, g: 12 });
@@ -365,7 +367,7 @@ function stepPlay(dt) {
     if (v.sink > 0) continue;
     const imp = collideWorld(v, dt, onPropHit);
     if (imp > 5) {
-      damage(v, (imp - 5) * 1.35 / (v === P ? armorK() : 1));
+      if (v !== P) damage(v, (imp - 5) * 1.35); // walls/buildings: NPCs only; the player is immune
       if (v === P) { G.shake = Math.max(G.shake, Math.min(0.9, imp * 0.05)); if (G.t - G.lastCrash > 0.15) { AUD.crash(imp); G.lastCrash = G.t; } puff(P.x + Math.sin(P.h) * 1.1, 0.6, P.z - Math.cos(P.h) * 1.1, hex('#ffe08a'), 6, { size: 0.12, v: 7, vy: 3, life: 0.35, m: 2, g: 12 }); }
     }
   }
