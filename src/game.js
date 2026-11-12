@@ -18,7 +18,7 @@ function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } 
 
 // ---------- game state ----------
 const G = {
-  state: 'boot', t: 0, P: null, cops: [], civs: [], wrecks: [], pickups: [], heat: 0, stars: 0, maxStars: 0, runCash: 0, runTime: 0, wrecked: 0,
+  state: 'boot', t: 0, P: null, cops: [], civs: [], wrecks: [], pickups: [], powerups: [], powT: 0, spdT: 0, heat: 0, stars: 0, maxStars: 0, runCash: 0, runTime: 0, wrecked: 0,
   bust: 0, grace: 0, spawnT: 0, civT: 0, pickT: 0, shop: null, shopT: 0, heli: null, shake: 0, hoodT: 0, hood: '', toastT: 0,
   cam: { x: 0, z: 0, tx: 0, tz: 0, dist: 48, orbit: 0 }, input: { l: false, r: false, b: false, keys: {} }, fountains: [], lastCrash: 0, msgT: 0,
 };
@@ -107,7 +107,7 @@ function spawnPlayer(boro) {
   return v;
 }
 function resetRun() {
-  G.cops = []; G.civs = []; G.wrecks = []; G.pickups = []; PARTS.length = 0; G.heat = 0; G.stars = 0; G.maxStars = 0; G.runCash = 0; G.runTime = 0; G.wrecked = 0;
+  G.cops = []; G.civs = []; G.wrecks = []; G.pickups = []; G.powerups = []; G.powT = 1.5; G.spdT = 0; PARTS.length = 0; G.heat = 0; G.stars = 0; G.maxStars = 0; G.runCash = 0; G.runTime = 0; G.wrecked = 0;
   G.bust = 0; G.grace = 2; G.heli = null; G.fountains = []; G.shop = null;
 }
 
@@ -152,9 +152,21 @@ function spawnPickup() {
     const x = P.x + Math.sin(a) * r, z = P.z - Math.cos(a) * r;
     const t = tileAt(x, z); if (t !== T_ROAD && t !== T_WALK && t !== T_PARK && t !== T_PLAZA) continue;
     if (WORLD.pointBlocked(x, z, 0.6)) continue;
-    const big = Math.random() < 0.08;
-    G.pickups.push({ x, z, v: big ? 250 : 20 + Math.floor(Math.random() * 5) * 10, big, t: Math.random() * 6 });
+    const big = Math.random() < 0.1;
+    G.pickups.push({ x, z, v: big ? 500 : 50 + Math.floor(Math.random() * 5) * 25, big, t: Math.random() * 6 });
     return;
+  }
+}
+// nitro power-ups: floating lightning bolts on the road ahead
+const NITRO_T = 4.5, NITRO_BOOST = 1.5;
+function spawnPowerup() {
+  const P = G.P;
+  for (let tries = 0; tries < 10; tries++) {
+    const a = P.h + (Math.random() - 0.5) * 2.4, r = 28 + Math.random() * 45;
+    const x = P.x + Math.sin(a) * r, z = P.z - Math.cos(a) * r;
+    const t = tileAt(x, z); if (t !== T_ROAD && t !== T_HWY && t !== T_PLAZA && t !== T_PARK) continue;
+    if (WORLD.pointBlocked(x, z, 0.8)) continue;
+    G.powerups.push({ x, z, kind: 'nitro', t: Math.random() * 6 }); return;
   }
 }
 
@@ -216,35 +228,28 @@ function armorK() { return 1; }
 // ---------- shops ----------
 function shopLocal(s, x, z) { const dx = x - s.x, dz = z - s.z, g = s.g; return [dx * g.ex + dz * g.ez, (dx * g.dx + dz * g.dz) * s.sd]; }
 function updateShops(dt) {
+  // Drive-on pads: roll onto the pad and the car parks itself and the Customs menu opens.
+  // Only blocked while a cop is right on your bumper (so it can't be used as an instant escape mid-ram).
   const P = G.P, nc = nearestCopDist(P.x, P.z);
   DYNCOLS.length = 0;
   G.nearShop = null;
+  const hot = G.stars > 0 && nc < 6;
   for (const s of SHOPS) {
-    const d = Math.hypot(s.x - P.x, s.z - P.z);
-    if (s.doorY === undefined) s.doorY = 1;
-    const hot = G.stars > 0 && nc < 9;
-    const open = G.state === 'shop' ? false : !hot;
-    s.doorY += ((open ? 1 : 0) - s.doorY) * Math.min(1, dt * 5);
-    if (d > 70) continue;
-    const g = s.g, bayW = 3.2, fv = s.bv / 2 - 0.05;
-    const c = gWorld(g, (s.i + 0.5) * g.A, (s.j + 0.5) * g.S + s.sd * fv);
-    DYNCOLS.push({ on: s.doorY < 0.5, c: [c[0], c[1], Math.cos(s.yaw), -Math.sin(s.yaw), bayW / 2, 0.12, 3] });
-    if (d < 16) G.nearShop = { s, hot, d };
-    if (G.state === 'play' && d < 8) {
-      const l = shopLocal(s, P.x, P.z);
-      if (Math.abs(l[0]) < 1.5 && l[1] < s.bv / 2 - 0.4 && l[1] > -s.bv / 2 + 0.3 && s.doorY > 0.5) enterShop(s);
-    }
+    const dx = s.x - P.x, dz = s.z - P.z; if (Math.abs(dx) > 30 || Math.abs(dz) > 30) continue;
+    const d = Math.hypot(dx, dz);
+    if (s.cool && d > SHOP_PAD) s.cool = false;          // must leave the pad before it can trigger again
+    if (d < 18 && (!G.nearShop || d < G.nearShop.d)) G.nearShop = { s, hot, d };
+    if (G.state === 'play' && d < SHOP_PAD * 0.55 && !s.cool && !hot && P.alive && P.sink === 0) enterShop(s);
   }
 }
 function enterShop(s) {
   const P = G.P;
   G.state = 'shop'; G.shop = s; G.shopT = 0;
-  P.vx = P.vz = 0; P.spin = 0; P.thr = 0; P.steer = 0;
-  const c = gWorld(s.g, (s.i + 0.5) * s.g.A, (s.j + 0.5) * s.g.S);
-  P.x = c[0]; P.z = c[1];
-  P.h = Math.atan2(-s.g.dx * s.sd, s.g.dz * s.sd);
-  AUD.blip(300, 120, 0.4, 'sawtooth', 0.05);
-  setTimeout(() => openShopUI(), 700);
+  P.vx = P.vz = 0; P.spin = 0; P.thr = 0; P.steer = 0; P.nitro = 0; P.boost = 1;
+  P.x = s.x; P.z = s.z;
+  P.h = Math.atan2(s.g.dx * s.sd, -s.g.dz * s.sd);   // parked nose-out, facing the street
+  AUD.blip(300, 120, 0.4, 'sawtooth', 0.05); flash('#1fd65f');
+  setTimeout(() => openShopUI(), 450);
 }
 const PAINTS = [['CASH GREEN', '#1fd65f'], ['TAXI YELLOW', '#f7c412'], ['MIDNIGHT', '#14161c'], ['CANDY RED', '#d3202a'], ['ICE WHITE', '#f4f6f8'], ['ROYAL BLUE', '#1f4fd8'],
 ['GOLD RUSH', '#d4a017'], ['GRAPE', '#6c2bd9'], ['GUNMETAL', '#4a5059'], ['SUNSET', '#ff7a1a'], ['HOT PINK', '#ff3ea5'], ['TEAL', '#0fb5ae']];
@@ -311,12 +316,9 @@ function burstPaint(P, col) { for (let i = 0; i < 4; i++) puff(P.x, 0.6 + i * 0.
 function leaveShop() {
   const s = G.shop, P = G.P; if (!s) return;
   $('shop').classList.remove('on'); $('hud').classList.add('on');
-  const c = gWorld(s.g, (s.i + 0.5) * s.g.A, (s.j + 0.5) * s.g.S + s.sd * (s.bv / 2 + s.g.sw + s.g.ws * 0.5));
-  P.x = c[0]; P.z = c[1];
-  // face along the street
-  P.h = Math.atan2(s.g.ex, -s.g.ez) + (Math.random() < 0.5 ? Math.PI : 0);
-  const r = findRoad(P.x, P.z, 4); if (r) { P.x = r.x; P.z = r.z; }
-  P.vx = Math.sin(P.h) * 4; P.vz = -Math.cos(P.h) * 4;
+  P.x = s.x; P.z = s.z; P.h = Math.atan2(s.g.dx * s.sd, -s.g.dz * s.sd);
+  P.vx = Math.sin(P.h) * 6; P.vz = -Math.cos(P.h) * 6;   // roll straight out toward the street
+  s.cool = true;
   G.state = 'play'; G.shop = null; G.grace = G.stars === 0 ? 4 : 0; G.godT = 1.5;
   save();
 }
@@ -422,9 +424,33 @@ function updateWorldRules(dt) {
   if (G.pickT <= 0 && G.pickups.length < 7) { spawnPickup(); G.pickT = 0.6; }
   G.pickups = G.pickups.filter(p => {
     p.t += dt;
-    if (Math.hypot(p.x - P.x, p.z - P.z) < 1.7 && P.alive) { addCash(p.v); puff(p.x, 0.8, p.z, hex('#2ee66f'), 8, { size: 0.18, v: 3, vy: 3, life: 0.6, m: 2, g: 4 }); return false; }
+    if (Math.hypot(p.x - P.x, p.z - P.z) < 2.3 && P.alive) { addCash(p.v); AUD.cash(); puff(p.x, 0.8, p.z, hex('#2ee66f'), 8, { size: 0.18, v: 3, vy: 3, life: 0.6, m: 2, g: 4 }); return false; }
     return Math.hypot(p.x - P.x, p.z - P.z) < 90;
   });
+  // power-ups
+  G.powT -= dt;
+  if (G.powT <= 0 && G.powerups.length < 3) { spawnPowerup(); G.powT = 3.5; }
+  G.powerups = G.powerups.filter(p => {
+    p.t += dt;
+    if (Math.hypot(p.x - P.x, p.z - P.z) < 2.4 && P.alive) {
+      P.nitro = NITRO_T; bigMsg('NITRO!', 'cool'); AUD.blip(200, 1400, 0.5, 'sawtooth', 0.06); flash('#2fa8ff'); G.shake = Math.max(G.shake, 0.3);
+      puff(p.x, 1.0, p.z, hex('#2fa8ff'), 12, { size: 0.2, v: 5, vy: 3, life: 0.6, m: 2, g: 3 });
+      return false;
+    }
+    return Math.hypot(p.x - P.x, p.z - P.z) < 95;
+  });
+  // nitro: higher top speed + harder acceleration, flames out the back
+  if (P.nitro > 0 && P.alive) {
+    P.nitro = Math.max(0, P.nitro - dt); P.boost = NITRO_BOOST;
+    const fx = Math.sin(P.h), fz = -Math.cos(P.h), back = P.m.len / 2 + 0.1;
+    if (Math.random() < 0.8) puff(P.x - fx * back, 0.35, P.z - fz * back, Math.random() < 0.5 ? hex('#ff8a1e') : hex('#2fa8ff'), 1, { size: 0.22, v: 1, vy: 0.5, life: 0.35, m: 2, g: 0, shrink: true });
+  } else P.boost = 1;
+  // high-speed bonus: hold close to top speed and the cash keeps coming
+  const spd = vSpeed(P);
+  if (spd > P.maxV * 0.88 && P.alive && P.sink === 0) {
+    G.spdT += dt; G.spdAcc = (G.spdAcc || 0) + dt;
+    if (G.spdAcc >= 1) { G.spdAcc -= 1; addCash(20 + 10 * G.stars + (P.nitro > 0 ? 20 : 0)); }
+  } else { G.spdT = 0; G.spdAcc = 0; }
   // fountains
   G.fountains = G.fountains.filter(f => { f.t -= dt; if (Math.random() < 0.7) puff(f.x, 0.5, f.z, hex('#bfe6ff'), 2, { size: 0.18, v: 1.2, vy: 7, vyr: 2, life: 0.9, g: 14 }); return f.t > 0; });
   // damaged smoke
@@ -497,28 +523,45 @@ function buildDynamic(t) {
   for (const v of G.civs) pushVehicle(v, t);
   for (const v of G.wrecks) pushVehicle(v, t);
   if (G.heli) { const H = G.heli; pushVehicle({ x: H.x, y: H.y, z: H.z, h: H.h, m: MODELS.heli, color: VC.white, role: 'cop', ai: {}, roll: 0, pitch: 0.12 }, t); }
-  // pickups
+  // cash pickups: big floating stacks of bills / briefcases (tilted toward the camera so they read as money)
   for (const p of G.pickups) {
-    const q = qYaw(p.t * 2.2), y = 0.65 + Math.sin(p.t * 3) * 0.12;
-    if (p.big) { dpush(p.x, y, p.z, 0.9, 0.6, 0.3, q, hex('#141414'), 0); dpush(p.x, y + 0.36, p.z, 0.4, 0.1, 0.12, q, hex('#d4a017'), 2); }
-    else { dpush(p.x, y, p.z, 0.8, 0.22, 0.45, q, hex('#2ecc71'), 2); dpush(p.x, y, p.z, 0.22, 0.24, 0.47, q, hex('#f4f4f4'), 0); }
+    const a = p.t * 2.2, y = 1.25 + Math.sin(p.t * 3) * 0.18, q = qMul(qYaw(a), qAxis(1, 0, 0, -0.45));
+    if (p.big) {
+      dpush(p.x, y, p.z, 1.9, 1.25, 0.6, q, hex('#141414'), 0);
+      const h = qRot(q, [0, 0.75, 0]); dpush(p.x + h[0], y + h[1], p.z + h[2], 0.8, 0.18, 0.2, q, hex('#d4a017'), 2);
+      for (const o of [-0.55, 0.55]) { const c = qRot(q, [o, 0.25, 0]); dpush(p.x + c[0], y + c[1], p.z + c[2], 0.2, 0.26, 0.64, q, hex('#d4a017'), 2); }
+    } else {
+      for (let k = 0; k < 3; k++) { const o = qRot(q, [0, k * 0.16 - 0.16, 0]), qk = qMul(q, qYaw((k - 1) * 0.18)); dpush(p.x + o[0], y + o[1], p.z + o[2], 1.7, 0.12, 0.95, qk, k === 2 ? hex('#3ddc84') : hex('#25a85c'), 2); }
+      const o = qRot(q, [0, 0.17, 0]); dpush(p.x + o[0], y + o[1], p.z + o[2], 0.44, 0.13, 0.97, q, hex('#f4f4f4'), 0);
+      const o2 = qRot(q, [0, 0.235, 0]); dpush(p.x + o2[0], y + o2[1], p.z + o2[2], 0.3, 0.02, 0.3, qMul(q, qYaw(Math.PI / 4)), hex('#1e7a44'), 2);
+    }
+    dpush(p.x, 0.04, p.z, 2.0, 0.02, 2.0, qYaw(-a), hex('#1c6e3c'), 2);   // glow on the ground
   }
-  // shops: doors + beacons
+  // power-ups: nitro lightning bolts
+  for (const p of G.powerups) {
+    const a = p.t * 2.6, y = 1.5 + Math.sin(p.t * 3.4) * 0.2, Y = hex('#ffd23a'), B = hex('#2fa8ff'), k = 1.5;
+    const at = (lx, ly) => [p.x + Math.cos(a) * lx * k, y + ly * k, p.z - Math.sin(a) * lx * k];
+    const qz = (r) => qMul(qYaw(a), qAxis(0, 0, 1, r));
+    let c = at(0.18, 0.42); dpush(c[0], c[1], c[2], 0.26 * k, 0.95 * k, 0.24, qz(-0.45), Y, 2);
+    c = at(0, 0); dpush(c[0], c[1], c[2], 0.75 * k, 0.22 * k, 0.24, qz(0), Y, 2);
+    c = at(-0.18, -0.42); dpush(c[0], c[1], c[2], 0.26 * k, 0.95 * k, 0.24, qz(-0.45), Y, 2);
+    for (let j = 0; j < 10; j++) { const b2 = a * 0.6 + j * Math.PI / 5; dpush(p.x + Math.cos(b2) * 1.4, y + Math.sin(p.t * 5 + j) * 0.12, p.z + Math.sin(b2) * 1.4, 0.2, 0.2, 0.2, qYaw(b2), B, 2); }
+    dpush(p.x, 0.04, p.z, 2.2, 0.02, 2.2, qYaw(a), hex('#123f66'), 2);
+  }
+  // Cash Rules Customs: big floating wrench, pulsing pad, light beam you can spot from blocks away
   for (const s of SHOPS) {
-    const d = P ? Math.hypot(s.x - P.x, s.z - P.z) : 999; if (d > 75) continue;
-    const g = s.g, fv = s.bv / 2 - 0.05, dy = s.doorY === undefined ? 1 : s.doorY;
-    const c = gWorld(g, (s.i + 0.5) * g.A, (s.j + 0.5) * g.S + s.sd * fv);
-    const hgt = 2.6 * (1 - dy) + 0.25;
-    const q = qYaw(s.yaw);
-    dpush(c[0], 3.2 - hgt / 2 - 0.25, c[1], 3.2, hgt, 0.12, q, hex('#c9ccd1'), 0);
-    for (let k = 0; k < 4; k++) if ((1 - dy) * 2.6 > k * 0.65 + 0.3) dpush(c[0], 3.2 - 0.3 - k * 0.65, c[1], 3.22, 0.05, 0.14, q, hex('#8a8e95'), 0);
-    // beacon (rotating wrench-ish diamond)
-    const top = gWorld(g, (s.i + 0.5) * g.A, (s.j + 0.5) * g.S);
-    const bq = qMul(qYaw(t * 1.6), qAxis(0, 0, 1, Math.PI / 4)), hot = G.stars > 0;
-    dpush(top[0], 7.4 + Math.sin(t * 2) * 0.3, top[1], 1.1, 1.1, 1.1, bq, hot ? hex('#1fd65f') : hex('#e8b923'), 2);
-    // floor glow in bay
+    const dx = s.x - (P ? P.x : 0), dz = s.z - (P ? P.z : 0); if (!P || Math.abs(dx) > 75 || Math.abs(dz) > 75) continue;
+    const a = t * 1.8, y = 3.8 + Math.sin(t * 2.2 + s.x) * 0.25, q = qYaw(a), k = 1.7;
+    const hot = G.nearShop && G.nearShop.s === s && G.nearShop.hot;
+    const W = hot ? hex('#ff4a4a') : hex('#e8b923'), at = (lx, ly) => [s.x + Math.cos(a) * lx * k, y + ly * k, s.z - Math.sin(a) * lx * k];
+    dpush(s.x, y, s.z, 0.34 * k, 1.7 * k, 0.3, q, W, 2);                              // handle
+    let c = at(0, 1.0); dpush(c[0], c[1], c[2], 1.0 * k, 0.3 * k, 0.3, q, W, 2);       // jaw
+    c = at(-0.36, 1.32); dpush(c[0], c[1], c[2], 0.28 * k, 0.5 * k, 0.3, q, W, 2);
+    c = at(0.36, 1.32); dpush(c[0], c[1], c[2], 0.28 * k, 0.5 * k, 0.3, q, W, 2);
+    c = at(0, -0.95); dpush(c[0], c[1], c[2], 0.6 * k, 0.36 * k, 0.3, q, W, 2);        // ring end
+    dpush(s.x, 9, s.z, 0.2, 12, 0.2, qYaw(0), hot ? hex('#ff4a4a') : hex('#1fd65f'), 2); // beam
     const pulse = 0.5 + 0.5 * Math.sin(t * 5);
-    dpush(top[0], 0.05, top[1], 2.6, 0.04, s.bv - 1.2, q, hot ? [0.1, 0.5 + 0.4 * pulse, 0.25] : [0.6, 0.5, 0.1], 2);
+    dpush(s.x, 0.08, s.z, SHOP_PAD - 0.5, 0.02, SHOP_PAD - 0.5, qYaw(s.yaw), hot ? [0.6, 0.1, 0.1] : [0.1, 0.45 + 0.4 * pulse, 0.22], 2);
   }
   // particles
   for (const p of PARTS) {
@@ -558,7 +601,7 @@ function render(t, dt) {
   } else if (G.state === 'shop') {
     G.shopT += dt; const s = G.shop;
     const out = gWorld(s.g, (s.i + 0.5) * s.g.A, (s.j + 0.5) * s.g.S + s.sd * (s.bv / 2 + 4));
-    az = Math.atan2(s.x - out[0], -(s.z - out[1])) + Math.sin(G.shopT * 0.4) * 0.25; dist = portrait ? 26 : 17; pitch = 30 * Math.PI / 180;
+    az = Math.atan2(s.x - out[0], -(s.z - out[1])) + Math.sin(G.shopT * 0.4) * 0.25; dist = portrait ? 26 : 18; pitch = 42 * Math.PI / 180;
     const fa = [Math.sin(az), -Math.cos(az)], k = portrait ? 11 : 3.5;
     tx = G.cam.tx = s.x - fa[0] * k; tz = G.cam.tz = s.z - fa[1] * k;
   }
@@ -630,6 +673,7 @@ function drawMini(t) {
   // shops
   for (const s of SHOPS) { const dx = s.x - P.x, dz = s.z - P.z; if (Math.abs(dx) > 140 || Math.abs(dz) > 140) continue; drawShopIcon(x, dx, dz, 1 / sc); }
   for (const p of G.pickups) { x.fillStyle = '#2ee66f'; x.fillRect(p.x - P.x - 1.5, p.z - P.z - 1.5, 3, 3); }
+  for (const p of G.powerups) { x.fillStyle = '#2fa8ff'; x.fillRect(p.x - P.x - 2, p.z - P.z - 2, 4, 4); }
   const blink = Math.floor(t * 6) % 2;
   for (const c of G.cops) { if (!c.alive || c.ai.lost) continue; x.fillStyle = blink ? '#ff3030' : '#3a6bff'; x.beginPath(); x.arc(c.x - P.x, c.z - P.z, 3.4, 0, Math.PI * 2); x.fill(); }
   if (G.heli) { x.strokeStyle = '#ff3030'; x.lineWidth = 1.5; x.beginPath(); x.arc(G.heli.x - P.x, G.heli.z - P.z, 5, 0, Math.PI * 2); x.stroke(); }
@@ -682,8 +726,10 @@ function updateHUD(t) {
   // hints
   let hint = '';
   if (G.bust > 0.4) hint = 'GET MOVING OR GET BUSTED!';
-  else if (G.nearShop && G.nearShop.hot && G.stars > 0) hint = 'COPS TOO CLOSE — SHAKE ’EM AND THE DOOR OPENS';
-  else if (G.nearShop && !G.nearShop.hot) hint = 'DRIVE IN · CASH RULES CUSTOMS';
+  else if (P.nitro > 0) hint = 'NITRO ' + '▮'.repeat(Math.ceil(P.nitro / NITRO_T * 8));
+  else if (G.nearShop && G.nearShop.hot) hint = 'COP ON YOUR BUMPER — SHAKE ’EM, THEN HIT THE PAD';
+  else if (G.nearShop && G.nearShop.d < 12) hint = 'DRIVE ONTO THE PAD · CASH RULES CUSTOMS';
+  else if (G.spdT > 0.5) hint = 'HIGH-SPEED BONUS';
   const he = $('hint'); if (he.textContent !== hint) he.textContent = hint; he.classList.toggle('on', !!hint);
   // compass to nearest shop
   const cp = $('compass');

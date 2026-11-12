@@ -4,6 +4,7 @@
 //  smashable props, billboards.
 // ============================================================
 const CH = 48, CTEX = 256;
+const SHOP_PAD = 3.4; // Cash Rules Customs service pad size (units)
 const INST = 14; // floats per box instance: pos3 scale3 quat4 rgb3 mat1
 const COLF = 7;  // collider: cx cz ax az ha hb h
 const PROPF = 8; // prop: x z r type instStart instCount yaw mass
@@ -47,7 +48,7 @@ function gauss(x, z, p, s) { const dx = x - p[0], dz = z - p[1]; return Math.exp
 // ---------- landmarks ----------
 const LM = [];
 function lmAdd(type, lat, lon, r, extra) { const p = P(lat, lon); LM.push(Object.assign({ type, x: p[0], z: p[1], r }, extra || {})); }
-let SHOPS = [];
+let SHOPS = []; const SHOPKEY = new Set();
 function initWorldData() {
   LM.length = 0;
 
@@ -81,27 +82,42 @@ function initWorldData() {
     const iu = Math.round(l[0] / g.A), iv = Math.round(l[1] / g.S);
     LM.push({ type: 'tsq', x: gWorld(g, iu * g.A, iv * g.S)[0], z: gWorld(g, iu * g.A, iv * g.S)[1], r: 0, iu, iv, blocks: [[iu - 1, iv - 1], [iu, iv - 1], [iu - 1, iv], [iu, iv]] });
   }
-  // auto shops: find a clean block near each requested spot
-  SHOPS = [];
-  for (const s of GEO.SHOPS) {
-    const p = P(s[1], s[2]); const b = boroAt(p[0], p[1]); if (!b) continue;
-    const g = GRIDS[b], l = gLocal(g, p[0], p[1]);
+  // Cash Rules Customs pads: the named sites first, then a regular lattice so there is one roughly every
+  // ~110 units (about 2 km) in every borough. Each takes over one clean block as an open parking lot.
+  SHOPS = []; SHOPKEY.clear();
+  const tryShop = (name, x, z, R) => {
+    const b = boroAt(x, z); if (!b) return false;
+    const g = GRIDS[b], l = gLocal(g, x, z);
     const i0 = Math.floor(l[0] / g.A), j0 = Math.floor(l[1] / g.S);
     let best = null, bd = 1e9;
-    for (let di = -4; di <= 4; di++) for (let dj = -4; dj <= 4; dj++) {
-      const i = i0 + di, j = j0 + dj, d = di * di + dj * dj; if (d >= bd) continue;
+    for (let di = -R; di <= R; di++) for (let dj = -R; dj <= R; dj++) {
+      const i = i0 + di, j = j0 + dj, d = di * di + dj * dj; if (d >= bd || SHOPKEY.has(b + ',' + i + ',' + j)) continue;
       if (blockClean(g, i, j)) {
-        // door side: which street side has a proper road
         const bv = g.S - g.ws - 2 * g.sw;
-        for (const sd of [1, -1]) {
+        for (const sd of [1, -1]) { // entry side: the street side with a proper road
           const q = gWorld(g, (i + 0.5) * g.A, (j + 0.5) * g.S + sd * (bv / 2 + g.sw + g.ws * 0.25));
           if (tileAt(q[0], q[1]) === T_ROAD) { best = { i, j, sd }; bd = d; break; }
         }
       }
     }
-    if (!best) continue;
+    if (!best) return false;
     const c = gWorld(g, (best.i + 0.5) * g.A, (best.j + 0.5) * g.S);
-    SHOPS.push({ name: s[0], boro: b, g, i: best.i, j: best.j, sd: best.sd, x: c[0], z: c[1], bu: g.A - g.wa - 2 * g.sw, bv: g.S - g.ws - 2 * g.sw, yaw: -g.th });
+    for (const o of SHOPS) if (Math.hypot(o.x - c[0], o.z - c[1]) < 40) return false;
+    if (!name) { // name it after the nearest neighbourhood
+      let bn = GEO.BORO_NAMES ? GEO.BORO_NAMES[b] : 'NYC', bdd = 1e9;
+      for (const h of GEO.HOODS) { if (h[0] !== b) continue; const q = P(h[2], h[3]), dd = Math.hypot(q[0] - c[0], q[1] - c[1]); if (dd < bdd) { bdd = dd; bn = h[1]; } }
+      name = bn;
+    }
+    SHOPS.push({ name, boro: b, g, i: best.i, j: best.j, sd: best.sd, x: c[0], z: c[1], bu: g.A - g.wa - 2 * g.sw, bv: g.S - g.ws - 2 * g.sw, yaw: -g.th });
+    SHOPKEY.add(b + ',' + best.i + ',' + best.j);
+    return true;
+  };
+  for (const s of GEO.SHOPS) { const p = P(s[1], s[2]); tryShop(s[0], p[0], p[1], 4); }
+  const SP = 110; // lattice spacing (units); NYC boroughs only (New Jersey keeps its named site)
+  for (let z = WZ0 + SP / 2; z < WZ1; z += SP) for (let x = WX0 + SP / 2; x < WX1; x += SP) {
+    const bb = boroAt(x, z); if (!bb || bb === 6) continue;
+    let near = false; for (const o of SHOPS) if (Math.hypot(o.x - x, o.z - z) < SP * 0.7) { near = true; break; }
+    if (!near) tryShop(null, x, z, 2);
   }
 }
 function blockClean(g, i, j) {
@@ -114,7 +130,7 @@ function blockClean(g, i, j) {
   for (const L of LM) if (Math.hypot(gWorld(g, (i + 0.5) * g.A, (j + 0.5) * g.S)[0] - L.x, gWorld(g, (i + 0.5) * g.A, (j + 0.5) * g.S)[1] - L.z) < L.r + 8) return false;
   return true;
 }
-function shopAtBlock(b, i, j) { for (const s of SHOPS) if (s.boro === b && s.i === i && s.j === j) return s; return null; }
+function shopAtBlock(b, i, j) { if (!SHOPKEY.has(b + ',' + i + ',' + j)) return null; for (const s of SHOPS) if (s.boro === b && s.i === i && s.j === j) return s; return null; }
 function lmExcluded(x, z, pad) {
   for (let k = 0; k < LM.length; k++) { const L = LM[k]; if (L.r > 0) { const dx = x - L.x, dz = z - L.z; if (dx * dx + dz * dz < (L.r + pad) * (L.r + pad)) return true; } }
   return false;
@@ -209,8 +225,8 @@ function placeBlocks(g, ctx) {
       const tsq = tsqBlock(b, i, j);
       // ---- buildings ----
       if (!shop && !tsq) placeLots(g, b, i, j, uc, vc, bu, bv, R, ctx);
-      // ---- street props around the block perimeter ----
-      blockProps(g, b, i, j, uc, vc, bu, bv, R, ctx, yaw);
+      // ---- street props around the block perimeter (none around Customs: keep the way in clear) ----
+      if (!shop) blockProps(g, b, i, j, uc, vc, bu, bv, R, ctx, yaw);
     }
   }
 }
@@ -802,31 +818,25 @@ function buildLandmark(L, ctx) {
 
 // ---------- shops (Cash Rules Customs) ----------
 function buildShop(S, ctx) {
+  // Open parking lot with a drive-on service pad (the floating wrench + glow are dynamic, see game.js)
   const g = S.g, yaw = S.yaw, bu = S.bu, bv = S.bv, sd = S.sd;
-  // local frame: lx along e (u), lz along -d => v = -lz. Door faces +sd*d => lz = -sd*...
-  const H = 3.4, bayW = 3.2, wall = 0.25, blk = hex('#17181c'), green = hex('#1fd65f'), gold = hex('#e8b923');
+  const asph = hex('#34363c'), white = hex('#e8e8e8'), green = hex('#1fd65f'), gold = hex('#e8b923'), blk = hex('#17181c');
   const L = (lx, y, v, sx, sy, sv, col, mat) => { const p = rot(S.x, S.z, yaw, lx, -v); box(p[0], y, p[1], sx, sy, sv, yaw, col, mat); };
-  const sideW = (bu - bayW) / 2 - wall;
-  // side blocks
-  for (const s of [-1, 1]) {
-    const cxl = s * (bayW / 2 + wall + sideW / 2);
-    if (sideW > 0.3) { L(cxl, H / 2, 0, sideW, H, bv, blk, 1); const p = rot(S.x, S.z, yaw, cxl, 0); addCol(ctx, p[0], p[1], yaw, sideW / 2, bv / 2, H); }
-    L(s * (bayW / 2 + wall / 2), H / 2, 0, wall, H, bv, blk, 0);
-    const p2 = rot(S.x, S.z, yaw, s * (bayW / 2 + wall / 2), 0); addCol(ctx, p2[0], p2[1], yaw, wall / 2, bv / 2, H);
-  }
-  // back wall
-  L(0, H / 2, -sd * (bv / 2 - 0.15), bayW, H, 0.3, blk, 0);
-  { const p = rot(S.x, S.z, yaw, 0, sd * (bv / 2 - 0.15)); addCol(ctx, p[0], p[1], yaw, bayW / 2, 0.15, H); }
-  // roof over bay + stripes (green roof + gold trim so it pops from above)
-  L(0, H - 0.3, 0, bayW + 0.1, 0.6, bv, blk, 0);
-  L(0, H + 0.02, 0, bu - 0.3, 0.06, bv - 0.3, green, 0);
-  L(0, H + 0.06, 0, bu * 0.55, 0.06, bv * 0.5, gold, 0);
-  L(0, H + 0.1, 0, bu * 0.4, 0.06, bv * 0.32, blk, 0);
-  L(0, H + 0.08, sd * (bv / 2 - 0.05), bu, 0.16, 0.12, green, 2);
-  L(0, H - 0.75, sd * (bv / 2 + 0.02), bayW + 0.6, 0.12, 0.08, gold, 2);
-  L(0, 0.02, 0, bayW - 0.2, 0.04, bv - 0.6, hex('#2a2b30'), 0);
-  // sign billboard on the roof facing the street
-  const sp = rot(S.x, S.z, yaw, 0, -sd * (bv / 2 - 0.6));
-  L(0, H + 0.6, sd * (bv / 2 - 0.6), 0.3, 1.2, 0.3, C.pole, 0);
-  ctx.bills.push(sp[0], H + 1.9, sp[1], Math.min(bu, 7), 1.9, g.dx * sd, g.dz * sd, 6);
+  L(0, 0.02, 0, bu - 0.04, 0.04, bv - 0.04, asph, 0);                       // paved lot
+  const PS = SHOP_PAD;                                                      // service pad in the middle
+  L(0, 0.05, 0, PS, 0.02, PS, hex('#22382a'), 0);
+  for (const s2 of [-1, 1]) { L(0, 0.065, s2 * PS / 2, PS + 0.2, 0.02, 0.2, green, 2); L(s2 * PS / 2, 0.065, 0, 0.2, 0.02, PS + 0.2, green, 2); }
+  L(0, 0.07, 0, 0.35, 0.02, PS * 0.7, gold, 2); L(0, 0.07, 0, PS * 0.7, 0.02, 0.35, gold, 2); // plus mark
+  // parking bays either side of the pad
+  for (const s2 of [-1, 1]) for (let k = 0; k <= 2; k++) { const lx = s2 * (PS / 2 + 0.6 + k * 1.3); if (Math.abs(lx) < bu / 2 - 0.3) L(lx, 0.05, -sd * (bv / 2 - 1.0), 0.08, 0.02, 1.6, white, 0); }
+  // booth at a back corner + tyre stack
+  const bx = (bu / 2 - 0.8) * (S.i % 2 ? 1 : -1), bz = -sd * (bv / 2 - 0.65);
+  L(bx, 0.6, bz, 1.1, 1.2, 0.9, blk, 0); L(bx, 1.27, bz, 1.3, 0.14, 1.1, green, 0); L(bx, 0.7, bz + sd * 0.46, 0.8, 0.4, 0.03, hex('#ffe08a'), 2);
+  { const p = rot(S.x, S.z, yaw, bx, -bz); addCol(ctx, p[0], p[1], yaw, 0.55, 0.45, 1.2); }
+  for (let k = 0; k < 3; k++) L(-bx, 0.15 + k * 0.28, bz, 0.7, 0.26, 0.7, hex('#1b1b1d'), 0);
+  { const p = rot(S.x, S.z, yaw, -bx, -bz); addCol(ctx, p[0], p[1], yaw, 0.35, 0.35, 0.9); }
+  // sign on a pole at the back, facing the street
+  L(0, 1.4, -sd * (bv / 2 - 0.3), 0.18, 2.8, 0.18, C.pole, 0);
+  const sp = rot(S.x, S.z, yaw, 0, sd * (bv / 2 - 0.3));
+  ctx.bills.push(sp[0], 3.4, sp[1], Math.min(bu - 0.6, 5.5), 1.5, g.dx * sd, g.dz * sd, 6);
 }

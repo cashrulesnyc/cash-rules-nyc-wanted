@@ -9,7 +9,9 @@ A blocky, Smashy Road–style police chase across the **real map of all five NYC
 - 25 bridges: Brooklyn, Manhattan, Williamsburg, Queensboro, RFK, GWB, Verrazzano, Whitestone, Throgs Neck, Bayonne, Goethals and more. Also the FDR, West Side Hwy, BQE, Belt, LIE, Cross Bronx and other highways.
 - Landmarks: Times Square billboards, Empire State, One WTC, Chrysler, Statue of Liberty, Yankee Stadium, Citi Field, Barclays, Coney Island, the Unisphere, JFK/LGA, and the Staten Island Ferry.
 - 1–5 wanted stars: NYPD cruisers, then ESU SUVs, then ESU heavies and a helicopter. You end a run WASTED, BUSTED, or sleeping with the fishes.
-- 17 **Cash Rules Customs** shops in real auto-repair areas (Willets Point, Jerome Ave, Hell's Kitchen, Gowanus, Hunts Point…). Respray or repair to lose the cops, and buy engine and armor upgrades. The door won't open while a cop is on your bumper.
+- ~180 **Cash Rules Customs** drive-on pads across all five boroughs (look for the floating gold wrench and green beam), including the real auto-repair areas: Willets Point, Jerome Ave, Hell's Kitchen, Gowanus, Hunts Point and more. Roll onto the pad to respray or repair and lose the cops, or buy engine and armor upgrades. It won't trigger while a cop is on your bumper.
+- Floating cash stacks and briefcases, **nitro** lightning-bolt power-ups and a high-speed cash bonus.
+- Only cops and the water can hurt you. Every block is solid, so there's no squeezing through backyards.
 - 5 unlockable rides: Street Sedan, Yellow Cab, Electric Crossover, Muscle Coupe, Box Truck.
 - After Dark night mode, a rotating minimap and full map, and progress that saves on the device.
 

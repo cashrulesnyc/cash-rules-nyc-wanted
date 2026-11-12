@@ -282,10 +282,10 @@ void main(){
 }`;
 const BILL_VS = `#version 300 es
 layout(location=0) in vec2 aQ;
-uniform mat4 uVP; uniform vec3 uPos; uniform vec2 uSize; uniform vec2 uN; uniform vec4 uUV; uniform vec4 uSlice; uniform vec3 uSliceDir;
+uniform mat4 uVP; uniform vec3 uPos; uniform vec2 uSize; uniform vec2 uN; uniform vec4 uUV; uniform vec4 uSlice; uniform vec3 uSliceDir; uniform float uBillSlice;
 out vec2 vUV; out vec3 vW;
 void main(){
-  if (uSlice.w > 0.5) { // same cap as BOX_VS: hide signs on buildings that are being sliced down
+  if (uSlice.w > 0.5 && uBillSlice > 0.5) { // same cap as BOX_VS: hide signs on buildings that are being sliced down
     vec2 rel = uPos.xz - uSlice.xy; float along = dot(rel, uSliceDir.xy), lat = abs(dot(rel, vec2(-uSliceDir.y, uSliceDir.x)));
     if (along < 1.0) { float cap = uSlice.z + (max(0.0, -along - 0.5) + 2.2 * max(0.0, lat - 1.6)) * uSliceDir.z; if (uPos.y + 0.5 * uSize.y > cap) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; } }
   }
@@ -538,6 +538,7 @@ const GFX = {
       for (const b of S.bills) {
         gl.uniform3f(pl.u.uPos, b[0], b[1], b[2]); gl.uniform2f(pl.u.uSize, b[3], b[4]); gl.uniform2f(pl.u.uN, b[5], b[6]);
         const k = b[7] | 0, col = k % 2, row = k >> 1; gl.uniform4f(pl.u.uUV, col * 0.5, row * 0.25, 0.5, 0.25);
+        gl.uniform1f(pl.u.uBillSlice, k === 6 ? 0 : 1); // Customs signs never get cut
         gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
       gl.enable(gl.CULL_FACE);
