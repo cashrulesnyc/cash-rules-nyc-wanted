@@ -30,7 +30,7 @@ python3 build.py                      # src/ -> dist/index.html (single file)
 python3 -m http.server 8080 -d dist   # play at http://localhost:8080
 node test/maptest.js                  # map render check -> test/out/
 ```
-See **CLAUDE.md** for the architecture, conventions, tuning knobs and test harness.
+See **docs/GAME_MASTER.md** for the full feature guide and **CLAUDE.md** for the architecture, conventions, tuning knobs and test harness.
 
 ## Deploy (Netlify)
 Connect this repo in Netlify. `netlify.toml` already sets build `python3 build.py` and publish `dist`. Or drag the `dist/` folder onto Netlify Drop.

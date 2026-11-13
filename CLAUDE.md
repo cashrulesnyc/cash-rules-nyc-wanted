@@ -1,6 +1,6 @@
 # CLAUDE.md — CASH RULES NYC: WANTED
 
-A arcade police-chase game set on a real, drivable map of all five NYC boroughs (plus the Jersey waterfront): survive as the heat climbs, grab cash, nitro and repair gears, hit the ramps. Owner: DJ / CASH RULES NYC LLC. Everything here was written from scratch: no Smashy Road code or assets, no third-party engine, so it is 100% owned IP.
+An arcade police-chase game set on a real, drivable map of all five NYC boroughs (plus the Jersey waterfront): survive as the heat climbs, grab cash, nitro and repair gears, hit the ramps. Owner: DJ / CASH RULES NYC LLC. Everything here was written from scratch: no Smashy Road code or assets, no third-party engine, so it is 100% owned IP.
 
 ## Hard rules
 - **The output is one self-contained file: `dist/index.html`.** Don't add JS libraries or CDN scripts. External JS is unreliable in Claude artifacts and it complicates ownership. The renderer is hand-written WebGL2. The only outside request is the Google Fonts stylesheet (Bungee + Russo One), and the game falls back cleanly without it.
@@ -18,7 +18,7 @@ A arcade police-chase game set on a real, drivable map of all five NYC boroughs 
 ## File map
 | File | What it does |
 |---|---|
-| `src/data.js` | `GEO`: hand-traced lat/lon polygons for MAN/BRX/BKN/QNS/SI/NJ, islands, zones (parks, beaches, airports, cemeteries, plazas), highways and runways, 25 bridges, spawn points, ~150 neighborhood labels |
+| `src/data.js` | `GEO`: hand-traced lat/lon polygons for MAN/BRX/BKN/QNS/SI/NJ, islands, zones (parks, beaches, airports, cemeteries, plazas), highways and runways, 25 bridges, spawn points, 114 neighborhood labels |
 | `src/map.js` | Projection `P(lat,lon)`, the master raster (`BORO`/`ZONE` at 2 units/px via scanline `fillPoly`), smooth coastline lookup (`LANDB` blurred land mask → `landVal`/`landIdx`; `boroAt`/`zoneAt`/`tileAt` all go through it), shore band mask `NEARL`, per-borough street grids (`GRIDS`, `gLocal`/`gWorld`), segment buckets + `segHit`, `tileAt()`, `texel()` ground painter (anti-aliased markings via `cov`/`paint`/`dash`), `bridgeH()` deck profile |
 | `src/chunkgen.js` | `genChunk(cx,cz)` builds the 256px ground texture, building/prop box instances, colliders, props and billboards. Building styles live in `tower()`: glass or masonry tiered towers with deco crowns/penthouses, cornices, storefront bands + awnings, fire escapes, brownstone stoops, roof caps. `faceZ` is the lot's street-facing local-z side. Also landmarks (`LM`), `initWorldData`, palettes, `box()`/`lbox()` helpers |
 | `src/gl.js` | `GFX` renderer: instanced **chamfered** cube (world-size bevel `GFX.bevel`), plain cube for the shadow pass, shadow map (`sampler2DShadow`, PCF), chunk ground quads, billboard quads, **building slicing** (see below), hemisphere ambient + ground-contact AO, player silhouette pass, `M4` math |
