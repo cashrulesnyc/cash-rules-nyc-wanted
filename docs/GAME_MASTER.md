@@ -965,6 +965,26 @@ Use the current green, yellow, black and red palette.
 
 Avoid unnecessary interface redesign.
 
+> **Revision 2.1 (owner instruction, November 13, 2026):** the title screen was judged too crowded and the old garage carousel was rejected. The title screen is now minimal: branding, WANTED badge, best run, bank, a single **START IN [borough]** selector, the **PLAY** button, and a three-button dock: **GARAGE**, **HUSTLES** (Missions & Gifts, with badge) and **SETTINGS** (After Dark, Sound, Shadows, control instructions). Vehicle selection and the Engine/Armor upgrades moved into the 3D Garage (§23.1).
+
+### 23.1 GARAGE (added in revision 2.1)
+
+- A dedicated 3D garage environment, rendered with the game's own engine.
+- All five vehicles float and slowly rotate above glowing pedestals. Swipe (or ◀ ▶ / arrow keys) to move between them. The camera glides to the selected car.
+- Locked vehicles appear dimmed with a red pedestal ring and a BUY button. Owned vehicles can be set as your ride.
+- Engine and Armor upgrades are purchased here.
+- **The garage itself is upgradable** with permanent currency:
+
+| Level | Garage | Price |
+|---|---|---|
+| 1 | Street Lot | Free |
+| 2 | Brooklyn Garage | $5,000 |
+| 3 | Cash Rules Showroom | $20,000 |
+| 4 | Penthouse Garage | $60,000 |
+
+- Each level changes the environment (floor, walls, lighting, props, brand boards, pedestal style). The owned level is saved permanently.
+- The game-over GARAGE button opens the Garage directly.
+
 ## 24. GAMEPLAY HUD
 
 Existing elements:

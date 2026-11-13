@@ -300,7 +300,7 @@ function buyUpgrade(k) {
   const c = upCost(k); if (SAVE.up[k] >= 3 || SAVE.bank < c) return;
   SAVE.bank -= c; SAVE.up[k]++; save();
   if (G.P) { const st = playerStats(), P = G.P; P.maxV = st.maxV; P.maxHp = P.hp = st.hp; }
-  AUD.init(); AUD.blip(300, 900, 0.25, 'square', 0.05); renderTitle();
+  AUD.init(); AUD.blip(300, 900, 0.25, 'square', 0.05); renderTitle(); if (G.state === 'garage') renderGarage();
 }
 
 // ---------- outcomes ----------
@@ -512,6 +512,7 @@ function pushVehicle(v, t) {
     if ((f === 1 || f === 2) && col === VC.off) m = 0;
     if (f === 5 && !GFX.night) m = 0;
     if (wr && col !== VC.tire) { col = [col[0] * 0.28, col[1] * 0.26, col[2] * 0.24]; m = 0; }
+    else if (v.dim && col !== VC.tire) { col = [col[0] * v.dim, col[1] * v.dim, col[2] * v.dim]; if (m === 2) m = 0; }
     if (f === 3) pq = qMul(q, qYaw(t * 28));
     else if (p[9]) pq = qMul(q, qAxis(1, 0, 0, p[9]));
     const o = qRot(q, [p[0], p[1], p[2]]);
@@ -520,6 +521,7 @@ function pushVehicle(v, t) {
 }
 function buildDynamic(t) {
   DYN.n = 0;
+  if (G.state === 'garage') { garageScene(t); return 0; }
   const P = G.P;
   if (P) pushVehicle(P, t);
   const silN = DYN.n;
@@ -582,6 +584,7 @@ const LIGHT = {
 function norm3(v) { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; }
 let BILL_TEX = null, STATIC_BR = null;
 function render(t, dt) {
+  if (G.state === 'garage') return renderGarage3D(t, dt);
   const cv = GFX.canvas, asp = cv.clientWidth / Math.max(1, cv.clientHeight);
   const P = G.P;
   let fov, dist, pitch = CAM_PITCH, az = CAM_AZ;
@@ -716,9 +719,10 @@ function updateHUD(t) {
 function setupInput() {
   const tl = $('touch'), ptrs = new Map();
   const upd = () => { let l = false, r = false; for (const x of ptrs.values()) { if (x < window.innerWidth / 2) l = true; else r = true; } G.input.l = l; G.input.r = r; $('tl').classList.toggle('on', l); $('tr').classList.toggle('on', r); };
-  tl.addEventListener('pointerdown', e => { e.preventDefault(); ptrs.set(e.pointerId, e.clientX); try { tl.setPointerCapture(e.pointerId); } catch (_) { } upd(); AUD.init(); });
+  let swX = null;
+  tl.addEventListener('pointerdown', e => { if (G.state === 'garage') swX = e.clientX; e.preventDefault(); ptrs.set(e.pointerId, e.clientX); try { tl.setPointerCapture(e.pointerId); } catch (_) { } upd(); AUD.init(); });
   tl.addEventListener('pointermove', e => { if (ptrs.has(e.pointerId)) { ptrs.set(e.pointerId, e.clientX); upd(); } });
-  const end = e => { ptrs.delete(e.pointerId); upd(); };
+  const end = e => { if (G.state === 'garage' && swX !== null && e.type === 'pointerup') { const dx = e.clientX - swX; if (Math.abs(dx) > 40) garStep(dx < 0 ? 1 : -1); } swX = null; ptrs.delete(e.pointerId); upd(); };
   tl.addEventListener('pointerup', end); tl.addEventListener('pointercancel', end); tl.addEventListener('lostpointercapture', end);
   window.addEventListener('keydown', e => {
     G.input.keys[e.code] = true;
@@ -726,6 +730,7 @@ function setupInput() {
     if ((e.code === 'Escape' || e.code === 'KeyP') && G.state === 'play') pause(true);
     else if ((e.code === 'Escape' || e.code === 'KeyP') && G.state === 'pause') pause(false);
     if (e.code === 'KeyM' && (G.state === 'play' || G.state === 'pause')) pause(G.state === 'play');
+    if (G.state === 'garage') { if (e.code === 'ArrowLeft' || e.code === 'KeyA') garStep(-1); if (e.code === 'ArrowRight' || e.code === 'KeyD') garStep(1); if (e.code === 'Enter') garAction(); if (e.code === 'Escape') closeGarage(); }
   });
   window.addEventListener('keyup', e => { G.input.keys[e.code] = false; });
   window.addEventListener('blur', () => { G.input.keys = {}; ptrs.clear(); upd(); if (G.state === 'play') pause(true); });
@@ -737,19 +742,15 @@ function pause(on) {
 
 // ---------- title / menus ----------
 let titleCar = SAVE.car;
+const BORO_LABEL = { MANHATTAN: 'MANHATTAN', BROOKLYN: 'BROOKLYN', QUEENS: 'QUEENS', BRONX: 'THE BRONX', 'STATEN ISLAND': 'STATEN ISLAND' };
 function renderTitle() {
   { const n = claimable(), b = $('misBadge'); if (b) { b.textContent = n; b.style.display = n ? 'inline-flex' : 'none'; } }
-  const m = MODELS[titleCar], owned = SAVE.owned.includes(titleCar);
-  $('carName').textContent = m.name;
-  const bars = [['SPEED', (m.maxV - 18) / 12], ['GRIP', (m.turn - 2) / 1.0], ['ARMOR', m.hp / 220]];
-  $('carStats').innerHTML = bars.map(b => `<div class="stat"><span>${b[0]}</span><i><b style="width:${Math.round(Math.min(1, Math.max(0.08, b[1])) * 100)}%"></b></i></div>`).join('');
   const btn = $('playBtn');
-  if (owned) { btn.textContent = loadingPct() < 1 ? 'LOADING NYC… ' + Math.round(loadingPct() * 100) + '%' : 'PLAY'; btn.disabled = loadingPct() < 1; btn.dataset.mode = 'play'; }
-  else { btn.textContent = 'BUY ' + fmt$(m.price); btn.disabled = SAVE.bank < m.price; btn.dataset.mode = 'buy'; }
+  btn.textContent = loadingPct() < 1 ? 'LOADING NYC… ' + Math.round(loadingPct() * 100) + '%' : 'PLAY'; btn.disabled = loadingPct() < 1;
   $('bank').textContent = fmt$(SAVE.bank);
   $('best').textContent = SAVE.best ? 'BEST RUN ' + mmss(SAVE.best) : ''; $('best').style.visibility = SAVE.best ? 'visible' : 'hidden';
+  $('boroName').textContent = BORO_LABEL[SAVE.boro] || SAVE.boro;
   document.querySelectorAll('#boros button').forEach(b => b.classList.toggle('sel', b.dataset.b === SAVE.boro));
-  for (const k of ['engine', 'armor']) { const lv = SAVE.up[k], c = upCost(k), b = $(k + 'Btn'); b.innerHTML = `${k === 'engine' ? 'ENGINE' : 'ARMOR'} <small>LV ${lv}/3</small> <b>${lv >= 3 ? 'MAX' : fmt$(c)}</b>`; b.disabled = lv >= 3 || SAVE.bank < c; }
   $('optNight').classList.toggle('sel', SAVE.night); $('optSound').classList.toggle('sel', SAVE.sound); $('optShadow').classList.toggle('sel', SAVE.shadows);
 }
 function loadingPct() { return G.P ? Math.min(1, WORLD.loadedAround(G.P.x, G.P.z, 1.6) / 0.999) : 0; }
@@ -775,20 +776,23 @@ function startRun() {
   bigMsg('ALL 5 BOROUGHS', 'cool'); toast('SMASH = HEAT · ⚙ GEARS = INSTANT REPAIR');
 }
 function setupMenus() {
-  $('prevCar').onclick = () => { const i = PLAYER_CARS.indexOf(titleCar); titleCar = PLAYER_CARS[(i + PLAYER_CARS.length - 1) % PLAYER_CARS.length]; previewCar(); renderTitle(); };
-  $('nextCar').onclick = () => { const i = PLAYER_CARS.indexOf(titleCar); titleCar = PLAYER_CARS[(i + 1) % PLAYER_CARS.length]; previewCar(); renderTitle(); };
-  $('playBtn').onclick = () => {
-    AUD.init();
-    if ($('playBtn').dataset.mode === 'buy') { const m = MODELS[titleCar]; if (SAVE.bank >= m.price) { SAVE.bank -= m.price; SAVE.owned.push(titleCar); SAVE.car = titleCar; SAVE.color = null; save(); AUD.cash(); renderTitle(); } return; }
-    if (titleCar !== SAVE.car) SAVE.color = null;
-    startRun();
-  };
-  document.querySelectorAll('#boros button').forEach(b => b.onclick = () => { SAVE.boro = b.dataset.b; save(); spawnPlayer(SAVE.boro); previewCar(); renderTitle(); });
+  $('playBtn').onclick = () => { AUD.init(); titleCar = SAVE.car; startRun(); };
+  $('garBtn').onclick = () => { AUD.init(); openGarage(); };
+  $('setBtn').onclick = () => { renderTitle(); $('settings').classList.add('on'); };
+  $('boroBtn').onclick = () => { renderTitle(); $('boroSheet').classList.add('on'); };
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => $(b.dataset.close).classList.remove('on'));
+  document.querySelectorAll('.sheetov').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('on'); }));
+  document.querySelectorAll('#boros button').forEach(b => b.onclick = () => { SAVE.boro = b.dataset.b; save(); spawnPlayer(SAVE.boro); previewCar(); renderTitle(); setTimeout(() => $('boroSheet').classList.remove('on'), 150); });
+  $('garBack').onclick = () => closeGarage();
+  $('garPrev').onclick = () => garStep(-1);
+  $('garNext').onclick = () => garStep(1);
+  $('garAct').onclick = () => garAction();
+  $('garUp').onclick = () => garUpgrade();
   $('optNight').onclick = () => { SAVE.night = !SAVE.night; GFX.night = SAVE.night ? 1 : 0; save(); renderTitle(); };
   $('optSound').onclick = () => { SAVE.sound = !SAVE.sound; AUD.init(); AUD.setOn(SAVE.sound); save(); renderTitle(); };
   $('optShadow').onclick = () => { SAVE.shadows = !SAVE.shadows; GFX.shadowOn = SAVE.shadows; save(); renderTitle(); };
   $('againBtn').onclick = () => { $('over').classList.remove('on'); titleCar = SAVE.car; startRun(); };
-  $('menuBtn').onclick = () => goTitle();
+  $('menuBtn').onclick = () => { goTitle(); openGarage(); };
   $('pauseBtn').onclick = () => pause(G.state === 'play');
   $('resumeBtn').onclick = () => pause(false);
   $('quitBtn').onclick = () => goTitle();
@@ -845,6 +849,132 @@ function frame(now) {
     }
     fpsT = 0; fpsN = 0; G.fps = fps;
   }
+}
+
+// ---------- GARAGE: 3D showroom off the map, floating cars on pedestals, upgradable look ----------
+// The scene is built from the same instanced boxes as the city, out past the map edge (no chunks there),
+// rebuilt every frame into the dynamic buffer. SAVE.gar = garage level owned (0..3).
+const GARAGES = [
+  { name: 'STREET LOT', price: 0 },
+  { name: 'BROOKLYN GARAGE', price: 5000 },
+  { name: 'CASH RULES SHOWROOM', price: 20000 },
+  { name: 'PENTHOUSE GARAGE', price: 60000 },
+];
+SAVE.gar = SAVE.gar || 0;
+const GX = -3200, GZ = -3200, GSP = 4.6; // garage origin (off-map) and spacing between cars
+const GAR = { idx: 0, camX: 0, cars: [], spin: 0 };
+function openGarage() {
+  $('title').classList.remove('on'); ['settings', 'boroSheet', 'missions'].forEach(k => $(k).classList.remove('on'));
+  G.state = 'garage';
+  GAR.idx = Math.max(0, PLAYER_CARS.indexOf(SAVE.car)); GAR.camX = GAR.idx * GSP; GAR.spin = 0;
+  GAR.cars = PLAYER_CARS.map((k, i) => { const v = makeVehicle(k, GX + i * GSP, GZ, 0, { role: 'player', color: (k === SAVE.car && SAVE.color) ? SAVE.color.slice() : MODELS[k].color.slice() }); v.ai = {}; return v; });
+  $('garage').classList.add('on'); renderGarage();
+}
+function closeGarage() {
+  $('garage').classList.remove('on'); G.state = 'title'; titleCar = SAVE.car; previewCar();
+  $('title').classList.add('on'); renderTitle();
+}
+function garStep(d) { GAR.idx = (GAR.idx + d + PLAYER_CARS.length) % PLAYER_CARS.length; GAR.spin = 0; AUD.blip(500, 700, 0.06, 'square', 0.03); renderGarage(); }
+function garAction() {
+  const k = PLAYER_CARS[GAR.idx], m = MODELS[k];
+  if (!SAVE.owned.includes(k)) {
+    if (SAVE.bank < m.price) return;
+    SAVE.bank -= m.price; SAVE.owned.push(k); AUD.cash(); flash('#e8b923');
+  }
+  if (SAVE.car !== k) { SAVE.car = k; SAVE.color = null; titleCar = k; AUD.blip(300, 900, 0.2, 'square', 0.05); }
+  save(); renderGarage();
+}
+function garUpgrade() {
+  const nx = GARAGES[SAVE.gar + 1]; if (!nx || SAVE.bank < nx.price) return;
+  SAVE.bank -= nx.price; SAVE.gar++; save(); AUD.cash(); flash('#1fd65f'); bigMsg(GARAGES[SAVE.gar].name, 'cool'); renderGarage();
+}
+function renderGarage() {
+  const k = PLAYER_CARS[GAR.idx], m = MODELS[k], owned = SAVE.owned.includes(k), cur = SAVE.car === k;
+  $('garBank').textContent = fmt$(SAVE.bank); $('garTier').textContent = GARAGES[SAVE.gar].name;
+  $('garName').innerHTML = m.name + `<small>${cur ? 'YOUR RIDE' : owned ? 'OWNED' : 'LOCKED'} · ${GAR.idx + 1}/${PLAYER_CARS.length}</small>`;
+  const bars = [['SPEED', (m.maxV - 18) / 12], ['GRIP', (m.turn - 2) / 1.0], ['ARMOR', m.hp / 220]];
+  $('garStats').innerHTML = bars.map(b => `<div class="stat"><span>${b[0]}</span><i><b style="width:${Math.round(Math.min(1, Math.max(0.08, b[1])) * 100)}%"></b></i></div>`).join('');
+  const a = $('garAct'); a.className = 'btn' + (cur ? ' cur' : owned ? '' : ' buy');
+  a.textContent = cur ? 'SELECTED ✓' : owned ? 'DRIVE THIS' : 'BUY ' + fmt$(m.price); a.disabled = !cur && !owned && SAVE.bank < m.price;
+  for (const u of ['engine', 'armor']) { const lv = SAVE.up[u], c = upCost(u), b = $(u + 'Btn'); b.innerHTML = `${u === 'engine' ? 'ENGINE' : 'ARMOR'} <small>LV ${lv}/3</small> <b>${lv >= 3 ? 'MAX' : fmt$(c)}</b>`; b.disabled = lv >= 3 || SAVE.bank < c; }
+  const nx = GARAGES[SAVE.gar + 1], g = $('garUp');
+  if (nx) { g.textContent = 'UPGRADE GARAGE → ' + nx.name + ' · ' + fmt$(nx.price); g.disabled = SAVE.bank < nx.price; } else { g.textContent = 'TOP-TIER GARAGE ✓'; g.disabled = true; }
+  for (const v of GAR.cars) v.dim = SAVE.owned.includes(v.kind) ? 0 : 0.3;
+}
+function renderGarage3D(t, dt) {
+  const cv = GFX.canvas, asp = cv.clientWidth / Math.max(1, cv.clientHeight), portrait = asp < 1;
+  GAR.camX += (GAR.idx * GSP - GAR.camX) * Math.min(1, dt * 6); GAR.spin += dt;
+  const fov = portrait ? Math.min(70, 2 * Math.atan(Math.tan(19 * Math.PI / 180) / asp) * 180 / Math.PI) : 40;
+  const tx = GX + GAR.camX + (portrait ? 0 : 3.4), tz = GZ, ty = portrait ? -0.35 : 0.7; // landscape: car sits left of the side panel
+  const eye = portrait ? [tx + 1.3, 3.5, tz + 8.6] : [tx + 1.8, 3.4, tz + 9.0];
+  const L = GFX.night ? LIGHT.night : LIGHT.day;
+  buildDynamic(t); GFX.setDyn(DYN.data, DYN.n, 0);
+  const bills = [];
+  if (SAVE.gar === 2) bills.push([tx - (tx - GX) + 9.2, 5.2, GZ - 5.35, 7.5, 3.6, 0, 1, 0], [GX - 2.5, 4.6, GZ - 5.35, 5, 2.4, 0, 1, 4], [GX + 20.9, 4.6, GZ - 5.35, 5, 2.4, 0, 1, 6]);
+  GFX.render({
+    eye, target: [tx, ty, tz], fov: fov * Math.PI / 180, near: 0.5, far: 260,
+    sunDir: L.sun, sunCol: L.sunCol, amb: L.amb, fogCol: SAVE.gar === 3 ? L.fog : GFX.night ? [0.03, 0.035, 0.05] : [0.1, 0.11, 0.13], waterCol: [0.08, 0.08, 0.1],
+    fog: [90, 250], time: t, shadowCenter: [tx, 0, tz], shadowHalf: 22,
+    chunks: [], statics: [], bills, billTex: BILL_TEX, sil: null, slice: null,
+  });
+}
+function garageScene(t) {
+  const lv = SAVE.gar, q0 = qYaw(0), W = (PLAYER_CARS.length - 1) * GSP, cx = W / 2;
+  const B = (x, y, z, sx, sy, sz, col, m, yaw) => dpush(GX + x, y, GZ + z, sx, sy, sz, yaw ? qYaw(yaw) : q0, col, m || 0);
+  const H = hex;
+  // room shell: floor, back wall, side walls
+  const floor = [H('#2e3036'), H('#8c8a86'), H('#111317'), H('#e9e6df')][lv], fm = [0, 0, 6, 6][lv];
+  B(cx, -0.05, 4, W + 30, 0.1, 30, floor, fm);
+  if (lv === 0) { // STREET LOT: tenement walls with lit windows, fence, cones, lamp
+    B(cx, 5, -7.5, W + 30, 10, 2, H('#7a3b2e'), 1); B(-11, 5, 4, 2, 10, 26, H('#6b5a4e'), 1); B(W + 11, 5, 4, 2, 10, 26, H('#5a4c48'), 1);
+    for (let x = -8; x <= W + 8; x += 2.6) B(x, 1.1, -5, 0.1, 2.2, 0.1, H('#8d9196'));
+    for (const y of [0.4, 1.3, 2.15]) B(cx, y, -5, W + 16, 0.06, 0.06, H('#8d9196'));
+    for (let i = 0; i <= PLAYER_CARS.length; i++) B(i * GSP - GSP / 2, 0.01, 0.6, 0.12, 0.02, 4.2, H('#e8e8e8'));
+    B(-6, 0.6, -3.6, 2.2, 1.2, 1.2, H('#1f6f43')); B(-6, 1.25, -3.6, 2.3, 0.1, 1.3, H('#185a35'));
+    for (const x of [-4.2, W + 4.4, W + 5.2]) B(x, 0.2, 2.5, 0.25, 0.4, 0.25, H('#f07c1e'));
+    B(W + 6.5, 2.4, -3.8, 0.12, 4.8, 0.12, H('#4d535b')); B(W + 6.1, 4.75, -3.8, 0.9, 0.1, 0.2, H('#4d535b')); B(W + 5.8, 4.65, -3.8, 0.4, 0.12, 0.3, H('#fff2b0'), 5);
+  } else if (lv === 1) { // BROOKLYN GARAGE: brick, beams, tube lights, tool wall, tyres, drums
+    B(cx, 5, -6, W + 30, 10, 1, H('#8e4632')); B(-10, 5, 4, 1, 10, 26, H('#7d3e2c')); B(W + 10, 5, 4, 1, 10, 26, H('#7d3e2c'));
+    for (let y = 0.6; y < 9; y += 1.2) B(cx, y, -5.48, W + 28, 0.06, 0.04, H('#a85a40'));
+    for (let x = -6; x <= W + 6; x += 6) B(x, 8.6, 4, 0.4, 0.5, 26, H('#2b2d33'));
+    for (let x = -3; x <= W + 3; x += 6) { B(x, 7.4, 1.5, 0.25, 0.08, 3.4, H('#ffffff'), 2); B(x, 7.6, 1.5, 0.05, 0.4, 0.05, H('#2b2d33')); }
+    B(-4.5, 2.6, -5.4, 4, 2.6, 0.12, H('#3a3f46'));
+    for (let k = 0; k < 9; k++) B(-6 + (k % 3) * 1.2 + 0.4, 1.8 + Math.floor(k / 3) * 0.8, -5.3, 0.15 + (k % 2) * 0.2, 0.5, 0.06, [H('#c0392b'), H('#8f9aa6'), H('#f2b01e')][k % 3]);
+    B(-4.5, 0.55, -4.6, 1.8, 1.1, 0.8, H('#c0392b')); B(-4.5, 1.12, -4.6, 1.85, 0.04, 0.85, H('#8f9aa6'));
+    for (let k = 0; k < 4; k++) B(W + 5, 0.15 + k * 0.3, -3.6, 0.95, 0.28, 0.95, H('#1b1b1d'));
+    for (let k = 0; k < 3; k++) B(W + 6.6, 0.5, -1.5 + k * 1.1, 0.8, 1.0, 0.8, H('#2b5fb3'));
+    for (let i = 0; i < 4; i++) B(i * GSP + 2.3, 0.01, 2.6 + (i % 2), 0.9, 0.02, 0.6, H('#6f6d69'));
+  } else if (lv === 2) { // CASH RULES SHOWROOM: black gloss, green neon, gold trim, brand boards
+    B(cx, 5, -6, W + 30, 10, 1, H('#0d0f12')); B(-10, 5, 4, 1, 10, 26, H('#0d0f12')); B(W + 10, 5, 4, 1, 10, 26, H('#0d0f12'));
+    for (const y of [0.15, 8.2]) B(cx, y, -5.45, W + 28, 0.12, 0.06, H('#1fd65f'), 2);
+    B(cx, 0.03, -4.6, W + 26, 0.04, 0.1, H('#1fd65f'), 2); B(cx, 0.03, 7, W + 26, 0.04, 0.1, H('#1fd65f'), 2);
+    B(cx, 0.06, -4.3, W + 26, 0.04, 0.06, H('#e8b923'), 2);
+    for (let x = -6; x <= W + 6; x += 4.6) { B(x, 8.8, 0, 0.3, 0.3, 14, H('#1b1c20')); B(x, 8.5, 1.2, 0.35, 0.35, 0.35, H('#fff7d6'), 2); }
+  } else { // PENTHOUSE GARAGE: marble, floor-to-ceiling windows on the skyline, gold, plants
+    B(cx, 0.6, -5.6, W + 30, 1.2, 0.4, H('#d8d2c4')); B(cx, 9.0, -5.6, W + 30, 0.6, 0.6, H('#d8d2c4'));
+    for (let x = -12; x <= W + 12; x += 3.2) B(x, 4.8, -5.6, 0.18, 8.4, 0.25, H('#1b1c20'));
+    B(cx, 1.25, -5.4, W + 28, 0.06, 0.08, H('#e8b923'), 2);
+    B(-10, 5, 4, 1, 10, 26, H('#e9e6df')); B(W + 10, 5, 4, 1, 10, 26, H('#e9e6df'));
+    const R = (n) => (Math.sin(n * 12.9898) * 43758.5453) % 1;
+    for (let k = 0; k < 26; k++) { const x = -30 + k * 3.4 + Math.abs(R(k)) * 2, h = 12 + Math.abs(R(k + 7)) * 30, z = -24 - Math.abs(R(k + 3)) * 40; B(x, h / 2 - 10, z, 2.6 + Math.abs(R(k + 1)) * 2, h, 2.6, k % 3 ? H('#8ea2b5') : H('#5d86a8'), k % 3 ? 1 : 7); }
+    for (const x of [-6, W + 6]) { B(x, 0.4, -3.5, 0.9, 0.8, 0.9, H('#e8b923'), 6); B(x, 1.35, -3.5, 1.2, 1.2, 1.2, H('#3f9e45')); }
+    B(cx, 0.03, 6.5, W + 6, 0.02, 0.3, H('#e8b923'), 6);
+  }
+  // pedestals + floating cars
+  const ped = [[H('#1b1c20'), H('#f2b01e')], [H('#8f9aa6'), H('#ff9f1a')], [H('#121417'), H('#1fd65f')], [H('#f4f1e8'), H('#e8b923')]][lv];
+  GAR.cars.forEach((v, i) => {
+    const x = i * GSP, sel = i === GAR.idx, owned = SAVE.owned.includes(v.kind);
+    // round platform from pie slices (radial boxes centre -> rim)
+    const disc = (R, y, h, col, m) => { const N = 28, cw = 2 * R * Math.sin(Math.PI / N) + 0.04; for (let k = 0; k < N; k++) { const a = (k + 0.5) / N * Math.PI * 2; B(x + Math.cos(a) * R / 2, y, Math.sin(a) * R / 2, R, h, cw, col, m, -a); } };
+    disc(1.7, 0.12, 0.24, ped[0], lv >= 2 ? 6 : 0);
+    disc(1.25, 0.26, 0.04, ped[0].map(c => c * 0.78), lv >= 2 ? 6 : 0);
+    for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2; B(x + Math.cos(a) * 1.62, 0.22, Math.sin(a) * 1.62, 0.44, 0.08, 0.12, owned ? ped[1] : H('#7a2a2a'), 2, -a + Math.PI / 2); } // light ring
+    if (sel) for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2 + t * 0.8; B(x + Math.cos(a) * 2.05, 0.03, Math.sin(a) * 2.05, 0.35, 0.02, 0.16, owned ? ped[1] : H('#7a2a2a'), 2, -a + Math.PI / 2); }
+    v.x = GX + x; v.z = GZ; v.y = 0.75 + Math.sin(t * 1.8 + i) * 0.1;
+    v.h = sel ? 2.5 + GAR.spin * 0.6 : 2.35; v.roll = 0; v.pitch = 0;
+    pushVehicle(v, t);
+    // glow under the car
+  });
 }
 
 // ---------- ?fps=1 overlay (for measuring on real phones) ----------
