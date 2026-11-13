@@ -370,6 +370,17 @@ const BILL_FS = `#version 300 es
 precision highp float; in vec2 vUV; in vec3 vW; out vec4 o; uniform sampler2D uTex; uniform vec3 uFogCol; uniform vec2 uFog; uniform vec3 uCam; uniform float uNight;
 void main(){ vec3 c = texture(uTex, vUV).rgb * (uNight > 0.5 ? 1.15 : 0.95); float f = smoothstep(uFog.x, uFog.y, distance(vW, uCam)); o = vec4(mix(c, uFogCol, f), 1.0); }`;
 
+// floating pickup icons (GTA-style badges): camera-facing quads, or flat on the ground (glow rings); atlas = 8 cells in a row
+const ICON_VS = `#version 300 es
+layout(location=0) in vec2 aQ;
+uniform mat4 uVP; uniform vec3 uPos; uniform float uSize; uniform vec3 uR; uniform vec3 uU; uniform float uCell; uniform float uFlat;
+out vec2 vUV; out vec3 vW;
+void main(){ vec2 q = aQ - 0.5; vec3 w = uFlat > 0.5 ? uPos + vec3(q.x, 0.0, q.y) * uSize : uPos + (uR * q.x + uU * q.y) * uSize;
+  vUV = vec2((uCell + aQ.x) / 8.0, 1.0 - aQ.y); vW = w; gl_Position = uVP * vec4(w, 1.0); }`;
+const ICON_FS = `#version 300 es
+precision highp float; in vec2 vUV; in vec3 vW; out vec4 o; uniform sampler2D uTex; uniform vec4 uTint; uniform vec3 uFogCol; uniform vec2 uFog; uniform vec3 uCam;
+void main(){ vec4 c = texture(uTex, vUV) * uTint; if (c.a < 0.01) discard; float f = smoothstep(uFog.x, uFog.y, distance(vW, uCam)); o = vec4(mix(c.rgb, uFogCol, f * 0.6), c.a); }`;
+
 const GFX = {
   gl: null, ok: false, shadowSize: 2048, shadowOn: true, night: 0, bevel: 0.13,
   init(canvas) {
@@ -389,7 +400,7 @@ const GFX = {
       return { p, u };
     };
     this.pBox = mk(BOX_VS, BOX_FS); this.pDepth = mk(DEPTH_VS, DEPTH_FS); this.pSil = mk(BOX_VS, SIL_FS);
-    this.pGround = mk(GROUND_VS, GROUND_FS); this.pBill = mk(BILL_VS, BILL_FS);
+    this.pGround = mk(GROUND_VS, GROUND_FS); this.pBill = mk(BILL_VS, BILL_FS); this.pIcon = mk(ICON_VS, ICON_FS);
     this.pMesh = mk(MESH_VS, MESH_FS); this.pMeshD = mk(MESH_DEPTH_VS, DEPTH_FS); this.pMeshS = mk(MESH_VS, SIL_FS); this.meshes = {};
     // chamfered cube: 6 faces + 12 edge strips + 8 corner tris (44 tris). Vertex = pos, normal, inset-mask.
     const V = [], I = [];
@@ -483,6 +494,27 @@ const GFX = {
   },
   updateInst(obj, startInst, data) { const gl = this.gl; gl.bindBuffer(gl.ARRAY_BUFFER, obj.buf); gl.bufferSubData(gl.ARRAY_BUFFER, startInst * INST * 4, data); },
   freeInst(obj) { const gl = this.gl; gl.deleteBuffer(obj.buf); gl.deleteVertexArray(obj.vao); gl.deleteVertexArray(obj.svao); },
+  // icons: [x, y, z, size, cell, flat, r, g, b, a]. Drawn blended, no depth write; badges hidden behind buildings show faintly.
+  drawIcons(S) {
+    const gl = this.gl, pi = this.pIcon; gl.useProgram(pi.p);
+    const fx = S.target[0] - S.eye[0], fy = S.target[1] - S.eye[1], fz = S.target[2] - S.eye[2], fl = Math.hypot(fx, fy, fz) || 1;
+    let rx = -fz, rz = fx; const rl = Math.hypot(rx, rz) || 1; rx /= rl; rz /= rl;
+    const ux = -rz * fy / fl, uy = (rz * fx - rx * fz) / fl, uz = rx * fy / fl;
+    gl.uniformMatrix4fv(pi.u.uVP, false, this.VP); gl.uniform3f(pi.u.uR, rx, 0, rz); gl.uniform3f(pi.u.uU, ux, uy, uz);
+    gl.uniform3fv(pi.u.uFogCol, S.fogCol); gl.uniform2f(pi.u.uFog, S.fog[0], S.fog[1]); gl.uniform3fv(pi.u.uCam, S.eye);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, S.iconTex); gl.uniform1i(pi.u.uTex, 0);
+    gl.bindVertexArray(this.quadVAO); gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+    for (let pass = 0; pass < 2; pass++) {
+      gl.depthFunc(pass ? gl.GREATER : gl.LEQUAL);
+      for (const c of S.icons) {
+        if (pass && c[5]) continue;
+        gl.uniform3f(pi.u.uPos, c[0], c[1], c[2]); gl.uniform1f(pi.u.uSize, c[3]); gl.uniform1f(pi.u.uCell, c[4]); gl.uniform1f(pi.u.uFlat, c[5]);
+        gl.uniform4f(pi.u.uTint, c[6], c[7], c[8], c[9] * (pass ? 0.4 : 1));
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
+    }
+    gl.depthFunc(gl.LESS); gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
+  },
   makeTex(data, w, h, nearest, mips) {
     const gl = this.gl, t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -664,6 +696,7 @@ const GFX = {
       }
       gl.enable(gl.CULL_FACE);
     }
+    if (S.icons && S.icons.length && S.iconTex) this.drawIcons(S);
     // player: silhouette where hidden by the world, then the car itself
     if (S.sil) {
       const ps = this.pSil; gl.useProgram(ps.p); setCommon(ps);

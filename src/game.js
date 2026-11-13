@@ -157,10 +157,12 @@ function playerStats() {
   const m = MODELS[SAVE.car];
   return { maxV: m.maxV * (1 + SAVE.up.engine * 0.06), hp: Math.round(m.hp * (1 + SAVE.up.armor * 0.22)) };
 }
+// starter sedan has fixed factory paint (upgrades only, no repaint)
+function carColor(k) { return (k === SAVE.car && SAVE.color && !MODELS[k].fixedPaint) ? SAVE.color.slice() : MODELS[k].color.slice(); }
 function spawnPlayer(boro) {
   const ll = GEO.SPAWNS[boro] || GEO.SPAWNS.MANHATTAN, p = P(ll[0], ll[1]);
   const r = findRoad(p[0], p[1], 40);
-  const v = makeVehicle(SAVE.car, r.x, r.z, r.h, { role: 'player', color: SAVE.color ? SAVE.color.slice() : MODELS[SAVE.car].color.slice() });
+  const v = makeVehicle(SAVE.car, r.x, r.z, r.h, { role: 'player', color: carColor(SAVE.car) });
   const st = playerStats(); v.maxV = st.maxV; v.hp = v.maxHp = st.hp;
   G.P = v; G.cam.x = G.cam.tx = v.x; G.cam.z = G.cam.tz = v.z;
   return v;
@@ -544,44 +546,17 @@ function buildDynamic(t) {
   for (const v of G.civs) pushVehicle(v, t);
   for (const v of G.wrecks) pushVehicle(v, t);
   if (G.heli) { const H = G.heli; pushVehicle({ x: H.x, y: H.y, z: H.z, h: H.h, m: MODELS.heli, color: VC.white, role: 'cop', ai: {}, roll: 0, pitch: 0.12 }, t); }
-  // cash pickups: big floating stacks of bills / briefcases (tilted toward the camera so they read as money)
-  for (const p of G.pickups) {
-    const a = p.t * 2.2, y = 1.25 + Math.sin(p.t * 3) * 0.18, q = qMul(qYaw(a), qAxis(1, 0, 0, -0.45));
-    if (p.big) {
-      dpush(p.x, y, p.z, 1.9, 1.25, 0.6, q, hex('#141414'), 0);
-      const h = qRot(q, [0, 0.75, 0]); dpush(p.x + h[0], y + h[1], p.z + h[2], 0.8, 0.18, 0.2, q, hex('#d4a017'), 2);
-      for (const o of [-0.55, 0.55]) { const c = qRot(q, [o, 0.25, 0]); dpush(p.x + c[0], y + c[1], p.z + c[2], 0.2, 0.26, 0.64, q, hex('#d4a017'), 2); }
-    } else {
-      for (let k = 0; k < 3; k++) { const o = qRot(q, [0, k * 0.16 - 0.16, 0]), qk = qMul(q, qYaw((k - 1) * 0.18)); dpush(p.x + o[0], y + o[1], p.z + o[2], 1.7, 0.12, 0.95, qk, k === 2 ? hex('#3ddc84') : hex('#25a85c'), 2); }
-      const o = qRot(q, [0, 0.17, 0]); dpush(p.x + o[0], y + o[1], p.z + o[2], 0.44, 0.13, 0.97, q, hex('#f4f4f4'), 0);
-      const o2 = qRot(q, [0, 0.235, 0]); dpush(p.x + o2[0], y + o2[1], p.z + o2[2], 0.3, 0.02, 0.3, qMul(q, qYaw(Math.PI / 4)), hex('#1e7a44'), 2);
-    }
-    dpush(p.x, 0.04, p.z, 2.0, 0.02, 2.0, qYaw(-a), hex('#1c6e3c'), 2);   // glow on the ground
-  }
-  // power-ups: nitro lightning bolts
-  for (const p of G.powerups) {
-    const a = p.t * 2.6, y = 1.5 + Math.sin(p.t * 3.4) * 0.2, Y = hex('#ffd23a'), B = hex('#2fa8ff'), k = 1.5;
-    const at = (lx, ly) => [p.x + Math.cos(a) * lx * k, y + ly * k, p.z - Math.sin(a) * lx * k];
-    const qz = (r) => qMul(qYaw(a), qAxis(0, 0, 1, r));
-    let c = at(0.18, 0.42); dpush(c[0], c[1], c[2], 0.26 * k, 0.95 * k, 0.24, qz(-0.45), Y, 2);
-    c = at(0, 0); dpush(c[0], c[1], c[2], 0.75 * k, 0.22 * k, 0.24, qz(0), Y, 2);
-    c = at(-0.18, -0.42); dpush(c[0], c[1], c[2], 0.26 * k, 0.95 * k, 0.24, qz(-0.45), Y, 2);
-    for (let j = 0; j < 10; j++) { const b2 = a * 0.6 + j * Math.PI / 5; dpush(p.x + Math.cos(b2) * 1.4, y + Math.sin(p.t * 5 + j) * 0.12, p.z + Math.sin(b2) * 1.4, 0.2, 0.2, 0.2, qYaw(b2), B, 2); }
-    dpush(p.x, 0.04, p.z, 2.2, 0.02, 2.2, qYaw(a), hex('#123f66'), 2);
-  }
-  // repair gears: spinning steel cog with an orange hub, tilted toward the camera
-  for (const p of G.gears) {
-    const a = p.t * 2.0, y = 1.5 + Math.sin(p.t * 3.2) * 0.18, base = qMul(qYaw(a), qAxis(1, 0, 0, -0.5)), S = 1.3;
-    const steel = hex('#8f9aa6'), dk = hex('#3b4048'), hub = hex('#ff9f1a');
-    for (const r of [0, Math.PI / 4]) dpush(p.x, y, p.z, 1.0 * S, 1.0 * S, 0.34, qMul(base, qAxis(0, 0, 1, r)), steel, 6);   // octagonal body
-    for (let k = 0; k < 8; k++) { // 8 square teeth
-      const ang = k * Math.PI / 4, o = qRot(base, [Math.cos(ang) * 0.68 * S, Math.sin(ang) * 0.68 * S, 0]);
-      dpush(p.x + o[0], y + o[1], p.z + o[2], 0.42 * S, 0.3 * S, 0.34, qMul(base, qAxis(0, 0, 1, ang)), steel, 6);
-    }
-    const f = qRot(base, [0, 0, 0.12]); dpush(p.x + f[0], y + f[1], p.z + f[2], 0.5 * S, 0.5 * S, 0.14, qMul(base, qAxis(0, 0, 1, Math.PI / 4)), hub, 2);
-    const h = qRot(base, [0, 0, 0.2]); dpush(p.x + h[0], y + h[1], p.z + h[2], 0.22 * S, 0.22 * S, 0.1, base, dk, 0);       // axle hole
-    dpush(p.x, 0.04, p.z, 2.1, 0.02, 2.1, qYaw(-a), hex('#7a4a10'), 2);
-  }
+  // pickups: GTA-style floating badges (cash, briefcase, nitro, repair) with a glow + ring on the road
+  ICONS.length = 0;
+  const badge = (p, cell, size, col, ph) => {
+    const y = 1.55 + Math.sin(p.t * 3) * 0.16, pulse = 1 + Math.sin(p.t * 5 + ph) * 0.04;
+    ICONS.push([p.x, 0.07, p.z, 3.2, 4, 1, col[0], col[1], col[2], 0.55]);
+    ICONS.push([p.x, 0.08, p.z, 2.4 + Math.sin(p.t * 4) * 0.25, 5, 1, col[0], col[1], col[2], 0.85]);
+    ICONS.push([p.x, y, p.z, size * pulse, cell, 0, 1, 1, 1, 1]);
+  };
+  for (const p of G.pickups) badge(p, p.big ? 1 : 0, p.big ? 2.9 : 2.4, p.big ? ICON_COL[1] : ICON_COL[0], 0);
+  for (const p of G.powerups) badge(p, 2, 2.7, ICON_COL[2], 1);
+  for (const p of G.gears) badge(p, 3, 2.7, ICON_COL[3], 2);
   // particles
   for (const p of PARTS) {
     let s = 1; if (p.shrink) s = Math.max(0.05, p.life / (p.max || 1)); else if (p.life < 0.6) s = p.life / 0.6;
@@ -633,10 +608,52 @@ function render(t, dt) {
     sunDir: L.sun, sunCol: L.sunCol, amb: L.amb, fogCol: L.fog, waterCol: L.water,
     fog: [dist * 1.7, dist * 3.0 + (portrait ? 20 : 0)], time: t, // pushed out: haze only at the far edge
     shadowCenter: [tx, 0, tz], shadowHalf: portrait ? 52 : 46,
-    chunks, statics: STATIC_BR ? [STATIC_BR] : [], bills, billTex: BILL_TEX,
+    chunks, statics: STATIC_BR ? [STATIC_BR] : [], bills, billTex: BILL_TEX, icons: ICONS, iconTex: ICON_TEX,
     sil: (G.state === 'play') ? { col: [1, 0.85, 0.2, 0.55] } : null,
     slice: P ? { x: P.x, z: P.z, minH: 2.7, fx: f[0], fz: f[1], slope: Math.tan(pitch) * 0.92 } : null,
   });
+}
+
+// ---------- pickup icon atlas (GTA-style badges, drawn once) ----------
+const ICONS = [], ICON_COL = [[0.22, 0.86, 0.42], [1.0, 0.78, 0.2], [0.25, 0.62, 1.0], [1.0, 0.56, 0.12]];
+let ICON_TEX = null, ICON_CV = null;
+function rrect(x, a, b, w, h, r) { x.beginPath(); x.moveTo(a + r, b); x.arcTo(a + w, b, a + w, b + h, r); x.arcTo(a + w, b + h, a, b + h, r); x.arcTo(a, b + h, a, b, r); x.arcTo(a, b, a + w, b, r); x.closePath(); }
+function makeIconAtlas() {
+  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 128; const x = cv.getContext('2d');
+  const disc = ['#1f9e4a', '#c98a12', '#1d6fd6', '#e86f0c'], hi = ['#47d873', '#f5c04a', '#59a6ff', '#ffa040'];
+  for (let i = 0; i < 4; i++) {
+    x.save(); x.translate(i * 128 + 64, 64);
+    x.shadowColor = 'rgba(0,0,0,0.5)'; x.shadowBlur = 8; x.shadowOffsetY = 3;
+    x.fillStyle = '#0b0d10'; x.beginPath(); x.arc(0, 0, 55, 0, 7); x.fill();
+    x.shadowColor = 'transparent';
+    x.fillStyle = '#ffffff'; x.beginPath(); x.arc(0, 0, 51, 0, 7); x.fill();
+    const g = x.createLinearGradient(0, -45, 0, 45); g.addColorStop(0, hi[i]); g.addColorStop(1, disc[i]);
+    x.fillStyle = g; x.beginPath(); x.arc(0, 0, 45, 0, 7); x.fill();
+    x.fillStyle = 'rgba(255,255,255,0.18)'; x.beginPath(); x.ellipse(0, -22, 34, 18, 0, 0, 7); x.fill(); // gloss
+    x.fillStyle = '#fff'; x.strokeStyle = 'rgba(0,0,0,0.35)'; x.lineWidth = 3; x.lineJoin = 'round';
+    x.shadowColor = 'rgba(0,0,0,0.35)'; x.shadowBlur = 3; x.shadowOffsetY = 2;
+    if (i === 0) { // dollar sign
+      x.font = '900 68px "Arial Black", Arial, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('$', 0, 4);
+    } else if (i === 1) { // briefcase
+      rrect(x, -30, -14, 60, 40, 7); x.fill();
+      x.lineWidth = 6; x.strokeStyle = '#fff'; rrect(x, -11, -26, 22, 16, 5); x.stroke();
+      x.shadowColor = 'transparent'; x.fillStyle = disc[1]; x.fillRect(-30, 0, 60, 4); x.fillRect(-5, -3, 10, 10);
+    } else if (i === 2) { // lightning bolt
+      x.beginPath(); x.moveTo(8, -36); x.lineTo(-20, 6); x.lineTo(-2, 6); x.lineTo(-10, 36); x.lineTo(22, -8); x.lineTo(3, -8); x.closePath(); x.fill();
+    } else { // gear
+      x.beginPath(); const T = 8;
+      for (let k = 0; k < T * 4; k++) { const a = (k / (T * 4)) * Math.PI * 2 - Math.PI / (T * 4), r = (k % 4 === 1 || k % 4 === 2) ? 33 : 25; x.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+      x.closePath(); x.fill(); x.shadowColor = 'transparent';
+      x.fillStyle = disc[3]; x.beginPath(); x.arc(0, 0, 10, 0, 7); x.fill();
+    }
+    x.restore();
+  }
+  { // 4: soft ground glow, 5: ground ring (both tinted per pickup)
+    const g = x.createRadialGradient(4 * 128 + 64, 64, 0, 4 * 128 + 64, 64, 62); g.addColorStop(0, 'rgba(255,255,255,0.75)'); g.addColorStop(0.5, 'rgba(255,255,255,0.3)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(4 * 128, 0, 128, 128);
+    x.strokeStyle = '#fff'; x.lineWidth = 7; x.shadowColor = '#fff'; x.shadowBlur = 6; x.beginPath(); x.arc(5 * 128 + 64, 64, 50, 0, 7); x.stroke(); x.shadowBlur = 0;
+  }
+  ICON_CV = cv; return cv;
 }
 
 // ---------- billboard atlas ----------
@@ -684,9 +701,12 @@ function drawMini(t) {
   x.translate(R, R); x.rotate(-CAM_AZ); x.scale(sc, sc);
   x.imageSmoothingEnabled = false;
   x.drawImage(MAPC, WX0 - P.x, WZ0 - P.z, MW * MAP_RES, MH * MAP_RES);
-  for (const p of G.pickups) { x.fillStyle = '#2ee66f'; x.fillRect(p.x - P.x - 1.5, p.z - P.z - 1.5, 3, 3); }
-  for (const p of G.powerups) { x.fillStyle = '#2fa8ff'; x.fillRect(p.x - P.x - 2, p.z - P.z - 2, 4, 4); }
-  for (const p of G.gears) { x.fillStyle = '#ff9f1a'; x.beginPath(); x.arc(p.x - P.x, p.z - P.z, 2.6, 0, Math.PI * 2); x.fill(); }
+  // blips: same badges as in the world, kept upright while the map is rotated
+  const blip = (px, pz, cell, px2) => { if (!ICON_CV) return; const s = px2 / sc; x.save(); x.translate(px - P.x, pz - P.z); x.rotate(CAM_AZ); x.drawImage(ICON_CV, cell * 128, 0, 128, 128, -s / 2, -s / 2, s, s); x.restore(); };
+  x.imageSmoothingEnabled = true;
+  for (const p of G.pickups) blip(p.x, p.z, p.big ? 1 : 0, (p.big ? 26 : 21) * W / 256);
+  for (const p of G.powerups) blip(p.x, p.z, 2, 24 * W / 256);
+  for (const p of G.gears) blip(p.x, p.z, 3, 24 * W / 256);
   const blink = Math.floor(t * 6) % 2;
   for (const c of G.cops) { if (!c.alive || c.ai.lost) continue; x.fillStyle = blink ? '#ff3030' : '#3a6bff'; x.beginPath(); x.arc(c.x - P.x, c.z - P.z, 3.4, 0, Math.PI * 2); x.fill(); }
   if (G.heli) { x.strokeStyle = '#ff3030'; x.lineWidth = 1.5; x.beginPath(); x.arc(G.heli.x - P.x, G.heli.z - P.z, 5, 0, Math.PI * 2); x.stroke(); }
@@ -773,7 +793,7 @@ function previewCar() {
   const P = G.P; if (!P) return;
   const keep = { x: P.x, z: P.z, h: P.h };
   const owned = SAVE.owned.includes(titleCar);
-  const v = makeVehicle(titleCar, keep.x, keep.z, keep.h, { role: 'player', color: (titleCar === SAVE.car && SAVE.color) ? SAVE.color.slice() : MODELS[titleCar].color.slice() });
+  const v = makeVehicle(titleCar, keep.x, keep.z, keep.h, { role: 'player', color: carColor(titleCar) });
   G.P = v;
 }
 function goTitle() {
@@ -882,7 +902,7 @@ function openGarage() {
   $('title').classList.remove('on'); ['settings', 'boroSheet', 'missions'].forEach(k => $(k).classList.remove('on'));
   G.state = 'garage';
   GAR.idx = Math.max(0, PLAYER_CARS.indexOf(SAVE.car)); GAR.camX = GAR.idx * GSP; GAR.spin = 0;
-  GAR.cars = PLAYER_CARS.map((k, i) => { const v = makeVehicle(k, GX + i * GSP, GZ, 0, { role: 'player', color: (k === SAVE.car && SAVE.color) ? SAVE.color.slice() : MODELS[k].color.slice() }); v.ai = {}; return v; });
+  GAR.cars = PLAYER_CARS.map((k, i) => { const v = makeVehicle(k, GX + i * GSP, GZ, 0, { role: 'player', color: carColor(k) }); v.ai = {}; return v; });
   $('garage').classList.add('on'); renderGarage();
 }
 function closeGarage() {
@@ -1022,6 +1042,7 @@ function boot() {
   if (mobile) GFX.setShadowSize(1536);
   GFX.shadowOn = SAVE.shadows; GFX.night = SAVE.night ? 1 : 0;
   BILL_TEX = GFX.makeTex(makeBillboards(), 1024, 1024, false, true);
+  ICON_TEX = GFX.makeTex(makeIconAtlas(), 1024, 128, false, true);
   buildVehicleMeshes();
   STATIC_BR = GFX.makeInst(buildBridgeGeometry());
   MAPC = makeMapCanvas();
