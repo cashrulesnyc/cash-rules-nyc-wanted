@@ -89,7 +89,7 @@ function lmExcluded(x, z, pad) {
 // A ramp is a two-sided hump across an avenue, mid-block. rampValid(g,i,j) says whether avenue line i has
 // one at block j; rampHeight(x,z) is the deck height under a point (0 if none). Both are pure, so the chunk
 // worker (visuals) and the main thread (physics) agree without sharing data.
-const RAMP_L = 3.2, RAMP_H = 0.62, RAMP_P = 0.13; // length along the road, crest height, share of mid-blocks
+const RAMP_L = 3.2, RAMP_H = 0.62, RAMP_P = 0; // ramps removed per owner (Nov 2026): share of mid-blocks with a ramp = 0, so none are built and rampHeight() is always 0
 const RAMPC = new Map();
 function rampValid(g, i, j) {
   const k = g.boro * 1e8 + (i + 5000) * 1e4 + (j + 5000);

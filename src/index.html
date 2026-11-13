@@ -96,7 +96,7 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
 .mbar i{display:block;height:100%;background:var(--g)}
 .gift .mbar i{background:var(--gold)}
 .mclaim{font-size:12px;padding:8px 10px;min-width:96px}
-.opts{display:flex;gap:6px;justify-content:center}
+.opts{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
 .opts button{background:transparent;border:2px solid rgba(255,255,255,.2);padding:6px 10px;border-radius:10px;font-size:11px;opacity:.75}
 .opts button.sel{border-color:var(--gold);color:var(--gold);opacity:1}
 .tip{text-align:center;font-size:11.5px;opacity:.7;line-height:1.5}
@@ -201,7 +201,7 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
 <div id="settings" class="ov sheetov">
   <div class="sheet">
     <div class="mhead"><span class="disp">SETTINGS</span><button class="xbtn" data-close="settings">✕</button></div>
-    <div class="opts"><button id="optNight">AFTER DARK</button><button id="optSound">SOUND</button><button id="optShadow">SHADOWS</button></div>
+    <div class="opts"><button id="optNight">AFTER DARK</button><button id="optSound">SOUND</button><button id="optShadow">SHADOWS</button><button id="optBlur">MOTION BLUR</button></div>
     <div class="tip">Hold LEFT / RIGHT side to steer · both = brake · keys ← → ↓<br>Smash stuff = heat · grab <b style="color:var(--g)">$</b> cash, <b style="color:#2fa8ff">⚡</b> nitro and <b style="color:#ff9f1a">⚙</b> gears for instant repair</div>
   </div>
 </div>

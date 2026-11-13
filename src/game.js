@@ -12,7 +12,7 @@ const fmt$ = (n) => '$' + Math.floor(n).toLocaleString('en-US');
 
 // ---------- save ----------
 const SAVE_KEY = 'crnyc_wanted_v1';
-let SAVE = { bank: 250, owned: ['sedan'], car: 'sedan', color: null, up: { engine: 0, armor: 0 }, best: 0, night: false, sound: true, shadows: true, boro: 'MANHATTAN' };
+let SAVE = { bank: 250, owned: ['sedan'], car: 'sedan', color: null, up: { engine: 0, armor: 0 }, best: 0, night: false, sound: true, shadows: true, blur: true, boro: 'MANHATTAN' };
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s) SAVE = Object.assign(SAVE, s); } catch (e) { }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch (e) { } }
 SAVE.stats = Object.assign({ cops: 0, cash: 0, airs: 0, nitros: 0, gears: 0, dist: 0, runs: 0 }, SAVE.stats || {});
@@ -24,8 +24,6 @@ window.addEventListener('pagehide', save); document.addEventListener('visibility
 const MISSIONS = [
   { k: 'cops', name: 'WRECK COPS', t: [3, 10, 25, 60, 150, 400], r: [400, 1000, 2500, 5000, 10000, 20000] },
   { k: 'cash', name: 'COLLECT CASH', t: [2000, 10000, 40000, 120000, 400000, 1000000], r: [300, 1200, 4000, 10000, 25000, 60000], money: true },
-  { k: 'airs', name: 'BIG AIRS OFF RAMPS', t: [3, 12, 35, 80, 200, 500], r: [400, 1000, 2500, 6000, 12000, 25000] },
-  { k: 'nitros', name: 'GRAB NITRO', t: [3, 12, 35, 80, 200, 500], r: [400, 1000, 2500, 6000, 12000, 25000] },
   { k: 'gears', name: 'GRAB REPAIR GEARS', t: [2, 8, 20, 50, 120, 300], r: [300, 900, 2000, 5000, 10000, 20000] },
   { k: 'dist', name: 'DRIVE (KM)', t: [5, 25, 80, 200, 500, 1200], r: [300, 1000, 3000, 7000, 15000, 30000] },
   { k: 'stars', name: 'HIT MAX HEAT', t: [2, 3, 4, 5], r: [500, 1000, 2500, 5000], fmt: (n) => n + '★', val: () => SAVE.maxStars },
@@ -228,19 +226,6 @@ function spawnGear() {
     G.gears.push({ x, z, t: Math.random() * 6 }); return;
   }
 }
-// nitro power-ups: floating lightning bolts on the road ahead
-const NITRO_T = 4.5, NITRO_BOOST = 1.5;
-function spawnPowerup() {
-  const P = G.P;
-  for (let tries = 0; tries < 10; tries++) {
-    const a = P.h + (Math.random() - 0.5) * 2.4, r = 28 + Math.random() * 45;
-    const x = P.x + Math.sin(a) * r, z = P.z - Math.cos(a) * r;
-    const t = tileAt(x, z); if (t !== T_ROAD && t !== T_HWY && t !== T_PLAZA && t !== T_PARK) continue;
-    if (WORLD.pointBlocked(x, z, 0.8)) continue;
-    G.powerups.push({ x, z, kind: 'nitro', t: Math.random() * 6 }); return;
-  }
-}
-
 // ---------- damage / events ----------
 function damage(v, amt) {
   if (!v.alive) return;
@@ -410,26 +395,8 @@ function updateWorldRules(dt) {
     if (Math.hypot(p.x - P.x, p.z - P.z) < 2.3 && P.alive) { addCash(p.v); AUD.cash(); puff(p.x, 0.8, p.z, hex('#2ee66f'), 8, { size: 0.18, v: 3, vy: 3, life: 0.6, m: 2, g: 4 }); return false; }
     return Math.hypot(p.x - P.x, p.z - P.z) < 90;
   });
-  // big air: cash for hang time off the ramps
-  if (P.landed !== undefined) {
-    const at = P.landed; P.landed = undefined;
-    G.shake = Math.max(G.shake, Math.min(0.7, (P.landV || 0) * 0.04)); AUD.crash(Math.min(12, (P.landV || 0) * 0.6));
-    puff(P.x, 0.3, P.z, hex('#c9c3b5'), 8, { size: 0.3, v: 3, vy: 1.5, life: 0.6, g: 1, spread: 1.2 });
-    if (at > 0.45 && P.alive) { const c = Math.round(at * 150 / 10) * 10 + 25 * G.stars; addCash(c); bigMsg(at > 1 ? 'HUGE AIR!' : 'BIG AIR!', 'cool'); toast('AIR TIME ' + at.toFixed(1) + 's  +' + fmt$(c)); stat('airs', 1); }
-  }
   for (const c of G.cops) if (c.landed !== undefined) { c.landed = undefined; if (c.landV > 9) damage(c, (c.landV - 9) * 3); }
-  // power-ups
-  G.powT -= dt;
-  if (G.powT <= 0 && G.powerups.length < 3) { spawnPowerup(); G.powT = 3.5; }
-  G.powerups = G.powerups.filter(p => {
-    p.t += dt;
-    if (Math.hypot(p.x - P.x, p.z - P.z) < 2.4 && P.alive) {
-      P.nitro = NITRO_T; stat('nitros', 1); bigMsg('NITRO!', 'cool'); AUD.blip(200, 1400, 0.5, 'sawtooth', 0.06); flash('#2fa8ff'); G.shake = Math.max(G.shake, 0.3);
-      puff(p.x, 1.0, p.z, hex('#2fa8ff'), 12, { size: 0.2, v: 5, vy: 3, life: 0.6, m: 2, g: 3 });
-      return false;
-    }
-    return Math.hypot(p.x - P.x, p.z - P.z) < 95;
-  });
+  P.boost = 1; // nitro removed per owner (Nov 2026)
   // repair gears: spawn more often when you're beat up; grabbing one is an instant full repair
   G.gearT -= dt * (P.hp < P.maxHp * 0.6 ? 2.5 : 1);
   if (G.gearT <= 0 && G.gears.length < 2) { spawnGear(); G.gearT = 7; }
@@ -442,12 +409,6 @@ function updateWorldRules(dt) {
     }
     return Math.hypot(p.x - P.x, p.z - P.z) < 95;
   });
-  // nitro: higher top speed + harder acceleration, flames out the back
-  if (P.nitro > 0 && P.alive) {
-    P.nitro = Math.max(0, P.nitro - dt); P.boost = NITRO_BOOST;
-    const fx = Math.sin(P.h), fz = -Math.cos(P.h), back = P.m.len / 2 + 0.1;
-    if (Math.random() < 0.8) puff(P.x - fx * back, 0.35, P.z - fz * back, Math.random() < 0.5 ? hex('#ff8a1e') : hex('#2fa8ff'), 1, { size: 0.22, v: 1, vy: 0.5, life: 0.35, m: 2, g: 0, shrink: true });
-  } else P.boost = 1;
   // high-speed bonus: hold close to top speed and the cash keeps coming
   const spd = vSpeed(P);
   if (P.alive && P.sink === 0) SAVE.stats.dist += spd * dt * MPU / 1000;
@@ -457,7 +418,7 @@ function updateWorldRules(dt) {
   if ((G.autoT = (G.autoT || 0) + dt) > 5) { G.autoT = 0; if (SAVE.bank !== G.savedBank) { G.savedBank = SAVE.bank; save(); } }
   if (spd > P.maxV * 0.88 && P.alive && P.sink === 0) {
     G.spdT += dt; G.spdAcc = (G.spdAcc || 0) + dt;
-    if (G.spdAcc >= 1) { G.spdAcc -= 1; addCash(20 + 10 * G.stars + (P.nitro > 0 ? 20 : 0)); }
+    if (G.spdAcc >= 1) { G.spdAcc -= 1; addCash(20 + 10 * G.stars); }
   } else { G.spdT = 0; G.spdAcc = 0; }
   // fountains
   G.fountains = G.fountains.filter(f => { f.t -= dt; if (Math.random() < 0.7) puff(f.x, 0.5, f.z, hex('#bfe6ff'), 2, { size: 0.18, v: 1.2, vy: 7, vyr: 2, life: 0.9, g: 14 }); return f.t > 0; });
@@ -546,7 +507,7 @@ function buildDynamic(t) {
   for (const v of G.civs) pushVehicle(v, t);
   for (const v of G.wrecks) pushVehicle(v, t);
   if (G.heli) { const H = G.heli; pushVehicle({ x: H.x, y: H.y, z: H.z, h: H.h, m: MODELS.heli, color: VC.white, role: 'cop', ai: {}, roll: 0, pitch: 0.12 }, t); }
-  // pickups: GTA-style floating badges (cash, briefcase, nitro, repair) with a glow + ring on the road
+  // pickups: GTA-style floating badges (cash, briefcase, repair) with a glow + ring on the road
   ICONS.length = 0;
   const badge = (p, cell, size, col, ph) => {
     const y = 1.55 + Math.sin(p.t * 3) * 0.16, pulse = 1 + Math.sin(p.t * 5 + ph) * 0.04;
@@ -555,7 +516,6 @@ function buildDynamic(t) {
     ICONS.push([p.x, y, p.z, size * pulse, cell, 0, 1, 1, 1, 1]);
   };
   for (const p of G.pickups) badge(p, p.big ? 1 : 0, p.big ? 2.9 : 2.4, p.big ? ICON_COL[1] : ICON_COL[0], 0);
-  for (const p of G.powerups) badge(p, 2, 2.7, ICON_COL[2], 1);
   for (const p of G.gears) badge(p, 3, 2.7, ICON_COL[3], 2);
   // particles
   for (const p of PARTS) {
@@ -599,6 +559,10 @@ function render(t, dt) {
   let ty = G.state === 'title' ? 1.2 : 0;
   if (G.shake > 0) { const s = G.shake; ex += (Math.random() - 0.5) * s; ey += (Math.random() - 0.5) * s; ez += (Math.random() - 0.5) * s; G.shake = Math.max(0, G.shake - dt * 2.5); }
   const L = GFX.night ? LIGHT.night : LIGHT.day;
+  { // motion blur strength: kicks in above ~55% of top speed, strongest flat out
+    const k = (G.state === 'play' && P && P.alive) ? Math.max(0, Math.min(1, (vSpeed(P) / (P.maxV || 24) - 0.55) / 0.45)) : 0;
+    G.blurAmt = (G.blurAmt || 0) + (k * 0.055 - (G.blurAmt || 0)) * Math.min(1, dt * 4);
+  }
   const silN = buildDynamic(t);
   GFX.setDyn(DYN.data, DYN.n, silN);
   const chunks = []; for (const ch of WORLD.chunks.values()) chunks.push(ch);
@@ -609,7 +573,8 @@ function render(t, dt) {
     fog: [dist * 1.7, dist * 3.0 + (portrait ? 20 : 0)], time: t, // pushed out: haze only at the far edge
     shadowCenter: [tx, 0, tz], shadowHalf: portrait ? 52 : 46,
     chunks, statics: STATIC_BR ? [STATIC_BR] : [], bills, billTex: BILL_TEX, icons: ICONS, iconTex: ICON_TEX,
-    sil: (G.state === 'play') ? { col: [1, 0.85, 0.2, 0.55] } : null,
+    sil: (G.state === 'play') ? { col: [1, 0.86, 0.15, 0.92], edge: [0.02, 0.02, 0.03, 0.9] } : null, // bold outline: dark rim + solid yellow
+    blur: (G.state === 'play' && P && SAVE.blur !== false) ? { amt: G.blurAmt || 0, at: [P.x, 0.5, P.z] } : null,
     slice: null, // building slicing removed per owner (heights popped as the car moved); the car shows through as a silhouette instead
   });
 }
@@ -705,7 +670,6 @@ function drawMini(t) {
   const blip = (px, pz, cell, px2) => { if (!ICON_CV) return; const s = px2 / sc; x.save(); x.translate(px - P.x, pz - P.z); x.rotate(CAM_AZ); x.drawImage(ICON_CV, cell * 128, 0, 128, 128, -s / 2, -s / 2, s, s); x.restore(); };
   x.imageSmoothingEnabled = true;
   for (const p of G.pickups) blip(p.x, p.z, p.big ? 1 : 0, (p.big ? 26 : 21) * W / 256);
-  for (const p of G.powerups) blip(p.x, p.z, 2, 24 * W / 256);
   for (const p of G.gears) blip(p.x, p.z, 3, 24 * W / 256);
   const blink = Math.floor(t * 6) % 2;
   for (const c of G.cops) { if (!c.alive || c.ai.lost) continue; x.fillStyle = blink ? '#ff3030' : '#3a6bff'; x.beginPath(); x.arc(c.x - P.x, c.z - P.z, 3.4, 0, Math.PI * 2); x.fill(); }
@@ -744,7 +708,6 @@ function updateHUD(t) {
   // hints
   let hint = '';
   if (G.bust > 0.4) hint = 'GET MOVING OR GET BUSTED!';
-  else if (P.nitro > 0) hint = 'NITRO ' + '▮'.repeat(Math.ceil(P.nitro / NITRO_T * 8));
   else if (P.hp < P.maxHp * 0.35 && G.gears.length) hint = 'LOW HEALTH — GRAB A ⚙ GEAR';
   else if (G.spdT > 0.5) hint = 'HIGH-SPEED BONUS';
   const he = $('hint'); if (he.textContent !== hint) he.textContent = hint; he.classList.toggle('on', !!hint);
@@ -786,7 +749,7 @@ function renderTitle() {
   $('best').textContent = SAVE.best ? 'BEST RUN ' + mmss(SAVE.best) : ''; $('best').style.visibility = SAVE.best ? 'visible' : 'hidden';
   $('boroName').textContent = BORO_LABEL[SAVE.boro] || SAVE.boro;
   document.querySelectorAll('#boros button').forEach(b => b.classList.toggle('sel', b.dataset.b === SAVE.boro));
-  $('optNight').classList.toggle('sel', SAVE.night); $('optSound').classList.toggle('sel', SAVE.sound); $('optShadow').classList.toggle('sel', SAVE.shadows);
+  $('optNight').classList.toggle('sel', SAVE.night); $('optSound').classList.toggle('sel', SAVE.sound); $('optShadow').classList.toggle('sel', SAVE.shadows); $('optBlur').classList.toggle('sel', SAVE.blur !== false);
 }
 function loadingPct() { return G.P ? Math.min(1, WORLD.loadedAround(G.P.x, G.P.z, 1.6) / 0.999) : 0; }
 function previewCar() {
@@ -825,6 +788,7 @@ function setupMenus() {
   $('garUp').onclick = () => garUpgrade();
   $('optNight').onclick = () => { SAVE.night = !SAVE.night; GFX.night = SAVE.night ? 1 : 0; save(); renderTitle(); };
   $('optSound').onclick = () => { SAVE.sound = !SAVE.sound; AUD.init(); AUD.setOn(SAVE.sound); save(); renderTitle(); };
+  $('optBlur').onclick = () => { SAVE.blur = SAVE.blur === false; save(); renderTitle(); };
   $('optShadow').onclick = () => { SAVE.shadows = !SAVE.shadows; GFX.shadowOn = SAVE.shadows; save(); renderTitle(); };
   $('againBtn').onclick = () => { $('over').classList.remove('on'); titleCar = SAVE.car; startRun(); };
   $('menuBtn').onclick = () => { goTitle(); openGarage(); };

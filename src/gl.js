@@ -189,11 +189,12 @@ precision mediump float; uniform vec4 uSil; out vec4 o; void main(){ o = uSil; }
 const MESH_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec3 aCol; layout(location=3) in vec2 aMat;
 layout(location=4) in vec3 iPos; layout(location=5) in vec4 iRot; layout(location=6) in vec3 iScl; layout(location=7) in vec3 iCol; layout(location=8) in vec3 iFlg;
-uniform mat4 uVP; uniform mat4 uLVP;
+uniform mat4 uVP; uniform mat4 uLVP; uniform float uInfl;
 out vec3 vN; out vec3 vCol; out vec3 vW; out vec4 vS; flat out float vMat; flat out vec3 vFlg; flat out float vPaint;
 vec3 qr(vec4 q, vec3 v){ return v + 2.0*cross(q.xyz, cross(q.xyz, v) + q.w*v); }
 void main(){
-  vec3 w = qr(iRot, aPos * iScl) + iPos;
+  vec3 lp = aPos; if (uInfl > 0.0) lp = (aPos - vec3(0.0, 0.45, 0.0)) * (1.0 + uInfl) + vec3(0.0, 0.45, 0.0) + aNrm * uInfl * 0.25; // outline halo
+  vec3 w = qr(iRot, lp * iScl) + iPos;
   vN = qr(iRot, normalize(aNrm / iScl)); vCol = aMat.y > 0.0 ? iCol * aMat.y : aCol; vMat = aMat.x; vFlg = iFlg; vW = w; vPaint = aMat.y;
   vS = uLVP * vec4(w, 1.0); gl_Position = uVP * vec4(w, 1.0);
 }`;
@@ -381,6 +382,17 @@ const ICON_FS = `#version 300 es
 precision highp float; in vec2 vUV; in vec3 vW; out vec4 o; uniform sampler2D uTex; uniform vec4 uTint; uniform vec3 uFogCol; uniform vec2 uFog; uniform vec3 uCam;
 void main(){ vec4 c = texture(uTex, vUV) * uTint; if (c.a < 0.01) discard; float f = smoothstep(uFog.x, uFog.y, distance(vW, uCam)); o = vec4(mix(c.rgb, uFogCol, f * 0.6), c.a); }`;
 
+// speed motion blur: radial streaks from the car outward (the car itself stays sharp)
+const POST_VS = `#version 300 es
+layout(location=0) in vec2 aQ; out vec2 vUV; void main(){ vUV = aQ; gl_Position = vec4(aQ * 2.0 - 1.0, 0.0, 1.0); }`;
+const POST_FS = `#version 300 es
+precision mediump float; in vec2 vUV; out vec4 o; uniform sampler2D uTex; uniform vec2 uC; uniform float uAmt; uniform float uAsp;
+void main(){
+  vec2 d = vUV - uC; float m = smoothstep(0.06, 0.42, length(d * vec2(uAsp, 1.0)));
+  vec3 c = vec3(0.0); float ws = 0.0;
+  for (int i = 0; i < 10; i++) { float t = float(i) / 9.0, w = 1.0 - t * 0.6; c += texture(uTex, vUV - d * t * uAmt * m).rgb * w; ws += w; }
+  o = vec4(c / ws, 1.0); }`;
+
 const GFX = {
   gl: null, ok: false, shadowSize: 2048, shadowOn: true, night: 0, bevel: 0.13,
   init(canvas) {
@@ -400,7 +412,7 @@ const GFX = {
       return { p, u };
     };
     this.pBox = mk(BOX_VS, BOX_FS); this.pDepth = mk(DEPTH_VS, DEPTH_FS); this.pSil = mk(BOX_VS, SIL_FS);
-    this.pGround = mk(GROUND_VS, GROUND_FS); this.pBill = mk(BILL_VS, BILL_FS); this.pIcon = mk(ICON_VS, ICON_FS);
+    this.pGround = mk(GROUND_VS, GROUND_FS); this.pBill = mk(BILL_VS, BILL_FS); this.pIcon = mk(ICON_VS, ICON_FS); this.pPost = mk(POST_VS, POST_FS);
     this.pMesh = mk(MESH_VS, MESH_FS); this.pMeshD = mk(MESH_DEPTH_VS, DEPTH_FS); this.pMeshS = mk(MESH_VS, SIL_FS); this.meshes = {};
     // chamfered cube: 6 faces + 12 edge strips + 8 corner tris (44 tris). Vertex = pos, normal, inset-mask.
     const V = [], I = [];
@@ -494,6 +506,23 @@ const GFX = {
   },
   updateInst(obj, startInst, data) { const gl = this.gl; gl.bindBuffer(gl.ARRAY_BUFFER, obj.buf); gl.bufferSubData(gl.ARRAY_BUFFER, startInst * INST * 4, data); },
   freeInst(obj) { const gl = this.gl; gl.deleteBuffer(obj.buf); gl.deleteVertexArray(obj.vao); gl.deleteVertexArray(obj.svao); },
+  // offscreen MSAA target + resolve texture for the motion-blur pass (created on first use, resized with the canvas)
+  postTarget(w, h) {
+    const gl = this.gl; let P = this.post;
+    if (P && P.w === w && P.h === h) return P;
+    if (P) { gl.deleteFramebuffer(P.ms); gl.deleteFramebuffer(P.rs); gl.deleteRenderbuffer(P.cb); gl.deleteRenderbuffer(P.db); gl.deleteTexture(P.tex); }
+    const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 0);
+    P = { w, h, ms: gl.createFramebuffer(), rs: gl.createFramebuffer(), cb: gl.createRenderbuffer(), db: gl.createRenderbuffer(), tex: gl.createTexture() };
+    gl.bindRenderbuffer(gl.RENDERBUFFER, P.cb); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA8, w, h);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, P.db); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH_COMPONENT24, w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, P.ms); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, P.cb); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, P.db);
+    P.ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindTexture(gl.TEXTURE_2D, P.tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, P.rs); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, P.tex, 0);
+    P.ok = P.ok && gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); this.post = P; return P;
+  },
   // icons: [x, y, z, size, cell, flat, r, g, b, a]. Drawn blended, no depth write; badges hidden behind buildings show faintly.
   drawIcons(S) {
     const gl = this.gl, pi = this.pIcon; gl.useProgram(pi.p);
@@ -627,7 +656,9 @@ const GFX = {
       gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.CULL_FACE);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    // ---- main pass ----
+    // ---- main pass ---- (into an offscreen target when motion blur is on)
+    const blur = (S.blur && S.blur.amt > 0.004) ? this.postTarget(c.width, c.height) : null, usePost = blur && blur.ok;
+    if (usePost) gl.bindFramebuffer(gl.FRAMEBUFFER, blur.ms);
     gl.viewport(0, 0, c.width, c.height);
     const fc = S.fogCol; gl.clearColor(fc[0], fc[1], fc[2], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     const setCommon = (pr) => {
@@ -703,11 +734,26 @@ const GFX = {
       gl.uniform4fv(ps.u.uSil, S.sil.col);
       gl.depthFunc(gl.GREATER); gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       if (this.pl.count) drawPlayer();
-      const pms = this.pMeshS; gl.useProgram(pms.p); gl.uniformMatrix4fv(pms.u.uVP, false, this.VP); gl.uniform4fv(pms.u.uSil, S.sil.col); this.meshDraw('pl');
+      const pms = this.pMeshS; gl.useProgram(pms.p); gl.uniformMatrix4fv(pms.u.uVP, false, this.VP);
+      if (S.sil.edge) { gl.uniform1f(pms.u.uInfl, 0.16); gl.uniform4fv(pms.u.uSil, S.sil.edge); this.meshDraw('pl'); gl.uniform1f(pms.u.uInfl, 0); } // bold dark rim
+      gl.uniform4fv(pms.u.uSil, S.sil.col); this.meshDraw('pl');
       gl.depthFunc(gl.LESS); gl.depthMask(true); gl.disable(gl.BLEND);
     }
     if (this.pl.count) { gl.useProgram(pb.p); drawPlayer(); }
     gl.useProgram(pm.p); this.meshDraw('pl');
+    if (usePost) { // resolve MSAA, then radial blur onto the screen
+      const w = c.width, h = c.height;
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, blur.ms); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, blur.rs);
+      gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, w, h);
+      const pp = this.pPost, a = S.blur.at, v = this.VP;
+      const cx = v[0] * a[0] + v[4] * a[1] + v[8] * a[2] + v[12], cy = v[1] * a[0] + v[5] * a[1] + v[9] * a[2] + v[13], cw = v[3] * a[0] + v[7] * a[1] + v[11] * a[2] + v[15];
+      gl.useProgram(pp.p); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, blur.tex); gl.uniform1i(pp.u.uTex, 0);
+      gl.uniform2f(pp.u.uC, cw > 0 ? cx / cw * 0.5 + 0.5 : 0.5, cw > 0 ? cy / cw * 0.5 + 0.5 : 0.5); gl.uniform1f(pp.u.uAmt, S.blur.amt); gl.uniform1f(pp.u.uAsp, w / h);
+      gl.bindVertexArray(this.quadVAO); gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE);
+    }
     gl.bindVertexArray(null);
   }
 };

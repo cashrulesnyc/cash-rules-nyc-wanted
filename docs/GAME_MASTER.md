@@ -967,6 +967,8 @@ Avoid unnecessary interface redesign.
 
 > **Revision 2.1 (owner instruction, November 13, 2026):** the title screen was judged too crowded and the old garage carousel was rejected. The title screen is now minimal: branding, WANTED badge, best run, bank, a single **START IN [borough]** selector, the **PLAY** button, and a three-button dock: **GARAGE**, **HUSTLES** (Missions & Gifts, with badge) and **SETTINGS** (After Dark, Sound, Shadows, control instructions). Vehicle selection and the Engine/Armor upgrades moved into the 3D Garage (§23.1).
 
+> **Revision 2.2 (owner instruction, November 13, 2026):** **nitro power-ups and jump ramps are removed** from the game (no spawns, no ramps on the map, and their mission ladders "Big Airs Off Ramps" and "Grab Nitro" are retired; lifetime stats stay in the save). **Speed motion blur** is added for drama (radial streaks above ~55% of top speed, car stays sharp; toggle in Settings). Buildings always render at full height (no height-cutting near the car); when a building covers the car, the car shows as a **bold outline** (solid yellow fill with a dark rim). The starter Street Sedan is factory grey with no repaint (upgrades only).
+
 ### 23.1 GARAGE (added in revision 2.1)
 
 - A dedicated 3D garage environment, rendered with the game's own engine.
