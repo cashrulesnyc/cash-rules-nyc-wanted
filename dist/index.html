@@ -3250,7 +3250,7 @@ function updateParts(dt) {
 const $ = (id) => document.getElementById(id);
 const CAM_AZ = -16 * Math.PI / 180;
 // Steeper than the original 60deg: closer to the classic top-down city chase look, so towers
-// lean away from the car instead of across it. Anything still in the way gets sliced (gl.js).
+// lean away from the car instead of across it. Buildings always keep full height; when one covers the car, the car shows as a silhouette.
 const CAM_PITCH = 66 * Math.PI / 180;
 const STAR_HEAT = [1, 16, 40, 80, 140];
 const COPS_FOR = [0, 2, 3, 5, 6, 8];
@@ -3856,7 +3856,7 @@ function render(t, dt) {
     shadowCenter: [tx, 0, tz], shadowHalf: portrait ? 52 : 46,
     chunks, statics: STATIC_BR ? [STATIC_BR] : [], bills, billTex: BILL_TEX, icons: ICONS, iconTex: ICON_TEX,
     sil: (G.state === 'play') ? { col: [1, 0.85, 0.2, 0.55] } : null,
-    slice: P ? { x: P.x, z: P.z, minH: 2.7, fx: f[0], fz: f[1], slope: Math.tan(pitch) * 0.92 } : null,
+    slice: null, // building slicing removed per owner (heights popped as the car moved); the car shows through as a silhouette instead
   });
 }
 
