@@ -112,7 +112,7 @@ function segHit(x, z) {
 function buildRoads() {
   for (const r of GEO.ROADS) {
     const pts = toW(r[2]);
-    for (let i = 0; i + 1 < pts.length; i++) addSeg(pts[i], pts[i + 1], r[1] * HWY_K, r[0] === 1 ? SEG_HWY : r[0] === 2 ? SEG_AVE : SEG_RUN);
+    for (let i = 0; i + 1 < pts.length; i++) { const sg = addSeg(pts[i], pts[i + 1], r[1] * HWY_K, r[0] === 1 ? SEG_HWY : r[0] === 2 ? SEG_AVE : SEG_RUN); if (r[3]) sg.name = r[3]; }
   }
   for (const b of GEO.BRIDGES) {
     const a = PL(b[5]), c = PL(b[6]);
@@ -179,11 +179,22 @@ function zoneAt(x, z) { const m = landIdx(x, z); return m < 0 ? 0 : ZONE[m]; }
 const SPECIAL_ZONES = [];
 // ---- Bloomfield logistics park (Staten Island west shore, Gulf Ave): site frame aligned to the West Shore Expwy ----
 // s = units south along the expressway from its north end, t = units west of its centre line (toward the Arthur Kill).
-const BF = (() => { const a = P(40.6300, -74.1850), b = P(40.6000, -74.1900), L = Math.hypot(b[0] - a[0], b[1] - a[1]); const d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; return { a, d, e: [-d[1], d[0]], yaw: Math.atan2(d[0], d[1]) }; })(); // e points west; box yaw BF.yaw puts local +z along d (south), local +x east (-t)
-function bfW(s, t) { return [BF.a[0] + BF.d[0] * s + BF.e[0] * t, BF.a[1] + BF.d[1] * s + BF.e[1] * t]; }
-function bfRect(s0, t0, s1, t1) { return [bfW(s0, t0), bfW(s1, t0), bfW(s1, t1), bfW(s0, t1)]; }
+// site frames: o = origin, d = unit "down the road" direction (a -> b), e = unit "west" (90deg right of d), yaw for boxes
+function mkFrame(a, b, o) { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; return { a: o || a, d, e: [-d[1], d[0]], yaw: Math.atan2(d[0], d[1]) }; }
+function fW(F, s, t) { return [F.a[0] + F.d[0] * s + F.e[0] * t, F.a[1] + F.d[1] * s + F.e[1] * t]; }
+function fRect(F, s0, t0, s1, t1) { return [fW(F, s0, t0), fW(F, s1, t0), fW(F, s1, t1), fW(F, s0, t1)]; }
+function fLocal(F, x, z) { const rx = x - F.a[0], rz = z - F.a[1]; return [rx * F.d[0] + rz * F.d[1], rx * F.e[0] + rz * F.e[1]]; }
+const BF = mkFrame(P(40.6300, -74.1850), P(40.6000, -74.1900));                     // Bloomfield: along the West Shore Expwy
+const SM = mkFrame(P(40.5950, -74.1615), P(40.5700, -74.1650), P(40.5822, -74.1612)); // Staten Island Mall: along Richmond Ave, origin at the mall
+function bfW(s, t) { return fW(BF, s, t); }
+function bfRect(s0, t0, s1, t1) { return fRect(BF, s0, t0, s1, t1); }
+// striped lots: frame, extent, stall phase (bands of [2.6 stalls][2.6 stalls][3.4 aisle] starting at tb)
+const LOTS = [{ F: BF, s0: 4, s1: 118, t0: 3.2, t1: 15, tb: 3.2 }, { F: SM, s0: -42, s1: 42, t0: 2.4, t1: 72, tb: 10.0 }];
+function lotAt(x, z) { for (const L of LOTS) { const q = fLocal(L.F, x, z); if (q[0] > L.s0 - 3 && q[0] < L.s1 + 3 && q[1] > L.t0 - 3 && q[1] < L.t1 + 3) return L; } return LOTS[0]; }
+// mall Ring Road (a loop inside the lot) as avenue segments, overlapping at the corners
+const MALL_RING = { s0: -38, s1: 38, t0: 8, t1: 66, w: 2.8 };
 // zone codes: 6 marsh (drivable, splashy), 7 striped parking lot
-const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)]];
+const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)]];
 // smooth value noise (marsh pools / reed beds)
 function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
   const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; }
@@ -206,6 +217,10 @@ function buildMap() {
   const sq = [[40.7308, -73.9973], [40.7359, -73.9911], [40.7420, -73.9880], [40.7536, -73.9832], [40.7265, -73.9815], [40.8040, -73.9440]];
   for (const s of sq) { const b = blockOf(g, s[0], s[1]); fillPoly(ZONE, blockRect(g, b[0], b[1], 1, 1, -0.01), 1, true); }
   buildRoads();
+  { const R = MALL_RING, h = R.w / 2, c = [[R.s0, R.t0], [R.s1, R.t0], [R.s1, R.t1], [R.s0, R.t1]];
+    for (let k = 0; k < 4; k++) { const a = c[k], b = c[(k + 1) % 4], ds = Math.sign(b[0] - a[0]) * h, dt = Math.sign(b[1] - a[1]) * h;
+      addSeg(fW(SM, a[0] - ds, a[1] - dt), fW(SM, b[0] + ds, b[1] + dt), R.w, SEG_AVE).name = 'RING RD'; }
+    for (const s0 of [-20, 20]) addSeg(fW(SM, s0, 1), fW(SM, s0, R.t0 + h), 2.6, SEG_AVE).name = 'RING RD'; } // entrances off Richmond Ave
   // blurred land mask (separable 1-4-6-4-1) for smooth coastlines
   { const K = [1, 4, 6, 4, 1], t1 = new Uint16Array(MW * MH);
     for (let y = 0; y < MH; y++) { const row = y * MW; for (let x = 0; x < MW; x++) { let v = 0; for (let k = -2; k <= 2; k++) { const xx = Math.min(MW - 1, Math.max(0, x + k)); v += (BORO[row + xx] ? 255 : 0) * K[k + 2]; } t1[row + x] = v >> 4; } }
@@ -326,9 +341,9 @@ function texel(x, z, out) {
       break;
     }
     case T_PARKING: { // striped lot in the site frame: [stalls 2.6][stalls 2.6][aisle 3.4], stalls 1.4 wide
-      const rx = x - BF.a[0], rz = z - BF.a[1], s = rx * BF.d[0] + rz * BF.d[1], t = rx * BF.e[0] + rz * BF.e[1];
+      const L = lotAt(x, z), q = fLocal(L.F, x, z), s = q[0], t = q[1];
       c = shade(COL.park, 0.94 + 0.1 * n, _sc);
-      const tp = t - 3.2, m = tp - 8.8 * Math.floor(tp / 8.8);
+      const tp = t - L.tb, m = tp - 8.8 * Math.floor(tp / 8.8);
       if (m < 5.2) { c = paint(c, COL.white, cov(Math.abs(s / 1.4 - Math.round(s / 1.4)) * 1.4, 0.07)); c = paint(c, COL.white, cov(Math.abs(m - 2.6), 0.07)); }
       else c = paint(c, COL.white, Math.min(cov(Math.abs(m - 7.0), 0.08), dash(s, 2.4)) * 0.6);
       break;

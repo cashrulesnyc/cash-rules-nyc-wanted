@@ -64,7 +64,8 @@ function initWorldData() {
   { const a = bfW(34, 31), b = bfW(80, 29), m = bfW(70, 66);
     LM.push({ type: 'label', x: a[0], z: a[1], r: 0, nr: 26, name: 'JFK8', sub: 'FULFILLMENT CENTER · GULF AVE' });
     LM.push({ type: 'label', x: b[0], z: b[1], r: 0, nr: 24, name: 'DYY6', sub: 'DELIVERY STATION · GULF AVE' });
-    LM.push({ type: 'label', x: m[0], z: m[1], r: 0, nr: 34, name: 'BLOOMFIELD MARSH', sub: 'ARTHUR KILL WETLANDS' }); }
+    LM.push({ type: 'label', x: m[0], z: m[1], r: 0, nr: 34, name: 'BLOOMFIELD MARSH', sub: 'ARTHUR KILL WETLANDS' });
+    const sm = fW(SM, 0, 37); LM.push({ type: 'label', x: sm[0], z: sm[1], r: 0, nr: 42, name: 'STATEN ISLAND MALL', sub: 'RICHMOND AVE · NEW SPRINGVILLE' }); }
   buildSite();
   for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
     ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
@@ -180,6 +181,17 @@ function inChunk(ctx, x, z) { return x >= ctx.x0 && x < ctx.x0 + CH && z >= ctx.
 // delivery-van lots, employee parking. Built once into SITE_BOXES / SITE_COLS; genChunk copies the boxes whose
 // centre falls in the chunk and every collider that overlaps it (so big buildings stay solid across chunk edges).
 let SITE_BOXES = null, SITE_COLS = null;
+// Staten Island Mall (generic: no store names or logos): long concourse, two anchor stores, a big centre court with a
+// glass pyramid, a rear wing, entrance canopies, outparcel restaurants. Rects in the SM frame: [s0, s1, t0, t1, H, colour]
+const MALL_BLDGS = [
+  [-20, 20, 30, 42, 2.4, '#d9cbb2'],   // concourse
+  [-4.5, 4.5, 26, 46, 3.4, '#e4d8c2'], // centre court
+  [-33, -20, 27, 45, 3.2, '#b8644c'],  // north anchor
+  [20, 33, 27, 45, 3.2, '#e2e2dc'],    // south anchor
+  [-9, 9, 42, 53, 2.8, '#c9c2b8'],     // rear wing
+  [-31, -24, 13, 18.5, 1.3, '#efe6d6'], // outparcel restaurant
+  [24, 31, 13, 18.5, 1.3, '#dfe7ea'],  // outparcel
+];
 function buildSite() {
   const keep = OB; OB = [];
   const cols = [], Y = BF.yaw;
@@ -247,6 +259,32 @@ function buildSite() {
   for (const [t, w] of [[21, false], [23.2, true], [30, false], [32.2, true], [39.5, false], [41.7, true]]) vanRow(92, 114, t, w);
   // light poles along the van lot and dock apron
   for (let s = 8; s < 118; s += 10) for (const t of [17.5, 48.8]) { sb(s, t, 1.6, 0.12, 3.2, 0.12, C.pole, 0); sb(s, t - 0.3, 3.2, 0.2, 0.1, 0.7, C.lamp, 5); }
+  // ---- Staten Island Mall ----
+  { const F = SM, Y2 = F.yaw;
+    const mb = (s, t, y, ss, sy, st, col, mat) => { const p = fW(F, s, t); box(p[0], y, p[1], st, sy, ss, Y2, col, mat); };
+    const mc = (s, t, ss, st, h) => { const p = fW(F, s, t); cols.push(p[0], p[1], Y2, st / 2, ss / 2, h); };
+    for (const [s0, s1, t0, t1, H, cs] of MALL_BLDGS) {
+      const col = hex(cs), sc2 = (s0 + s1) / 2, tc = (t0 + t1) / 2, Ls = s1 - s0, Lt = t1 - t0;
+      const ns = Math.ceil(Ls / 11), nt = Math.ceil(Lt / 11);
+      for (let a = 0; a < ns; a++) for (let b = 0; b < nt; b++) mb(s0 + (a + 0.5) * Ls / ns, t0 + (b + 0.5) * Lt / nt, H / 2, Ls / ns, H, Lt / nt, col, 0);
+      for (let a = 0; a < ns; a++) mb(s0 + (a + 0.5) * Ls / ns, t0 - 0.04, H - 0.2, Ls / ns, 0.4, 0.1, hex('#5d6670'), 0);   // cornice band facing the avenue
+      mb(sc2, tc, H + 0.03, Ls - 0.3, 0.06, Lt - 0.3, H >= 3.2 ? hex('#8e959c') : H >= 2.8 ? hex('#a7adb3') : hex('#c3c5c8'), 0); // anchors darker roofs
+      mc(sc2, tc, Ls, Lt, H);
+      if (H < 2) { mb(sc2, t0 - 0.05, 0.6, Ls * 0.7, 0.8, 0.06, glass, 6); mb(sc2, tc, H + 0.25, Ls + 0.4, 0.3, Lt + 0.4, hex('#b5452f'), 0); } // diner-style pad
+    }
+    // skylight ridge along the concourse, glass pyramid over centre court
+    for (let s = -18; s <= 18; s += 4) if (Math.abs(s) > 5) mb(s, 36, 2.55, 3.2, 0.25, 2.2, hex('#a9d2e8'), 6);
+    for (let k = 0; k < 4; k++) mb(0, 36, 3.5 + k * 0.32, 6 - k * 1.4, 0.34, 6 - k * 1.4, hex('#9cc8e0'), 6);
+    // entrances facing Richmond Ave: glass doors + canopy + columns
+    for (const s of [-12, 0, 12]) { const t0 = s === 0 ? 26 : 30;
+      mb(s, t0 - 0.2, 0.8, 4, 1.6, 0.4, glass, 7); mb(s, t0 - 1.3, 1.9, 5, 0.18, 2.4, hex('#41505f'), 0);
+      for (const o of [-2.2, 2.2]) mb(s + o, t0 - 2.3, 0.95, 0.2, 1.9, 0.2, hex('#d8d8d8'), 0); }
+    for (const s of [-26.5, 26.5]) { mb(s, 26.8, 1.1, 5, 2.2, 0.4, glass, 7); mb(s, 26.2, 2.4, 6, 0.3, 1.2, hex('#2f3a45'), 0); } // anchor entrances
+    // light poles + cart corrals
+    for (let s = -34; s <= 34; s += 8.5) for (const t of [12.5, 22.5, 57, 62]) { if (MALL_BLDGS.some(b => s > b[0] - 1.5 && s < b[1] + 1.5 && t > b[2] - 1.5 && t < b[3] + 1.5)) continue;
+      mb(s, t, 1.7, 0.12, 3.4, 0.12, C.pole, 0); mb(s, t, 3.4, 0.9, 0.1, 0.25, C.lamp, 5); }
+    for (const [s, t] of [[-15, 20], [8, 21], [-6, 15], [16, 24], [-28, 60], [26, 58]]) { mb(s, t, 0.35, 2.4, 0.7, 0.7, hex('#c9cdd2'), 6); mc(s, t, 2.4, 0.7, 0.7); }
+  }
   SITE_BOXES = new Float32Array(OB); SITE_COLS = cols; OB = keep;
 }
 function addSite(ctx) {
@@ -553,15 +591,23 @@ function blockProps(g, b, i, j, uc, vc, bu, bv, R, ctx, yaw) {
 
 function placeOpenProps(ctx) {
   const R = rng(ihash(ctx.x0 | 0, ctx.z0 | 0, 99));
-  // employee parking (site frame stalls: bands of 2.6 at t-3.2 mod 8.8 in [0,5.2), 1.4 wide): parked cars + light poles
-  if (SITE_BOXES) {
-    const c = [ctx.x0 + CH / 2, ctx.z0 + CH / 2], rx = c[0] - BF.a[0], rz = c[1] - BF.a[1], sC = rx * BF.d[0] + rz * BF.d[1], tC = rx * BF.e[0] + rz * BF.e[1];
-    if (sC > -40 && sC < 160 && tC > -40 && tC < 60) {
-      for (let s = 4.7; s < 118; s += 1.4) for (const tb of [1.3, 3.9, 10.1, 12.7]) { const t = 3.2 + tb; if (t > 15) continue;
-        const w = bfW(s, t); if (!inChunk(ctx, w[0], w[1]) || tileAt(w[0], w[1]) !== T_PARKING) continue;
-        if (ihash(Math.round(s * 10), Math.round(t * 10), 77) % 100 < 38) prop(ctx, PT.PCAR, w[0], w[1], BF.yaw + ((tb % 8.8) < 2 ? Math.PI / 2 : -Math.PI / 2), R); }
-      for (let s = 9; s < 118; s += 12) { const w = bfW(s, 3.2 + 7.0); if (inChunk(ctx, w[0], w[1])) prop(ctx, PT.LAMP, w[0], w[1], BF.yaw, R); }
+  // striped lots (LOTS in map.js): parked cars in the stalls + light poles. Busier close to the buildings.
+  if (SITE_BOXES) for (const L of LOTS) {
+    const q = fLocal(L.F, ctx.x0 + CH / 2, ctx.z0 + CH / 2);
+    if (q[0] < L.s0 - 40 || q[0] > L.s1 + 40 || q[1] < L.t0 - 40 || q[1] > L.t1 + 40) continue;
+    const mall = L.F === SM, R2 = MALL_RING;
+    for (let s = L.s0 + 0.7; s < L.s1; s += 1.4) for (let b = 0; b * 8.8 + L.tb < L.t1; b++) for (const tb of [1.3, 3.9]) {
+      const t = L.tb + b * 8.8 + tb; if (t < L.t0 + 0.6 || t > L.t1 - 1.3) continue;
+      const w = fW(L.F, s, t); if (!inChunk(ctx, w[0], w[1]) || tileAt(w[0], w[1]) !== T_PARKING) continue;
+      let p = 0.38;
+      if (mall) {
+        if (Math.abs(t - R2.t0) < 2.6 || Math.abs(t - R2.t1) < 2.6 || Math.abs(s - R2.s0) < 2.6 || Math.abs(s - R2.s1) < 2.6 || (Math.abs(Math.abs(s) - 20) < 2.4 && t < R2.t0 + 2)) continue;
+        let dmin = 1e9; for (const m of MALL_BLDGS) { const ds = Math.max(m[0] - s, 0, s - m[1]), dt = Math.max(m[2] - t, 0, t - m[3]); dmin = Math.min(dmin, Math.hypot(ds, dt)); }
+        if (dmin < 1.6) continue; p = 0.06 + 0.6 * Math.exp(-dmin / 12);
+      }
+      if (ihash(Math.round(s * 10), Math.round(t * 10), mall ? 78 : 77) % 1000 < p * 1000) prop(ctx, PT.PCAR, w[0], w[1], L.F.yaw + (tb < 2 ? Math.PI / 2 : -Math.PI / 2), R);
     }
+    if (!mall) for (let s = 9; s < 118; s += 12) { const w = fW(L.F, s, 3.2 + 7.0); if (inChunk(ctx, w[0], w[1])) prop(ctx, PT.LAMP, w[0], w[1], L.F.yaw, R); }
   }
   // parks: jittered lattice
   for (let z = ctx.z0 + 1.6; z < ctx.z0 + CH; z += 3.2) for (let x = ctx.x0 + 1.6; x < ctx.x0 + CH; x += 3.2) {

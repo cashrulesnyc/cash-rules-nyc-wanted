@@ -337,7 +337,7 @@ GEO.ZONES = [
  [1,[[40.8720,-73.8820],[40.8700,-73.8700],[40.8450,-73.8700],[40.8450,-73.8800],[40.8600,-73.8850]]],
  [1,[[40.8800,-73.8100],[40.8770,-73.7860],[40.8650,-73.7920],[40.8500,-73.8060],[40.8450,-73.8150],[40.8600,-73.8200],[40.8750,-73.8180]]],
  [1,[[40.8420,-73.8980],[40.8400,-73.8910],[40.8350,-73.8930],[40.8370,-73.9000]]],
- [1,[[40.6100,-74.1500],[40.6050,-74.1200],[40.5800,-74.1200],[40.5700,-74.1400],[40.5850,-74.1650],[40.6000,-74.1650]]],
+ [1,[[40.6100,-74.1440],[40.6050,-74.1200],[40.5800,-74.1180],[40.5680,-74.1330],[40.5760,-74.1480],[40.5960,-74.1500]]], // Greenbelt (kept east of the Richmond Ave strip)
  [1,[[40.5950,-74.2000],[40.5900,-74.1750],[40.5650,-74.1750],[40.5600,-74.2050],[40.5800,-74.2050]]],
  [1,[[40.7060,-74.0460],[40.7000,-74.0520],[40.6880,-74.0570],[40.6900,-74.0650],[40.7040,-74.0600]]],
  [3,[[40.7860,-73.8780],[40.7840,-73.8640],[40.7720,-73.8590],[40.7690,-73.8700],[40.7700,-73.8850],[40.7760,-73.8880]]],
@@ -354,6 +354,8 @@ GEO.ROADS = [
  [1,4.2,[[40.7015,-74.0125],[40.7060,-74.0030],[40.7090,-73.9950],[40.7110,-73.9860],[40.7140,-73.9785],[40.7210,-73.9745],[40.7290,-73.9750],[40.7360,-73.9755],[40.7430,-73.9730],[40.7490,-73.9695],[40.7560,-73.9630],[40.7630,-73.9565],[40.7700,-73.9495],[40.7770,-73.9440],[40.7840,-73.9435],[40.7900,-73.9375],[40.7960,-73.9315],[40.8020,-73.9310],[40.8070,-73.9345],[40.8150,-73.9358],[40.8240,-73.9358],[40.8340,-73.9343],[40.8440,-73.9303],[40.8520,-73.9262],[40.8600,-73.9212],[40.8670,-73.9163]]],
  // West Side Hwy / Henry Hudson Pkwy
  [1,4.2,[[40.7050,-74.0160],[40.7170,-74.0130],[40.7330,-74.0098],[40.7480,-74.0078],[40.7600,-74.0010],[40.7720,-73.9930],[40.7830,-73.9860],[40.7960,-73.9775],[40.8100,-73.9665],[40.8230,-73.9575],[40.8350,-73.9500],[40.8480,-73.9455],[40.8600,-73.9370],[40.8700,-73.9295],[40.8770,-73.9235],[40.8840,-73.9175],[40.9000,-73.9120],[40.9140,-73.9080]]],
+ // Richmond Ave, Staten Island (Port Richmond -> Graniteville -> Bulls Head -> the mall -> Eltingville)
+ [2,3.6,[[40.6395,-74.1350],[40.6300,-74.1440],[40.6200,-74.1520],[40.6085,-74.1595],[40.5950,-74.1615],[40.5822,-74.1612],[40.5700,-74.1650],[40.5560,-74.1690],[40.5420,-74.1665]],'RICHMOND AVE'],
  // Broadway (Bowling Green -> Columbus Circle)
  [2,3.6,[[40.7050,-74.0135],[40.7128,-74.0078],[40.7190,-74.0020],[40.7255,-73.9970],[40.7359,-73.9906],[40.7410,-73.9897],[40.7497,-73.9877],[40.7570,-73.9860],[40.7681,-73.9819]]],
  // Trans-Manhattan / Cross Bronx
@@ -453,7 +455,7 @@ GEO.HOODS = [
  [2,'CO-OP CITY',40.8740,-73.8290],[2,'HIGHBRIDGE',40.8370,-73.9270],[2,'BELMONT',40.8550,-73.8880],[2,'VAN CORTLANDT PARK',40.8970,-73.8900],
  [5,'ST. GEORGE',40.6437,-74.0770],[5,'STAPLETON',40.6270,-74.0780],[5,'PORT RICHMOND',40.6340,-74.1290],[5,'NEW SPRINGVILLE',40.5940,-74.1620],
  [5,'GREAT KILLS',40.5540,-74.1510],[5,'TOTTENVILLE',40.5080,-74.2430],[5,'SOUTH BEACH',40.5880,-74.0710],[5,'TODT HILL',40.6000,-74.1000],
- [5,"MARINERS HARBOR",40.6330,-74.1580],[5,'ELTINGVILLE',40.5440,-74.1640],[5,'BLOOMFIELD',40.6150,-74.1760],[5,'NEW BRIGHTON',40.6420,-74.0950],[5,'FRESH KILLS',40.5800,-74.1900],
+ [5,"MARINERS HARBOR",40.6330,-74.1580],[5,'ELTINGVILLE',40.5440,-74.1640],[5,'BLOOMFIELD',40.6150,-74.1760],[5,'NEW SPRINGVILLE',40.5900,-74.1630],[5,'BULLS HEAD',40.6085,-74.1620],[5,'NEW BRIGHTON',40.6420,-74.0950],[5,'FRESH KILLS',40.5800,-74.1900],
  [6,'JERSEY CITY',40.7178,-74.0431],[6,'HOBOKEN',40.7440,-74.0324],[6,'WEEHAWKEN',40.7695,-74.0204],[6,'FORT LEE',40.8509,-73.9701],
  [6,'BAYONNE',40.6687,-74.1143],[6,'ELIZABETH',40.6640,-74.2107],[6,'LIBERTY STATE PARK',40.7020,-74.0560],[6,'EDGEWATER',40.8270,-73.9750],
  [6,'PERTH AMBOY',40.5068,-74.2654],[6,'CARTERET',40.5770,-74.2280],[6,'UNION CITY',40.7780,-74.0280],[6,'NEWARK BAY',40.6800,-74.1500],
@@ -575,7 +577,7 @@ function segHit(x, z) {
 function buildRoads() {
   for (const r of GEO.ROADS) {
     const pts = toW(r[2]);
-    for (let i = 0; i + 1 < pts.length; i++) addSeg(pts[i], pts[i + 1], r[1] * HWY_K, r[0] === 1 ? SEG_HWY : r[0] === 2 ? SEG_AVE : SEG_RUN);
+    for (let i = 0; i + 1 < pts.length; i++) { const sg = addSeg(pts[i], pts[i + 1], r[1] * HWY_K, r[0] === 1 ? SEG_HWY : r[0] === 2 ? SEG_AVE : SEG_RUN); if (r[3]) sg.name = r[3]; }
   }
   for (const b of GEO.BRIDGES) {
     const a = PL(b[5]), c = PL(b[6]);
@@ -642,11 +644,22 @@ function zoneAt(x, z) { const m = landIdx(x, z); return m < 0 ? 0 : ZONE[m]; }
 const SPECIAL_ZONES = [];
 // ---- Bloomfield logistics park (Staten Island west shore, Gulf Ave): site frame aligned to the West Shore Expwy ----
 // s = units south along the expressway from its north end, t = units west of its centre line (toward the Arthur Kill).
-const BF = (() => { const a = P(40.6300, -74.1850), b = P(40.6000, -74.1900), L = Math.hypot(b[0] - a[0], b[1] - a[1]); const d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; return { a, d, e: [-d[1], d[0]], yaw: Math.atan2(d[0], d[1]) }; })(); // e points west; box yaw BF.yaw puts local +z along d (south), local +x east (-t)
-function bfW(s, t) { return [BF.a[0] + BF.d[0] * s + BF.e[0] * t, BF.a[1] + BF.d[1] * s + BF.e[1] * t]; }
-function bfRect(s0, t0, s1, t1) { return [bfW(s0, t0), bfW(s1, t0), bfW(s1, t1), bfW(s0, t1)]; }
+// site frames: o = origin, d = unit "down the road" direction (a -> b), e = unit "west" (90deg right of d), yaw for boxes
+function mkFrame(a, b, o) { const L = Math.hypot(b[0] - a[0], b[1] - a[1]), d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; return { a: o || a, d, e: [-d[1], d[0]], yaw: Math.atan2(d[0], d[1]) }; }
+function fW(F, s, t) { return [F.a[0] + F.d[0] * s + F.e[0] * t, F.a[1] + F.d[1] * s + F.e[1] * t]; }
+function fRect(F, s0, t0, s1, t1) { return [fW(F, s0, t0), fW(F, s1, t0), fW(F, s1, t1), fW(F, s0, t1)]; }
+function fLocal(F, x, z) { const rx = x - F.a[0], rz = z - F.a[1]; return [rx * F.d[0] + rz * F.d[1], rx * F.e[0] + rz * F.e[1]]; }
+const BF = mkFrame(P(40.6300, -74.1850), P(40.6000, -74.1900));                     // Bloomfield: along the West Shore Expwy
+const SM = mkFrame(P(40.5950, -74.1615), P(40.5700, -74.1650), P(40.5822, -74.1612)); // Staten Island Mall: along Richmond Ave, origin at the mall
+function bfW(s, t) { return fW(BF, s, t); }
+function bfRect(s0, t0, s1, t1) { return fRect(BF, s0, t0, s1, t1); }
+// striped lots: frame, extent, stall phase (bands of [2.6 stalls][2.6 stalls][3.4 aisle] starting at tb)
+const LOTS = [{ F: BF, s0: 4, s1: 118, t0: 3.2, t1: 15, tb: 3.2 }, { F: SM, s0: -42, s1: 42, t0: 2.4, t1: 72, tb: 10.0 }];
+function lotAt(x, z) { for (const L of LOTS) { const q = fLocal(L.F, x, z); if (q[0] > L.s0 - 3 && q[0] < L.s1 + 3 && q[1] > L.t0 - 3 && q[1] < L.t1 + 3) return L; } return LOTS[0]; }
+// mall Ring Road (a loop inside the lot) as avenue segments, overlapping at the corners
+const MALL_RING = { s0: -38, s1: 38, t0: 8, t1: 66, w: 2.8 };
 // zone codes: 6 marsh (drivable, splashy), 7 striped parking lot
-const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)]];
+const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)]];
 // smooth value noise (marsh pools / reed beds)
 function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
   const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; }
@@ -669,6 +682,10 @@ function buildMap() {
   const sq = [[40.7308, -73.9973], [40.7359, -73.9911], [40.7420, -73.9880], [40.7536, -73.9832], [40.7265, -73.9815], [40.8040, -73.9440]];
   for (const s of sq) { const b = blockOf(g, s[0], s[1]); fillPoly(ZONE, blockRect(g, b[0], b[1], 1, 1, -0.01), 1, true); }
   buildRoads();
+  { const R = MALL_RING, h = R.w / 2, c = [[R.s0, R.t0], [R.s1, R.t0], [R.s1, R.t1], [R.s0, R.t1]];
+    for (let k = 0; k < 4; k++) { const a = c[k], b = c[(k + 1) % 4], ds = Math.sign(b[0] - a[0]) * h, dt = Math.sign(b[1] - a[1]) * h;
+      addSeg(fW(SM, a[0] - ds, a[1] - dt), fW(SM, b[0] + ds, b[1] + dt), R.w, SEG_AVE).name = 'RING RD'; }
+    for (const s0 of [-20, 20]) addSeg(fW(SM, s0, 1), fW(SM, s0, R.t0 + h), 2.6, SEG_AVE).name = 'RING RD'; } // entrances off Richmond Ave
   // blurred land mask (separable 1-4-6-4-1) for smooth coastlines
   { const K = [1, 4, 6, 4, 1], t1 = new Uint16Array(MW * MH);
     for (let y = 0; y < MH; y++) { const row = y * MW; for (let x = 0; x < MW; x++) { let v = 0; for (let k = -2; k <= 2; k++) { const xx = Math.min(MW - 1, Math.max(0, x + k)); v += (BORO[row + xx] ? 255 : 0) * K[k + 2]; } t1[row + x] = v >> 4; } }
@@ -789,9 +806,9 @@ function texel(x, z, out) {
       break;
     }
     case T_PARKING: { // striped lot in the site frame: [stalls 2.6][stalls 2.6][aisle 3.4], stalls 1.4 wide
-      const rx = x - BF.a[0], rz = z - BF.a[1], s = rx * BF.d[0] + rz * BF.d[1], t = rx * BF.e[0] + rz * BF.e[1];
+      const L = lotAt(x, z), q = fLocal(L.F, x, z), s = q[0], t = q[1];
       c = shade(COL.park, 0.94 + 0.1 * n, _sc);
-      const tp = t - 3.2, m = tp - 8.8 * Math.floor(tp / 8.8);
+      const tp = t - L.tb, m = tp - 8.8 * Math.floor(tp / 8.8);
       if (m < 5.2) { c = paint(c, COL.white, cov(Math.abs(s / 1.4 - Math.round(s / 1.4)) * 1.4, 0.07)); c = paint(c, COL.white, cov(Math.abs(m - 2.6), 0.07)); }
       else c = paint(c, COL.white, Math.min(cov(Math.abs(m - 7.0), 0.08), dash(s, 2.4)) * 0.6);
       break;
@@ -902,7 +919,8 @@ function initWorldData() {
   { const a = bfW(34, 31), b = bfW(80, 29), m = bfW(70, 66);
     LM.push({ type: 'label', x: a[0], z: a[1], r: 0, nr: 26, name: 'JFK8', sub: 'FULFILLMENT CENTER · GULF AVE' });
     LM.push({ type: 'label', x: b[0], z: b[1], r: 0, nr: 24, name: 'DYY6', sub: 'DELIVERY STATION · GULF AVE' });
-    LM.push({ type: 'label', x: m[0], z: m[1], r: 0, nr: 34, name: 'BLOOMFIELD MARSH', sub: 'ARTHUR KILL WETLANDS' }); }
+    LM.push({ type: 'label', x: m[0], z: m[1], r: 0, nr: 34, name: 'BLOOMFIELD MARSH', sub: 'ARTHUR KILL WETLANDS' });
+    const sm = fW(SM, 0, 37); LM.push({ type: 'label', x: sm[0], z: sm[1], r: 0, nr: 42, name: 'STATEN ISLAND MALL', sub: 'RICHMOND AVE · NEW SPRINGVILLE' }); }
   buildSite();
   for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
     ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
@@ -1018,6 +1036,17 @@ function inChunk(ctx, x, z) { return x >= ctx.x0 && x < ctx.x0 + CH && z >= ctx.
 // delivery-van lots, employee parking. Built once into SITE_BOXES / SITE_COLS; genChunk copies the boxes whose
 // centre falls in the chunk and every collider that overlaps it (so big buildings stay solid across chunk edges).
 let SITE_BOXES = null, SITE_COLS = null;
+// Staten Island Mall (generic: no store names or logos): long concourse, two anchor stores, a big centre court with a
+// glass pyramid, a rear wing, entrance canopies, outparcel restaurants. Rects in the SM frame: [s0, s1, t0, t1, H, colour]
+const MALL_BLDGS = [
+  [-20, 20, 30, 42, 2.4, '#d9cbb2'],   // concourse
+  [-4.5, 4.5, 26, 46, 3.4, '#e4d8c2'], // centre court
+  [-33, -20, 27, 45, 3.2, '#b8644c'],  // north anchor
+  [20, 33, 27, 45, 3.2, '#e2e2dc'],    // south anchor
+  [-9, 9, 42, 53, 2.8, '#c9c2b8'],     // rear wing
+  [-31, -24, 13, 18.5, 1.3, '#efe6d6'], // outparcel restaurant
+  [24, 31, 13, 18.5, 1.3, '#dfe7ea'],  // outparcel
+];
 function buildSite() {
   const keep = OB; OB = [];
   const cols = [], Y = BF.yaw;
@@ -1085,6 +1114,32 @@ function buildSite() {
   for (const [t, w] of [[21, false], [23.2, true], [30, false], [32.2, true], [39.5, false], [41.7, true]]) vanRow(92, 114, t, w);
   // light poles along the van lot and dock apron
   for (let s = 8; s < 118; s += 10) for (const t of [17.5, 48.8]) { sb(s, t, 1.6, 0.12, 3.2, 0.12, C.pole, 0); sb(s, t - 0.3, 3.2, 0.2, 0.1, 0.7, C.lamp, 5); }
+  // ---- Staten Island Mall ----
+  { const F = SM, Y2 = F.yaw;
+    const mb = (s, t, y, ss, sy, st, col, mat) => { const p = fW(F, s, t); box(p[0], y, p[1], st, sy, ss, Y2, col, mat); };
+    const mc = (s, t, ss, st, h) => { const p = fW(F, s, t); cols.push(p[0], p[1], Y2, st / 2, ss / 2, h); };
+    for (const [s0, s1, t0, t1, H, cs] of MALL_BLDGS) {
+      const col = hex(cs), sc2 = (s0 + s1) / 2, tc = (t0 + t1) / 2, Ls = s1 - s0, Lt = t1 - t0;
+      const ns = Math.ceil(Ls / 11), nt = Math.ceil(Lt / 11);
+      for (let a = 0; a < ns; a++) for (let b = 0; b < nt; b++) mb(s0 + (a + 0.5) * Ls / ns, t0 + (b + 0.5) * Lt / nt, H / 2, Ls / ns, H, Lt / nt, col, 0);
+      for (let a = 0; a < ns; a++) mb(s0 + (a + 0.5) * Ls / ns, t0 - 0.04, H - 0.2, Ls / ns, 0.4, 0.1, hex('#5d6670'), 0);   // cornice band facing the avenue
+      mb(sc2, tc, H + 0.03, Ls - 0.3, 0.06, Lt - 0.3, H >= 3.2 ? hex('#8e959c') : H >= 2.8 ? hex('#a7adb3') : hex('#c3c5c8'), 0); // anchors darker roofs
+      mc(sc2, tc, Ls, Lt, H);
+      if (H < 2) { mb(sc2, t0 - 0.05, 0.6, Ls * 0.7, 0.8, 0.06, glass, 6); mb(sc2, tc, H + 0.25, Ls + 0.4, 0.3, Lt + 0.4, hex('#b5452f'), 0); } // diner-style pad
+    }
+    // skylight ridge along the concourse, glass pyramid over centre court
+    for (let s = -18; s <= 18; s += 4) if (Math.abs(s) > 5) mb(s, 36, 2.55, 3.2, 0.25, 2.2, hex('#a9d2e8'), 6);
+    for (let k = 0; k < 4; k++) mb(0, 36, 3.5 + k * 0.32, 6 - k * 1.4, 0.34, 6 - k * 1.4, hex('#9cc8e0'), 6);
+    // entrances facing Richmond Ave: glass doors + canopy + columns
+    for (const s of [-12, 0, 12]) { const t0 = s === 0 ? 26 : 30;
+      mb(s, t0 - 0.2, 0.8, 4, 1.6, 0.4, glass, 7); mb(s, t0 - 1.3, 1.9, 5, 0.18, 2.4, hex('#41505f'), 0);
+      for (const o of [-2.2, 2.2]) mb(s + o, t0 - 2.3, 0.95, 0.2, 1.9, 0.2, hex('#d8d8d8'), 0); }
+    for (const s of [-26.5, 26.5]) { mb(s, 26.8, 1.1, 5, 2.2, 0.4, glass, 7); mb(s, 26.2, 2.4, 6, 0.3, 1.2, hex('#2f3a45'), 0); } // anchor entrances
+    // light poles + cart corrals
+    for (let s = -34; s <= 34; s += 8.5) for (const t of [12.5, 22.5, 57, 62]) { if (MALL_BLDGS.some(b => s > b[0] - 1.5 && s < b[1] + 1.5 && t > b[2] - 1.5 && t < b[3] + 1.5)) continue;
+      mb(s, t, 1.7, 0.12, 3.4, 0.12, C.pole, 0); mb(s, t, 3.4, 0.9, 0.1, 0.25, C.lamp, 5); }
+    for (const [s, t] of [[-15, 20], [8, 21], [-6, 15], [16, 24], [-28, 60], [26, 58]]) { mb(s, t, 0.35, 2.4, 0.7, 0.7, hex('#c9cdd2'), 6); mc(s, t, 2.4, 0.7, 0.7); }
+  }
   SITE_BOXES = new Float32Array(OB); SITE_COLS = cols; OB = keep;
 }
 function addSite(ctx) {
@@ -1391,15 +1446,23 @@ function blockProps(g, b, i, j, uc, vc, bu, bv, R, ctx, yaw) {
 
 function placeOpenProps(ctx) {
   const R = rng(ihash(ctx.x0 | 0, ctx.z0 | 0, 99));
-  // employee parking (site frame stalls: bands of 2.6 at t-3.2 mod 8.8 in [0,5.2), 1.4 wide): parked cars + light poles
-  if (SITE_BOXES) {
-    const c = [ctx.x0 + CH / 2, ctx.z0 + CH / 2], rx = c[0] - BF.a[0], rz = c[1] - BF.a[1], sC = rx * BF.d[0] + rz * BF.d[1], tC = rx * BF.e[0] + rz * BF.e[1];
-    if (sC > -40 && sC < 160 && tC > -40 && tC < 60) {
-      for (let s = 4.7; s < 118; s += 1.4) for (const tb of [1.3, 3.9, 10.1, 12.7]) { const t = 3.2 + tb; if (t > 15) continue;
-        const w = bfW(s, t); if (!inChunk(ctx, w[0], w[1]) || tileAt(w[0], w[1]) !== T_PARKING) continue;
-        if (ihash(Math.round(s * 10), Math.round(t * 10), 77) % 100 < 38) prop(ctx, PT.PCAR, w[0], w[1], BF.yaw + ((tb % 8.8) < 2 ? Math.PI / 2 : -Math.PI / 2), R); }
-      for (let s = 9; s < 118; s += 12) { const w = bfW(s, 3.2 + 7.0); if (inChunk(ctx, w[0], w[1])) prop(ctx, PT.LAMP, w[0], w[1], BF.yaw, R); }
+  // striped lots (LOTS in map.js): parked cars in the stalls + light poles. Busier close to the buildings.
+  if (SITE_BOXES) for (const L of LOTS) {
+    const q = fLocal(L.F, ctx.x0 + CH / 2, ctx.z0 + CH / 2);
+    if (q[0] < L.s0 - 40 || q[0] > L.s1 + 40 || q[1] < L.t0 - 40 || q[1] > L.t1 + 40) continue;
+    const mall = L.F === SM, R2 = MALL_RING;
+    for (let s = L.s0 + 0.7; s < L.s1; s += 1.4) for (let b = 0; b * 8.8 + L.tb < L.t1; b++) for (const tb of [1.3, 3.9]) {
+      const t = L.tb + b * 8.8 + tb; if (t < L.t0 + 0.6 || t > L.t1 - 1.3) continue;
+      const w = fW(L.F, s, t); if (!inChunk(ctx, w[0], w[1]) || tileAt(w[0], w[1]) !== T_PARKING) continue;
+      let p = 0.38;
+      if (mall) {
+        if (Math.abs(t - R2.t0) < 2.6 || Math.abs(t - R2.t1) < 2.6 || Math.abs(s - R2.s0) < 2.6 || Math.abs(s - R2.s1) < 2.6 || (Math.abs(Math.abs(s) - 20) < 2.4 && t < R2.t0 + 2)) continue;
+        let dmin = 1e9; for (const m of MALL_BLDGS) { const ds = Math.max(m[0] - s, 0, s - m[1]), dt = Math.max(m[2] - t, 0, t - m[3]); dmin = Math.min(dmin, Math.hypot(ds, dt)); }
+        if (dmin < 1.6) continue; p = 0.06 + 0.6 * Math.exp(-dmin / 12);
+      }
+      if (ihash(Math.round(s * 10), Math.round(t * 10), mall ? 78 : 77) % 1000 < p * 1000) prop(ctx, PT.PCAR, w[0], w[1], L.F.yaw + (tb < 2 ? Math.PI / 2 : -Math.PI / 2), R);
     }
+    if (!mall) for (let s = 9; s < 118; s += 12) { const w = fW(L.F, s, 3.2 + 7.0); if (inChunk(ctx, w[0], w[1])) prop(ctx, PT.LAMP, w[0], w[1], L.F.yaw, R); }
   }
   // parks: jittered lattice
   for (let z = ctx.z0 + 1.6; z < ctx.z0 + CH; z += 3.2) for (let x = ctx.x0 + 1.6; x < ctx.x0 + CH; x += 3.2) {
@@ -2955,6 +3018,14 @@ const MODELS = {
     ]
   },
 };
+// a parked car that has been hit: same box look as the street-parked prop (carBoxes in chunkgen.js), now a light,
+// unpowered body that slides and spins out of the way instead of shattering
+MODELS.pcar = { name: 'PARKED CAR', parts: [
+  [0, 0.33, 0, 1.08, 0.34, 2.16, 'body', 0], [0, 0.52, 0.68, 1.02, 0.08, 0.8, 'body', 0], [0, 0.52, -0.86, 1.02, 0.08, 0.44, 'body', 0],
+  [0, 0.7, -0.2, 0.96, 0.34, 1.0, VC.glass, 6], [0, 0.89, -0.2, 0.92, 0.06, 0.74, 'body', 0],
+  [0, 0.25, 1.1, 1.08, 0.14, 0.08, VC.dark, 0], [0, 0.25, -1.1, 1.08, 0.14, 0.08, VC.dark, 0],
+  [0.5, 0.2, 0.7, 0.2, 0.4, 0.39, VC.tire, 0], [-0.5, 0.2, 0.7, 0.2, 0.4, 0.39, VC.tire, 0], [0.5, 0.2, -0.7, 0.2, 0.4, 0.39, VC.tire, 0], [-0.5, 0.2, -0.7, 0.2, 0.4, 0.39, VC.tire, 0],
+], len: 2.2, wid: 1.1, maxV: 0, turn: 0, grip: 3.5, hp: 1e9, mass: 0.45, color: VC.white };
 for (const k in MODELS) { const m = MODELS[k]; if (!m.len) continue; m.circles = []; const n = m.len > 3.5 ? 3 : 2; for (let i = 0; i < n; i++) m.circles.push((n === 3 ? (i - 1) * m.len * 0.33 : (i - 0.5) * m.len * 0.5)); m.cr = m.wid * 0.53; }
 const PLAYER_CARS = ['sedan', 'taxi', 'ev', 'muscle', 'truck'];
 
@@ -3180,7 +3251,7 @@ function stepVehicle(v, dt) {
   const maxV = v.maxV * surf * (v.boost || 1);
   if (v.thr > 0) { if (vf < maxV) vf += maxV * 1.25 * dt * (1 - Math.max(0, vf) / maxV) + (vf < 0 ? 20 * dt : 0); else vf -= (vf - maxV) * 2 * dt; }
   else if (v.thr < 0) { if (vf > 0.5) vf -= 32 * dt; else vf = Math.max(vf - 14 * dt, -maxV * 0.38); }
-  else vf *= Math.exp(-1.0 * dt);
+  else vf *= Math.exp(-(v.parked ? 2.4 : 1.0) * dt); // shoved parked cars scrub speed fast (no engine, tyres sliding)
   const sp = Math.abs(vf);
   const pl = v.role === 'player';
   // player handling: arcade carving. Yaw rate grows with speed instead of shrinking (tight NYC blocks),
@@ -3505,7 +3576,7 @@ function openMissions(on) {
 
 // ---------- game state ----------
 const G = {
-  state: 'boot', t: 0, P: null, cops: [], civs: [], wrecks: [], pickups: [], powerups: [], gears: [], powT: 0, spdT: 0, heat: 0, stars: 0, maxStars: 0, runCash: 0, runTime: 0, wrecked: 0,
+  state: 'boot', t: 0, P: null, cops: [], civs: [], wrecks: [], shoved: [], pickups: [], powerups: [], gears: [], powT: 0, spdT: 0, heat: 0, stars: 0, maxStars: 0, runCash: 0, runTime: 0, wrecked: 0,
   bust: 0, grace: 0, spawnT: 0, civT: 0, pickT: 0, gearT: 0, heli: null, shake: 0, hoodT: 0, hood: '', toastT: 0,
   cam: { x: 0, z: 0, tx: 0, tz: 0, dist: 48, orbit: 0 }, input: { l: false, r: false, b: false, keys: {} }, fountains: [], lastCrash: 0, msgT: 0,
 };
@@ -3595,7 +3666,7 @@ function spawnPlayer(boro) {
   return v;
 }
 function resetRun() {
-  G.cops = []; G.civs = []; G.wrecks = []; G.pickups = []; G.powerups = []; G.powT = 1.5; G.spdT = 0; PARTS.length = 0; G.heat = 0; G.stars = 0; G.maxStars = 0; G.runCash = 0; G.runTime = 0; G.wrecked = 0;
+  G.cops = []; G.civs = []; G.wrecks = []; G.shoved = []; G.pickups = []; G.powerups = []; G.powT = 1.5; G.spdT = 0; PARTS.length = 0; G.heat = 0; G.stars = 0; G.maxStars = 0; G.runCash = 0; G.runTime = 0; G.wrecked = 0;
   G.bust = 0; G.grace = 2; G.heli = null; G.fountains = []; G.gears = []; G.gearT = 3;
 }
 
@@ -3673,8 +3744,29 @@ function explode(v) {
   if (v.role === 'cop') { G.wrecked++; stat('cops', 1); addHeat(10); addCash(100); toast('COP WRECKED +$100'); }
   if (v === G.P) setTimeout(() => gameOver('wasted'), 900);
 }
+// hitting a street-parked car turns it into a loose body that gets shoved (and can shove others): no shattering
+// knock a loose parked car forward and off to the side of the hitter's path (plough, don't pile up)
+function plowKick(v, s, sp) {
+  const fx = Math.sin(v.h), fz = -Math.cos(v.h), rx = Math.cos(v.h), rz = Math.sin(v.h);
+  const side = ((s.x - v.x) * rx + (s.z - v.z) * rz) >= 0 ? 1 : -1;
+  s.vx += fx * sp * 0.55 + rx * side * sp * 0.6; s.vz += fz * sp * 0.55 + rz * side * sp * 0.6;
+  s.spin += side * (1.5 + sp * 0.12);
+}
+function shoveParked(v, ch, id) {
+  const k = id * PROPF, x = ch.props[k], z = ch.props[k + 1], yaw = ch.props[k + 6];
+  const boxes = WORLD.killProp(ch, id), b0 = boxes[0];
+  const s = makeVehicle('pcar', x, z, Math.PI - yaw, { role: 'civ', color: b0 ? [b0[10], b0[11], b0[12]] : VC.white });
+  s.parked = true; s.ai = { parked: true };
+  plowKick(v, s, vSpeed(v));
+  G.shoved.push(s);
+  if (v === G.P) {
+    AUD.crash(Math.min(10, vSpeed(v) * 0.5)); G.shake = Math.max(G.shake, 0.12);
+    addHeat(1.5); if (Math.random() < 0.3) addCash(25);
+  }
+}
 function onPropHit(v, ch, id, nx, nz, pen) {
   const k = id * PROPF, type = ch.props[k + 3] | 0, mass = ch.props[k + 7];
+  if (type === PT.PCAR) { shoveParked(v, ch, id); return; }
   const sp = vSpeed(v);
   if (sp > 2.2 || mass < 0.3) {
     const boxes = WORLD.killProp(ch, id);
@@ -3704,7 +3796,8 @@ function onVehHit(a, b, rv) {
   if (a === P || b === P) {
     const o = a === P ? b : a;
     if (o.role === 'cop' && rv > 3) addHeat(2 + rv * 0.15);
-    if (o.role === 'civ' && rv > 3) { addHeat(1.5); o.ai.stun = 2.5; }
+    if (o.role === 'civ' && !o.parked && rv > 3) { addHeat(1.5); o.ai.stun = 2.5; }
+    if (o.parked && rv > 1.5) plowKick(P, o, rv * 0.5);
     if (rv > 6) G.shake = Math.max(G.shake, Math.min(0.8, rv * 0.04));
   }
 }
@@ -3760,7 +3853,7 @@ function stepPlay(dt) {
   for (const c of G.cops) copAI(c, P, dt, G.stars);
   for (const c of G.civs) civAI(c, dt);
   // physics
-  const all = [P].concat(G.cops, G.civs, G.wrecks);
+  const all = [P].concat(G.cops, G.civs, G.wrecks, G.shoved);
   for (const v of all) stepVehicle(v, dt);
   for (const v of all) {
     if (v.sink > 0) continue;
@@ -3833,6 +3926,7 @@ function updateWorldRules(dt) {
     return true;
   });
   G.wrecks = G.wrecks.filter(c => Math.hypot(c.x - P.x, c.z - P.z) < 80 && c.sink < 2.5).slice(-14);
+  G.shoved = G.shoved.filter(c => Math.hypot(c.x - P.x, c.z - P.z) < 90 && c.sink < 2.5).slice(-30);
   // civilians
   const civTarget = G.stars >= 3 ? 5 : 9;
   G.civT -= dt;
@@ -3896,6 +3990,7 @@ function hoodName(x, z) {
   if (!HOODW) HOODW = GEO.HOODS.map(h => { const p = P(h[2], h[3]); return [h[0], h[1], p[0], p[1]]; });
   const b = boroAt(x, z), s = segHit(x, z);
   if (s && s.br) return s.br.name;
+  if (s && s.name && s.name !== 'RING RD') return s.name + '<small>' + (GEO.BORO_NAMES[b] || 'NEW YORK') + '</small>';
   for (const L of LM) if (L.name && Math.hypot(L.x - x, L.z - z) < (L.nr || L.r + 9)) return L.name + '<small>' + (L.sub || 'LANDMARK') + '</small>';
   if (!b) {
     const W = [['HUDSON RIVER', 40.80, -73.975], ['HUDSON RIVER', 40.74, -74.02], ['EAST RIVER', 40.73, -73.968], ['EAST RIVER', 40.775, -73.935], ['HARLEM RIVER', 40.835, -73.933], ['UPPER BAY', 40.672, -74.045],
@@ -3957,6 +4052,7 @@ function buildDynamic(t) {
   for (const v of G.cops) pushVehicle(v, t);
   for (const v of G.civs) pushVehicle(v, t);
   for (const v of G.wrecks) pushVehicle(v, t);
+  for (const v of G.shoved) pushVehicle(v, t);
   if (G.heli) { const H = G.heli; pushVehicle({ x: H.x, y: H.y, z: H.z, h: H.h, m: MODELS.heli, color: VC.white, role: 'cop', ai: {}, roll: 0, pitch: 0.12 }, t); }
   // pickups: GTA-style floating badges (cash, briefcase, repair) with a glow + ring on the road
   ICONS.length = 0;

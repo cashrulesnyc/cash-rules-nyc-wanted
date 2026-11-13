@@ -76,7 +76,7 @@ function openMissions(on) {
 
 // ---------- game state ----------
 const G = {
-  state: 'boot', t: 0, P: null, cops: [], civs: [], wrecks: [], pickups: [], powerups: [], gears: [], powT: 0, spdT: 0, heat: 0, stars: 0, maxStars: 0, runCash: 0, runTime: 0, wrecked: 0,
+  state: 'boot', t: 0, P: null, cops: [], civs: [], wrecks: [], shoved: [], pickups: [], powerups: [], gears: [], powT: 0, spdT: 0, heat: 0, stars: 0, maxStars: 0, runCash: 0, runTime: 0, wrecked: 0,
   bust: 0, grace: 0, spawnT: 0, civT: 0, pickT: 0, gearT: 0, heli: null, shake: 0, hoodT: 0, hood: '', toastT: 0,
   cam: { x: 0, z: 0, tx: 0, tz: 0, dist: 48, orbit: 0 }, input: { l: false, r: false, b: false, keys: {} }, fountains: [], lastCrash: 0, msgT: 0,
 };
@@ -166,7 +166,7 @@ function spawnPlayer(boro) {
   return v;
 }
 function resetRun() {
-  G.cops = []; G.civs = []; G.wrecks = []; G.pickups = []; G.powerups = []; G.powT = 1.5; G.spdT = 0; PARTS.length = 0; G.heat = 0; G.stars = 0; G.maxStars = 0; G.runCash = 0; G.runTime = 0; G.wrecked = 0;
+  G.cops = []; G.civs = []; G.wrecks = []; G.shoved = []; G.pickups = []; G.powerups = []; G.powT = 1.5; G.spdT = 0; PARTS.length = 0; G.heat = 0; G.stars = 0; G.maxStars = 0; G.runCash = 0; G.runTime = 0; G.wrecked = 0;
   G.bust = 0; G.grace = 2; G.heli = null; G.fountains = []; G.gears = []; G.gearT = 3;
 }
 
@@ -244,8 +244,29 @@ function explode(v) {
   if (v.role === 'cop') { G.wrecked++; stat('cops', 1); addHeat(10); addCash(100); toast('COP WRECKED +$100'); }
   if (v === G.P) setTimeout(() => gameOver('wasted'), 900);
 }
+// hitting a street-parked car turns it into a loose body that gets shoved (and can shove others): no shattering
+// knock a loose parked car forward and off to the side of the hitter's path (plough, don't pile up)
+function plowKick(v, s, sp) {
+  const fx = Math.sin(v.h), fz = -Math.cos(v.h), rx = Math.cos(v.h), rz = Math.sin(v.h);
+  const side = ((s.x - v.x) * rx + (s.z - v.z) * rz) >= 0 ? 1 : -1;
+  s.vx += fx * sp * 0.55 + rx * side * sp * 0.6; s.vz += fz * sp * 0.55 + rz * side * sp * 0.6;
+  s.spin += side * (1.5 + sp * 0.12);
+}
+function shoveParked(v, ch, id) {
+  const k = id * PROPF, x = ch.props[k], z = ch.props[k + 1], yaw = ch.props[k + 6];
+  const boxes = WORLD.killProp(ch, id), b0 = boxes[0];
+  const s = makeVehicle('pcar', x, z, Math.PI - yaw, { role: 'civ', color: b0 ? [b0[10], b0[11], b0[12]] : VC.white });
+  s.parked = true; s.ai = { parked: true };
+  plowKick(v, s, vSpeed(v));
+  G.shoved.push(s);
+  if (v === G.P) {
+    AUD.crash(Math.min(10, vSpeed(v) * 0.5)); G.shake = Math.max(G.shake, 0.12);
+    addHeat(1.5); if (Math.random() < 0.3) addCash(25);
+  }
+}
 function onPropHit(v, ch, id, nx, nz, pen) {
   const k = id * PROPF, type = ch.props[k + 3] | 0, mass = ch.props[k + 7];
+  if (type === PT.PCAR) { shoveParked(v, ch, id); return; }
   const sp = vSpeed(v);
   if (sp > 2.2 || mass < 0.3) {
     const boxes = WORLD.killProp(ch, id);
@@ -275,7 +296,8 @@ function onVehHit(a, b, rv) {
   if (a === P || b === P) {
     const o = a === P ? b : a;
     if (o.role === 'cop' && rv > 3) addHeat(2 + rv * 0.15);
-    if (o.role === 'civ' && rv > 3) { addHeat(1.5); o.ai.stun = 2.5; }
+    if (o.role === 'civ' && !o.parked && rv > 3) { addHeat(1.5); o.ai.stun = 2.5; }
+    if (o.parked && rv > 1.5) plowKick(P, o, rv * 0.5);
     if (rv > 6) G.shake = Math.max(G.shake, Math.min(0.8, rv * 0.04));
   }
 }
@@ -331,7 +353,7 @@ function stepPlay(dt) {
   for (const c of G.cops) copAI(c, P, dt, G.stars);
   for (const c of G.civs) civAI(c, dt);
   // physics
-  const all = [P].concat(G.cops, G.civs, G.wrecks);
+  const all = [P].concat(G.cops, G.civs, G.wrecks, G.shoved);
   for (const v of all) stepVehicle(v, dt);
   for (const v of all) {
     if (v.sink > 0) continue;
@@ -404,6 +426,7 @@ function updateWorldRules(dt) {
     return true;
   });
   G.wrecks = G.wrecks.filter(c => Math.hypot(c.x - P.x, c.z - P.z) < 80 && c.sink < 2.5).slice(-14);
+  G.shoved = G.shoved.filter(c => Math.hypot(c.x - P.x, c.z - P.z) < 90 && c.sink < 2.5).slice(-30);
   // civilians
   const civTarget = G.stars >= 3 ? 5 : 9;
   G.civT -= dt;
@@ -467,6 +490,7 @@ function hoodName(x, z) {
   if (!HOODW) HOODW = GEO.HOODS.map(h => { const p = P(h[2], h[3]); return [h[0], h[1], p[0], p[1]]; });
   const b = boroAt(x, z), s = segHit(x, z);
   if (s && s.br) return s.br.name;
+  if (s && s.name && s.name !== 'RING RD') return s.name + '<small>' + (GEO.BORO_NAMES[b] || 'NEW YORK') + '</small>';
   for (const L of LM) if (L.name && Math.hypot(L.x - x, L.z - z) < (L.nr || L.r + 9)) return L.name + '<small>' + (L.sub || 'LANDMARK') + '</small>';
   if (!b) {
     const W = [['HUDSON RIVER', 40.80, -73.975], ['HUDSON RIVER', 40.74, -74.02], ['EAST RIVER', 40.73, -73.968], ['EAST RIVER', 40.775, -73.935], ['HARLEM RIVER', 40.835, -73.933], ['UPPER BAY', 40.672, -74.045],
@@ -528,6 +552,7 @@ function buildDynamic(t) {
   for (const v of G.cops) pushVehicle(v, t);
   for (const v of G.civs) pushVehicle(v, t);
   for (const v of G.wrecks) pushVehicle(v, t);
+  for (const v of G.shoved) pushVehicle(v, t);
   if (G.heli) { const H = G.heli; pushVehicle({ x: H.x, y: H.y, z: H.z, h: H.h, m: MODELS.heli, color: VC.white, role: 'cop', ai: {}, roll: 0, pitch: 0.12 }, t); }
   // pickups: GTA-style floating badges (cash, briefcase, repair) with a glow + ring on the road
   ICONS.length = 0;

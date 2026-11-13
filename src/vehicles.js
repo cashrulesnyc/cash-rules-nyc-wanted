@@ -134,6 +134,14 @@ const MODELS = {
     ]
   },
 };
+// a parked car that has been hit: same box look as the street-parked prop (carBoxes in chunkgen.js), now a light,
+// unpowered body that slides and spins out of the way instead of shattering
+MODELS.pcar = { name: 'PARKED CAR', parts: [
+  [0, 0.33, 0, 1.08, 0.34, 2.16, 'body', 0], [0, 0.52, 0.68, 1.02, 0.08, 0.8, 'body', 0], [0, 0.52, -0.86, 1.02, 0.08, 0.44, 'body', 0],
+  [0, 0.7, -0.2, 0.96, 0.34, 1.0, VC.glass, 6], [0, 0.89, -0.2, 0.92, 0.06, 0.74, 'body', 0],
+  [0, 0.25, 1.1, 1.08, 0.14, 0.08, VC.dark, 0], [0, 0.25, -1.1, 1.08, 0.14, 0.08, VC.dark, 0],
+  [0.5, 0.2, 0.7, 0.2, 0.4, 0.39, VC.tire, 0], [-0.5, 0.2, 0.7, 0.2, 0.4, 0.39, VC.tire, 0], [0.5, 0.2, -0.7, 0.2, 0.4, 0.39, VC.tire, 0], [-0.5, 0.2, -0.7, 0.2, 0.4, 0.39, VC.tire, 0],
+], len: 2.2, wid: 1.1, maxV: 0, turn: 0, grip: 3.5, hp: 1e9, mass: 0.45, color: VC.white };
 for (const k in MODELS) { const m = MODELS[k]; if (!m.len) continue; m.circles = []; const n = m.len > 3.5 ? 3 : 2; for (let i = 0; i < n; i++) m.circles.push((n === 3 ? (i - 1) * m.len * 0.33 : (i - 0.5) * m.len * 0.5)); m.cr = m.wid * 0.53; }
 const PLAYER_CARS = ['sedan', 'taxi', 'ev', 'muscle', 'truck'];
 
@@ -359,7 +367,7 @@ function stepVehicle(v, dt) {
   const maxV = v.maxV * surf * (v.boost || 1);
   if (v.thr > 0) { if (vf < maxV) vf += maxV * 1.25 * dt * (1 - Math.max(0, vf) / maxV) + (vf < 0 ? 20 * dt : 0); else vf -= (vf - maxV) * 2 * dt; }
   else if (v.thr < 0) { if (vf > 0.5) vf -= 32 * dt; else vf = Math.max(vf - 14 * dt, -maxV * 0.38); }
-  else vf *= Math.exp(-1.0 * dt);
+  else vf *= Math.exp(-(v.parked ? 2.4 : 1.0) * dt); // shoved parked cars scrub speed fast (no engine, tyres sliding)
   const sp = Math.abs(vf);
   const pl = v.role === 'player';
   // player handling: arcade carving. Yaw rate grows with speed instead of shrinking (tight NYC blocks),
