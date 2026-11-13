@@ -1,5 +1,7 @@
 # CLAUDE.md — CASH RULES NYC: WANTED
 
+> **Design authority:** `docs/GAME_MASTER.md` (Master Game File v2.0). Order of authority: owner's instructions > master file > code > this file. This file covers implementation detail only.
+
 An arcade police-chase game set on a real, drivable map of all five NYC boroughs (plus the Jersey waterfront): survive as the heat climbs, grab cash, nitro and repair gears, hit the ramps. Owner: DJ / CASH RULES NYC LLC. Everything here was written from scratch: no Smashy Road code or assets, no third-party engine, so it is 100% owned IP.
 
 ## Hard rules
@@ -67,7 +69,7 @@ An arcade police-chase game set on a real, drivable map of all five NYC boroughs
 - **Nitro power-ups** (`spawnPowerup`, `G.powerups`): floating lightning bolts on roads ahead, up to 3 at a time. Pickup gives `NITRO_T` = 4.5 s of `P.boost = NITRO_BOOST` (1.5× top speed and acceleration via `v.boost` in `stepVehicle`), with flames.
 - **Player damage comes only from live cops** (car-vs-car in `onVehHit`) **and water** (sinking). Walls and buildings (`collideWorld` impacts), props, parked cars, civilians and wrecks don't hurt the player. NPC damage is unchanged, so cops still wreck on walls and on you.
 - **Solid blocks**: `blockFence()` (chunkgen.js) makes each block's whole lot area one collider, so cars can't squeeze between buildings or through yards. Blocks cut by water, parks, highways, Broadway or landmark plazas get per-cell colliders, and only for cells that are entirely lot. Every chunk a block overlaps adds the block's barrier, because collision lookups are per chunk. Times Square towers are built from lot cells so Broadway stays open. ESB, Chrysler, One WTC and MSG are snapped to their blocks and sized to fit them.
-- **Busted**: speed < 2.4 with a cop within 4.2 units for 2.4 s. Bail is 50 + 25×stars.
+- **Busted**: speed < 2.4 with a cop within 4.2 units for 2.4 s. **No bail and no money loss on any ending** (permanent economy, master file §8/§21). `addCash` credits `SAVE.bank` immediately, and the game autosaves every 5 s during play when the bank changes, plus on pagehide/hidden.
 - **No Customs/shops** (removed). Heat only goes up during a run. **Repair gears** (`spawnGear`, `G.gears`): floating steel cogs on roads ahead, up to 2 at a time, spawning 2.5× faster when you're below 60% HP. Driving through one is an instant full repair. **Engine/armor upgrades** are bought on the title screen (`#engineBtn`/`#armorBtn` → `buyUpgrade`).
 - Upgrades (title screen): engine `[700,1500,3000]` (+6% top speed per level), armor `[500,1100,2400]` (+22% HP per level). Car stats and prices live in `MODELS` (vehicles.js). The player garage is `PLAYER_CARS`.
 - Cop rubber-banding is `v.boost` in `copAI` (vehicles.js).

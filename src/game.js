@@ -309,7 +309,8 @@ function gameOver(kind) {
   G.state = 'over';
   const t = G.runTime, best = Math.max(SAVE.best, t); const newBest = t > SAVE.best + 0.5; SAVE.best = best;
   let extra = '';
-  if (kind === 'busted') { const bail = Math.min(SAVE.bank, 50 + G.stars * 25); SAVE.bank -= bail; extra = `<div class="bail">BAIL POSTED −${fmt$(bail)}</div>`; }
+  // Permanent economy (master file §8/§21): no run ending ever takes money. Everything earned is already in the bank.
+  extra = `<div class="keep">BANK ${fmt$(SAVE.bank)} · ALL EARNINGS KEPT</div>`;
   save();
   const title = kind === 'busted' ? 'BUSTED' : kind === 'splash' ? 'SLEEPING WITH<br>THE FISHES' : 'WASTED';
   $('overTitle').innerHTML = title; $('overTitle').className = 'ot ' + kind;
@@ -450,6 +451,8 @@ function updateWorldRules(dt) {
   if (P.alive && P.sink === 0) SAVE.stats.dist += spd * dt * MPU / 1000;
   if (G.stars > SAVE.maxStars) { SAVE.maxStars = G.stars; misCheck(); }
   if ((G.misT = (G.misT || 0) + dt) > 1) { G.misT = 0; misCheck(); }
+  // autosave every 5 s while money/stats are moving, so a killed tab or app can't lose earnings
+  if ((G.autoT = (G.autoT || 0) + dt) > 5) { G.autoT = 0; if (SAVE.bank !== G.savedBank) { G.savedBank = SAVE.bank; save(); } }
   if (spd > P.maxV * 0.88 && P.alive && P.sink === 0) {
     G.spdT += dt; G.spdAcc = (G.spdAcc || 0) + dt;
     if (G.spdAcc >= 1) { G.spdAcc -= 1; addCash(20 + 10 * G.stars + (P.nitro > 0 ? 20 : 0)); }
