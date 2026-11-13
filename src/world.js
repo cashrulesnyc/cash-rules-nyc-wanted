@@ -43,6 +43,9 @@ const WORLD = {
     }
     for (let i = 0; i < np; i++) { const o = i * PROPF; this.cellsFor(ch, c.props[o], c.props[o + 1], c.props[o + 2], (ci) => ch.cellP[ci].push(i)); }
     ch.maxH = maxH + 12;
+    { let ex = 0; const B = c.boxes; // how far boxes reach past the chunk edge (big site buildings), for culling
+      for (let i = 0; i < B.length; i += INST) { const r = Math.max(B[i + 3], B[i + 5]) * 0.75; ex = Math.max(ex, ch.x0 - (B[i] - r), B[i] + r - ch.x0 - CH, ch.z0 - (B[i + 2] - r), B[i + 2] + r - ch.z0 - CH); }
+      ch.ex = ex; }
     if (GFX.ok) {
       ch.tex = GFX.makeTex(c.tex, CTEX, CTEX, false, true);
       if (c.boxes.length) ch.gfx = GFX.makeInst(c.boxes);

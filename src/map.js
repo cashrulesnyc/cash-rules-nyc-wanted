@@ -15,7 +15,7 @@ const LANDB = new Uint8Array(MW * MH); // land mask blurred with a 5-tap binomia
 
 // tile codes
 const T_WATER = 0, T_ROAD = 1, T_WALK = 2, T_LOT = 3, T_PARK = 4, T_SAND = 5, T_TARMAC = 6,
-  T_HWY = 7, T_BRIDGE = 8, T_CEM = 9, T_PLAZA = 10, T_RUNWAY = 11;
+  T_HWY = 7, T_BRIDGE = 8, T_CEM = 9, T_PLAZA = 10, T_RUNWAY = 11, T_MARSH = 12, T_PARKING = 13;
 
 function fillPoly(arr, pts, val, landOnly) {
   const n = pts.length; if (n < 3) return;
@@ -177,6 +177,17 @@ function boroAt(x, z) { const m = landIdx(x, z); return m < 0 ? 0 : BORO[m]; }
 function zoneAt(x, z) { const m = landIdx(x, z); return m < 0 ? 0 : ZONE[m]; }
 
 const SPECIAL_ZONES = [];
+// ---- Bloomfield logistics park (Staten Island west shore, Gulf Ave): site frame aligned to the West Shore Expwy ----
+// s = units south along the expressway from its north end, t = units west of its centre line (toward the Arthur Kill).
+const BF = (() => { const a = P(40.6300, -74.1850), b = P(40.6000, -74.1900), L = Math.hypot(b[0] - a[0], b[1] - a[1]); const d = [(b[0] - a[0]) / L, (b[1] - a[1]) / L]; return { a, d, e: [-d[1], d[0]], yaw: Math.atan2(d[0], d[1]) }; })(); // e points west; box yaw BF.yaw puts local +z along d (south), local +x east (-t)
+function bfW(s, t) { return [BF.a[0] + BF.d[0] * s + BF.e[0] * t, BF.a[1] + BF.d[1] * s + BF.e[1] * t]; }
+function bfRect(s0, t0, s1, t1) { return [bfW(s0, t0), bfW(s1, t0), bfW(s1, t1), bfW(s0, t1)]; }
+// zone codes: 6 marsh (drivable, splashy), 7 striped parking lot
+const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)]];
+// smooth value noise (marsh pools / reed beds)
+function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
+  const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; }
+function marshWet(x, z) { return vnoise(x / 7, z / 7) * 0.65 + vnoise(x / 2.6 + 17, z / 2.6 - 5) * 0.35; } // > 0.58: open water pool
 function buildMap() {
   const brd = GEO.BKQ_BORDER.slice().reverse().slice(1, -1);
   fillPoly(BORO, toW(GEO.NJ), 6);
@@ -188,6 +199,7 @@ function buildMap() {
   for (const k of ['ROOSEVELT', 'RANDALLS', 'GOVERNORS', 'LIBERTY', 'ELLIS']) fillPoly(BORO, toW(GEO[k]), 1);
   fillPoly(BORO, toW(GEO.BRX), 2);
   for (const z of GEO.ZONES) fillPoly(ZONE, toW(z[1]), z[0], true);
+  for (const z of BF_ZONES) fillPoly(ZONE, z[1], z[0], true);
   // grid-aligned Manhattan parks
   const g = GRIDS[1], ins = g.wa / 2 + g.sw;
   fillPoly(ZONE, gRect(g, ins, g.ws / 2 + g.sw, 3 * g.A - ins, 25 * g.S - g.ws / 2 - g.sw), 1, true); // Central Park
@@ -218,7 +230,7 @@ function tileAt(x, z) {
   }
   if (b === 0) return T_WATER;
   const zn = ZONE[m];
-  if (zn) return zn === 1 ? T_PARK : zn === 2 ? T_SAND : zn === 3 ? T_TARMAC : zn === 4 ? T_CEM : T_PLAZA;
+  if (zn) return zn === 1 ? T_PARK : zn === 2 ? T_SAND : zn === 3 ? T_TARMAC : zn === 4 ? T_CEM : zn === 6 ? T_MARSH : zn === 7 ? T_PARKING : T_PLAZA;
   const g = GRIDS[b]; LASTG = g;
   const rx = x - g.ox, rz = z - g.oz;
   const u = rx * g.ex + rz * g.ez, v = rx * g.dx + rz * g.dz; LASTU = u; LASTV = v;
@@ -234,7 +246,7 @@ function isRoadish(t) { return t === T_ROAD || t === T_HWY || t === T_BRIDGE || 
 function hash2(x, z) { let h = (x * 374761393 + z * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177 | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
 const COL = { water: [62, 158, 216], shallow: [92, 186, 226], foam: [214, 240, 250], road: [66, 68, 76], walk: [196, 192, 184], curb: [138, 136, 130], lot: [150, 146, 138],
   grass: [104, 178, 78], grass2: [94, 166, 70], sand: [238, 214, 152], wet: [212, 190, 134], tarmac: [146, 148, 154], run: [58, 60, 66], hwy: [56, 58, 64],
-  cem: [114, 164, 88], plaza: [208, 202, 190], yellow: [240, 196, 56], white: [236, 236, 236], yard: [120, 174, 88], gut: [40, 41, 46], edge: [120, 122, 126] };
+  cem: [114, 164, 88], marsh: [112, 128, 66], reed: [150, 146, 84], mud: [92, 82, 58], pool: [84, 128, 128], park: [74, 76, 82], plaza: [208, 202, 190], yellow: [240, 196, 56], white: [236, 236, 236], yard: [120, 174, 88], gut: [40, 41, 46], edge: [120, 122, 126] };
 // Markings are sized for 256 px / 48 units (0.19 units per texel): every line is at least one
 // texel wide so it doesn't break up into specks, and dash/zebra periods are several texels long.
 const fr = (a) => a - Math.floor(a);
@@ -305,6 +317,22 @@ function texel(x, z, out) {
       c = shade(lv < 0.5 ? COL.wet : COL.sand, 0.96 + 0.06 * n, _sc); break;
     }
     case T_TARMAC: c = shade(COL.tarmac, 0.96 + 0.06 * n, _sc); break;
+    case T_MARSH: { // salt marsh: grass + reed beds + mud flats + shallow pools (all drivable)
+      const w = marshWet(x, z), r = vnoise(x / 1.3 - 40, z / 1.3 + 9);
+      c = shade(r > 0.6 ? COL.reed : COL.marsh, 0.9 + 0.16 * n, _sc);
+      c = paint(c, COL.mud, Math.max(0, Math.min(1, (w - 0.5) * 10)));
+      c = paint(c, COL.pool, Math.max(0, Math.min(1, (w - 0.58) * 14)));
+      if (w > 0.6 && n > 0.93) c = paint(c, COL.foam, 0.35);
+      break;
+    }
+    case T_PARKING: { // striped lot in the site frame: [stalls 2.6][stalls 2.6][aisle 3.4], stalls 1.4 wide
+      const rx = x - BF.a[0], rz = z - BF.a[1], s = rx * BF.d[0] + rz * BF.d[1], t = rx * BF.e[0] + rz * BF.e[1];
+      c = shade(COL.park, 0.94 + 0.1 * n, _sc);
+      const tp = t - 3.2, m = tp - 8.8 * Math.floor(tp / 8.8);
+      if (m < 5.2) { c = paint(c, COL.white, cov(Math.abs(s / 1.4 - Math.round(s / 1.4)) * 1.4, 0.07)); c = paint(c, COL.white, cov(Math.abs(m - 2.6), 0.07)); }
+      else c = paint(c, COL.white, Math.min(cov(Math.abs(m - 7.0), 0.08), dash(s, 2.4)) * 0.6);
+      break;
+    }
     case T_CEM: c = shade(COL.cem, 0.95 + 0.08 * n, _sc); break;
     case T_PLAZA: { const u = x * 0.9 + z * 0.4, v = z * 0.9 - x * 0.4; c = shade(COL.plaza, (fr(u / 1.2) < 0.1 || fr(v / 1.2) < 0.1) ? 0.9 : 0.97 + 0.05 * n, _sc); break; }
     case T_RUNWAY: case T_HWY: {
@@ -340,5 +368,7 @@ function mapColor(b, zn) {
   if (zn === 3) return [150, 152, 158];
   if (zn === 4) return [104, 150, 84];
   if (zn === 5) return [190, 186, 176];
+  if (zn === 6) return [118, 134, 76];
+  if (zn === 7) return [96, 98, 104];
   return [[0], [196, 190, 182], [186, 176, 166], [190, 178, 166], [184, 182, 168], [178, 190, 166], [170, 170, 170]][b];
 }

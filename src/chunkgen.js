@@ -60,6 +60,12 @@ function initWorldData() {
   // block-anchored landmarks: centred on the Manhattan grid block that holds them
   lmAdd('vessel', 40.7537, -74.0021, 3.4, { name: 'THE VESSEL · HUDSON YARDS' });
   lmAdd('hy30', 40.7541, -74.0004, 3.6, { name: 'EDGE · 30 HUDSON YARDS' });
+  // Bloomfield logistics park (Staten Island): labels only; the geometry is pre-built once (buildSite) and streamed per chunk
+  { const a = bfW(34, 31), b = bfW(80, 29), m = bfW(70, 66);
+    LM.push({ type: 'label', x: a[0], z: a[1], r: 0, nr: 26, name: 'JFK8', sub: 'FULFILLMENT CENTER · GULF AVE' });
+    LM.push({ type: 'label', x: b[0], z: b[1], r: 0, nr: 24, name: 'DYY6', sub: 'DELIVERY STATION · GULF AVE' });
+    LM.push({ type: 'label', x: m[0], z: m[1], r: 0, nr: 34, name: 'BLOOMFIELD MARSH', sub: 'ARTHUR KILL WETLANDS' }); }
+  buildSite();
   for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
     ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
     ['rock', 40.7587, -73.9787, 5.0, 'ROCKEFELLER CENTER', 0], ['esb', 40.7484, -73.9857, 5.5, 'EMPIRE STATE BUILDING', 0],
@@ -159,6 +165,7 @@ function genChunk(cx, cz) {
     for (let a = 0; a <= 8; a++) for (let b = 0; b <= 8; b++) { const bb = boroAt(x0 + a * CH / 8, z0 + b * CH / 8); if (bb) boros.add(bb); }
     for (const b of boros) placeBlocks(GRIDS[b], ctx);
     placeOpenProps(ctx);
+    addSite(ctx);
     for (const L of LM) if (L.x >= x0 && L.x < x0 + CH && L.z >= z0 && L.z < z0 + CH) {
       const s0 = OB.length; buildLandmark(L, ctx);
       for (let i = s0 + 13; i < OB.length; i += INST) OB[i] += 16; // landmark flag for the slicing shader
@@ -169,6 +176,88 @@ function genChunk(cx, cz) {
 }
 
 function inChunk(ctx, x, z) { return x >= ctx.x0 && x < ctx.x0 + CH && z >= ctx.z0 && z < ctx.z0 + CH; }
+// ---------- Bloomfield logistics park: two big-box warehouses (generic design, no logos), truck docks, trailers,
+// delivery-van lots, employee parking. Built once into SITE_BOXES / SITE_COLS; genChunk copies the boxes whose
+// centre falls in the chunk and every collider that overlaps it (so big buildings stay solid across chunk edges).
+let SITE_BOXES = null, SITE_COLS = null;
+function buildSite() {
+  const keep = OB; OB = [];
+  const cols = [], Y = BF.yaw;
+  const sb = (s, t, y, ss, sy, st, col, mat) => { const p = bfW(s, t); box(p[0], y, p[1], st, sy, ss, Y, col, mat); };   // ss along the expressway, st across
+  const sc = (s, t, ss, st, h) => { const p = bfW(s, t); cols.push(p[0], p[1], Y, st / 2, ss / 2, h); };
+  const wall = hex('#d9dcde'), wall2 = hex('#cfd3d6'), base = hex('#7d858d'), band = hex('#4a5866'), rib = hex('#c4c9cd'), roof = hex('#b9bec3');
+  const door = hex('#353a42'), trailer = hex('#eef0f2'), van = hex('#e6e8ea'), glass = hex('#2c3e55');
+  const R = rng(4242);
+  function warehouse(s0, t0, Ls, Lt, H, docksWest, vanDoorsSouth) {
+    const ns = Math.ceil(Ls / 11), nt = Math.ceil(Lt / 11), ts = Ls / ns, tt = Lt / nt;
+    for (let a = 0; a < ns; a++) for (let b = 0; b < nt; b++) {      // tilt-up wall/roof sections
+      const s = s0 - Ls / 2 + (a + 0.5) * ts, t = t0 - Lt / 2 + (b + 0.5) * tt;
+      sb(s, t, H / 2, ts, H, tt, (a + b) % 2 ? wall : wall2, 0);
+      sb(s, t, H + 0.03, ts - 0.2, 0.06, tt - 0.2, roof, 0);
+      for (let k = 0; k < 2; k++) for (let m = 0; m < 2; m++) if (R() < 0.75) sb(s - ts / 4 + k * ts / 2, t - tt / 4 + m * tt / 2, H + 0.08, 1.6, 0.07, 0.7, hex('#a9d2e8'), 6); // skylights
+      if (R() < 0.5) { sb(s + (R() - 0.5) * ts * 0.6, t + (R() - 0.5) * tt * 0.6, H + 0.3, 1.1, 0.5, 0.8, hex('#9aa1a8'), 0); }  // rooftop HVAC
+    }
+    // base band + parapet band on all four faces, plus vertical panel ribs
+    for (const side of [-1, 1]) {
+      for (let a = 0; a < ns; a++) { const s = s0 - Ls / 2 + (a + 0.5) * ts;
+        sb(s, t0 + side * (Lt / 2 + 0.03), 0.3, ts, 0.6, 0.08, base, 0); sb(s, t0 + side * (Lt / 2 + 0.03), H - 0.25, ts, 0.5, 0.1, band, 0); }
+      for (let b = 0; b < nt; b++) { const t = t0 - Lt / 2 + (b + 0.5) * tt;
+        sb(s0 + side * (Ls / 2 + 0.03), t, 0.3, 0.08, 0.6, tt, base, 0); sb(s0 + side * (Ls / 2 + 0.03), t, H - 0.25, 0.1, 0.5, tt, band, 0); }
+      for (let s = s0 - Ls / 2 + 1.6; s < s0 + Ls / 2 - 0.5; s += 1.6) sb(s, t0 + side * (Lt / 2 + 0.05), H / 2, 0.08, H - 0.9, 0.06, rib, 0);
+    }
+    sc(s0, t0, Ls, Lt, H);
+    // front (east, toward Gulf Ave): glass entrance block, canopy, accent stripe, employee entrance stair towers
+    const tf = t0 - Lt / 2;
+    sb(s0, tf - 0.25, H * 0.42, 7, H * 0.84, 0.5, glass, 7); sb(s0, tf - 1.0, H * 0.5, 8, 0.12, 1.6, hex('#3d4855'), 0);
+    for (const o of [-4.6, 4.6]) sb(s0 + o, tf - 0.15, H * 0.5 + 0.2, 1.0, H + 0.4, 0.3, hex('#2f6f9f'), 0);
+    for (const o of [-Ls * 0.35, Ls * 0.35]) { sb(s0 + o, tf - 0.4, H * 0.55, 1.6, H * 1.1, 0.8, wall2, 0); sb(s0 + o, tf - 0.82, H * 0.5, 0.6, H * 0.8, 0.05, glass, 6); }
+    sb(s0 + 7, tf - 3.0, 0.45, 2.2, 0.9, 0.35, hex('#3a3f46'), 0); sb(s0 + 7, tf - 3.0, 0.55, 2.0, 0.5, 0.37, hex('#e6e8ea'), 2);   // monument sign (blank)
+    sc(s0 + 7, tf - 3.0, 2.2, 0.35, 1);
+    // truck docks (west) with trailers backed in, some with tractors
+    if (docksWest) {
+      const tw = t0 + Lt / 2;
+      for (let s = s0 - Ls / 2 + 1.2; s < s0 + Ls / 2 - 0.8; s += 1.3) {
+        sb(s, tw + 0.04, 0.75, 0.95, 1.2, 0.06, door, 0); sb(s, tw + 0.12, 0.2, 1.0, 0.18, 0.12, hex('#1d1f23'), 0);
+        if (R() < 0.62) {
+          const L = 4.0, tc = tw + 0.35 + L / 2;
+          sb(s, tc, 0.98, 1.0, 1.15, L, trailer, 0); sb(s, tc, 0.38, 0.86, 0.12, L - 0.2, hex('#2a2c31'), 0);
+          sb(s, tw + 0.35 + L - 0.6, 0.22, 0.95, 0.44, 0.9, C.tire, 0); sb(s, tc, 1.0, 1.01, 0.08, L, hex('#9aa3ad'), 0);
+          if (R() < 0.3) { const cab = [hex('#c0392b'), hex('#2b5fb3'), hex('#f4f4f4'), hex('#2e3238')][Math.floor(R() * 4)];
+            sb(s, tw + 0.35 + L + 0.9, 0.75, 1.0, 1.1, 1.5, cab, 0); sb(s, tw + 0.35 + L + 1.45, 1.0, 0.9, 0.4, 0.06, glass, 6); sb(s, tw + 0.35 + L + 0.9, 0.22, 1.0, 0.44, 1.4, C.tire, 0); }
+          sc(s, tc + (R() < 0 ? 0 : 0.6), 1.0, L + 1.6, 1.4);
+        }
+      }
+    }
+    if (vanDoorsSouth) { const ts2 = s0 + Ls / 2; for (let t = t0 - Lt / 2 + 1.4; t < t0 + Lt / 2 - 1; t += 1.6) sb(ts2 + 0.04, t, 0.6, 0.06, 1.0, 1.1, door, 0); }
+  }
+  function vanRow(s0, s1, t, faceWest) { // generic white delivery vans (no branding), nose toward the aisle
+    let n = 0;
+    for (let s = s0; s <= s1; s += 1.5) { if (R() < 0.25) continue; n++;
+      const d = faceWest ? 1 : -1;
+      sb(s, t, 0.68, 0.98, 1.05, 2.1, van, 0); sb(s, t + d * 0.98, 0.9, 0.9, 0.3, 0.12, glass, 6); sb(s, t + d * 0.86, 1.2, 0.9, 0.04, 0.3, glass, 6); // windshield (visible from above)
+      sb(s, t + d * 1.08, 0.3, 0.98, 0.18, 0.08, hex('#2a2c31'), 0); sb(s, t - d * 0.1, 0.5, 1.0, 0.1, 1.7, hex('#5f7f99'), 0);               // bumper, side stripe
+      sb(s, t, 0.17, 0.92, 0.34, 1.6, C.tire, 0); sb(s, t - d * 1.06, 0.7, 0.92, 0.8, 0.04, hex('#c8ccd0'), 0);
+    }
+    if (n) sc((s0 + s1) / 2, t, s1 - s0 + 1.0, 2.1, 1.3);
+  }
+  warehouse(34, 31, 36, 22, 3.6, true, false);    // JFK8: ~855k sq ft fulfillment center
+  warehouse(74, 29, 24, 16, 2.6, false, true);    // DYY6: delivery station
+  for (const t of [40.2, 42.4]) vanRow(63, 87, t, t < 41);
+  for (const t of [46.6]) vanRow(63, 87, t, false);
+  for (const [t, w] of [[21, false], [23.2, true], [30, false], [32.2, true], [39.5, false], [41.7, true]]) vanRow(92, 114, t, w);
+  // light poles along the van lot and dock apron
+  for (let s = 8; s < 118; s += 10) for (const t of [17.5, 48.8]) { sb(s, t, 1.6, 0.12, 3.2, 0.12, C.pole, 0); sb(s, t - 0.3, 3.2, 0.2, 0.1, 0.7, C.lamp, 5); }
+  SITE_BOXES = new Float32Array(OB); SITE_COLS = cols; OB = keep;
+}
+function addSite(ctx) {
+  if (!SITE_BOXES) return;
+  const B = SITE_BOXES;
+  for (let i = 0; i < B.length; i += INST) if (B[i] >= ctx.x0 && B[i] < ctx.x0 + CH && B[i + 2] >= ctx.z0 && B[i + 2] < ctx.z0 + CH) for (let k = 0; k < INST; k++) OB.push(B[i + k]);
+  const S = SITE_COLS;
+  for (let i = 0; i < S.length; i += 6) { const r = Math.hypot(S[i + 3], S[i + 4]);
+    if (S[i] + r > ctx.x0 && S[i] - r < ctx.x0 + CH && S[i + 1] + r > ctx.z0 && S[i + 1] - r < ctx.z0 + CH) addCol(ctx, S[i], S[i + 1], S[i + 2], S[i + 3], S[i + 4], S[i + 5]); }
+}
+
 function addCol(ctx, cx, cz, yaw, ha, hb, h) { ctx.cols.push(cx, cz, Math.cos(yaw), -Math.sin(yaw), ha, hb, h); }
 
 function lotOK(g, b, u, v, hu, hv) {
@@ -464,12 +553,27 @@ function blockProps(g, b, i, j, uc, vc, bu, bv, R, ctx, yaw) {
 
 function placeOpenProps(ctx) {
   const R = rng(ihash(ctx.x0 | 0, ctx.z0 | 0, 99));
+  // employee parking (site frame stalls: bands of 2.6 at t-3.2 mod 8.8 in [0,5.2), 1.4 wide): parked cars + light poles
+  if (SITE_BOXES) {
+    const c = [ctx.x0 + CH / 2, ctx.z0 + CH / 2], rx = c[0] - BF.a[0], rz = c[1] - BF.a[1], sC = rx * BF.d[0] + rz * BF.d[1], tC = rx * BF.e[0] + rz * BF.e[1];
+    if (sC > -40 && sC < 160 && tC > -40 && tC < 60) {
+      for (let s = 4.7; s < 118; s += 1.4) for (const tb of [1.3, 3.9, 10.1, 12.7]) { const t = 3.2 + tb; if (t > 15) continue;
+        const w = bfW(s, t); if (!inChunk(ctx, w[0], w[1]) || tileAt(w[0], w[1]) !== T_PARKING) continue;
+        if (ihash(Math.round(s * 10), Math.round(t * 10), 77) % 100 < 38) prop(ctx, PT.PCAR, w[0], w[1], BF.yaw + ((tb % 8.8) < 2 ? Math.PI / 2 : -Math.PI / 2), R); }
+      for (let s = 9; s < 118; s += 12) { const w = bfW(s, 3.2 + 7.0); if (inChunk(ctx, w[0], w[1])) prop(ctx, PT.LAMP, w[0], w[1], BF.yaw, R); }
+    }
+  }
   // parks: jittered lattice
   for (let z = ctx.z0 + 1.6; z < ctx.z0 + CH; z += 3.2) for (let x = ctx.x0 + 1.6; x < ctx.x0 + CH; x += 3.2) {
     const px = x + (R() - 0.5) * 2.2, pz = z + (R() - 0.5) * 2.2, r = R();
     const t = tileAt(px, pz);
     if (t === T_PARK) { if (lmExcluded(px, pz, 1)) continue; if (r < 0.55) prop(ctx, PT.TREE, px, pz, 0, R); else if (r < 0.58) prop(ctx, PT.BENCH, px, pz, R() * 3, R); else if (r < 0.6) prop(ctx, PT.LAMP, px, pz, R() * 6, R); }
     else if (t === T_SAND) { if (lmExcluded(px, pz, 1)) continue; if (r < 0.12) prop(ctx, PT.UMB, px, pz, R(), R); }
+    else if (t === T_MARSH) { // reed clumps (decor only: no collider, no heat) away from open pools
+      if (r < 0.55 && marshWet(px, pz) < 0.54) { const k = 3 + Math.floor(R() * 4);
+        for (let q = 0; q < k; q++) { const rx = px + (R() - 0.5) * 1.4, rz = pz + (R() - 0.5) * 1.4, h = 0.5 + R() * 0.7;
+          box(rx, h / 2, rz, 0.07, h, 0.07, R() * 3, R() < 0.5 ? hex('#8f9a4e') : hex('#b3a868'), 0); if (R() < 0.5) box(rx, h, rz, 0.1, 0.2, 0.1, 0, hex('#5a3e24'), 0); } }
+    }
     else if (t === T_PLAZA) { if (r < 0.18 && !lmExcluded(px, pz, 2)) prop(ctx, PT.TREE, px, pz, 0, R); }
     else if (t === T_CEM) {
       if (r < 0.15) prop(ctx, PT.TREE, px, pz, 0, R);

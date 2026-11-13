@@ -209,7 +209,7 @@ function spawnPickup() {
   for (let tries = 0; tries < 8; tries++) {
     const a = P.h + (Math.random() - 0.5) * 2.6, r = 22 + Math.random() * 40;
     const x = P.x + Math.sin(a) * r, z = P.z - Math.cos(a) * r;
-    const t = tileAt(x, z); if (t !== T_ROAD && t !== T_WALK && t !== T_PARK && t !== T_PLAZA) continue;
+    const t = tileAt(x, z); if (t !== T_ROAD && t !== T_WALK && t !== T_PARK && t !== T_PLAZA && t !== T_PARKING && t !== T_TARMAC && t !== T_MARSH) continue;
     if (WORLD.pointBlocked(x, z, 0.6)) continue;
     const big = Math.random() < 0.1;
     G.pickups.push({ x, z, v: big ? 500 : 50 + Math.floor(Math.random() * 5) * 25, big, t: Math.random() * 6 });
@@ -221,7 +221,7 @@ function spawnGear() {
   for (let tries = 0; tries < 10; tries++) {
     const a = P.h + (Math.random() - 0.5) * 2.6, r = 24 + Math.random() * 40;
     const x = P.x + Math.sin(a) * r, z = P.z - Math.cos(a) * r;
-    const t = tileAt(x, z); if (t !== T_ROAD && t !== T_HWY && t !== T_PLAZA && t !== T_PARK) continue;
+    const t = tileAt(x, z); if (t !== T_ROAD && t !== T_HWY && t !== T_PLAZA && t !== T_PARK && t !== T_PARKING && t !== T_TARMAC) continue;
     if (WORLD.pointBlocked(x, z, 0.8)) continue;
     G.gears.push({ x, z, t: Math.random() * 6 }); return;
   }
@@ -352,8 +352,30 @@ function stepPlay(dt) {
     }
   }
 }
+// marsh: spray from the wheels, bigger and wetter in the open pools, a burst + thump when you hit a pool fast
+const SPLASH_W = hex('#d8eef2'), SPLASH_B = hex('#8fbcc4'), SPLASH_M = hex('#6b5a3e');
+function marshFX(v, dt, loud) {
+  if (v.sink > 0 || v.air || tileAt(v.x, v.z) !== T_MARSH) { v.inPool = false; return; }
+  const sp = vSpeed(v); if (sp < 2) { v.inPool = false; return; }
+  const pool = marshWet(v.x, v.z) > 0.56, fx = Math.sin(v.h), fz = -Math.cos(v.h), rx = Math.cos(v.h), rz = Math.sin(v.h), back = v.m.len * 0.32;
+  v.splT = (v.splT || 0) + dt * sp * (pool ? 1.6 : 0.7) * (loud ? 1 : 0.4);
+  while (v.splT > 1) { v.splT -= 1;
+    for (const side of [-1, 1]) {
+      const x = v.x - fx * back + rx * side * 0.5, z = v.z - fz * back + rz * side * 0.5;
+      puff(x, 0.25, z, pool ? (Math.random() < 0.5 ? SPLASH_W : SPLASH_B) : (Math.random() < 0.6 ? SPLASH_M : SPLASH_B), pool ? 4 : 2,
+        { size: pool ? 0.27 : 0.17, v: 2.2, vx: -v.vx * 0.15 + rx * side * 2.2, vz: -v.vz * 0.15 + rz * side * 2.2, vy: 2.5 + sp * 0.12, vyr: 2.5, life: 0.65, g: 16, m: pool ? 2 : 0, spread: 0.3 });
+    }
+  }
+  if (pool && !v.inPool && sp > 9 && loud) { // belly-flop into a pool
+    puff(v.x, 0.3, v.z, SPLASH_W, 18, { size: 0.26, v: 6, vy: 4, vyr: 4, life: 0.8, g: 14, m: 2, spread: 1.2 });
+    G.shake = Math.max(G.shake, 0.25); AUD.noiseHit(Math.min(0.35, 0.08 + sp * 0.008), 500, 0.4);
+  }
+  v.inPool = pool;
+}
 function updateWorldRules(dt) {
   const P = G.P;
+  if (P && P.alive) marshFX(P, dt, true);
+  for (const c of G.cops) if (c.alive && Math.abs(c.x - P.x) < 45 && Math.abs(c.z - P.z) < 45) marshFX(c, dt, false);
   // heat & stars
   if (G.stars > 0) G.heat = Math.min(240, G.heat + dt * 0.45);
   const ns = starsFor(G.heat);
@@ -445,7 +467,7 @@ function hoodName(x, z) {
   if (!HOODW) HOODW = GEO.HOODS.map(h => { const p = P(h[2], h[3]); return [h[0], h[1], p[0], p[1]]; });
   const b = boroAt(x, z), s = segHit(x, z);
   if (s && s.br) return s.br.name;
-  for (const L of LM) if (L.name && Math.hypot(L.x - x, L.z - z) < (L.nr || L.r + 9)) return L.name + '<small>LANDMARK</small>';
+  for (const L of LM) if (L.name && Math.hypot(L.x - x, L.z - z) < (L.nr || L.r + 9)) return L.name + '<small>' + (L.sub || 'LANDMARK') + '</small>';
   if (!b) {
     const W = [['HUDSON RIVER', 40.80, -73.975], ['HUDSON RIVER', 40.74, -74.02], ['EAST RIVER', 40.73, -73.968], ['EAST RIVER', 40.775, -73.935], ['HARLEM RIVER', 40.835, -73.933], ['UPPER BAY', 40.672, -74.045],
       ['THE NARROWS', 40.607, -74.045], ['JAMAICA BAY', 40.612, -73.84], ['LONG ISLAND SOUND', 40.82, -73.78], ['FLUSHING BAY', 40.765, -73.85], ['KILL VAN KULL', 40.645, -74.12], ['ARTHUR KILL', 40.57, -74.215],

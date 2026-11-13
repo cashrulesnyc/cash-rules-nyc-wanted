@@ -34,7 +34,7 @@ An arcade police-chase game set on a real, drivable map of all five NYC boroughs
 - **Heading `h`** is an azimuth: 0 = north, clockwise. forward = `(sin h, −cos h)`, right = `(cos h, sin h)`.
 - **Box rotation** is a quaternion. A pure yaw is `qYaw(φ)` = Ry(φ). Vehicles use `φ = π − h` and models are built with the **front at local +Z**. Grid-aligned objects use `φ = −grid.th`, which maps local +X to the avenue-crossing axis `e`.
 - **Street grid**: `mkGrid(boro, thDeg, A, S, wa, ws, originLat, originLon, style)`. Avenue lines are constant `u` (spacing A, width wa) and run along `d` (azimuth th). Street lines are constant `v` (spacing S, width ws). Manhattan is th=29°, A=15.5, S=9, and Central Park is fitted exactly to that grid.
-- **Tiles** (`tileAt`): `T_WATER, T_ROAD, T_WALK, T_LOT, T_PARK, T_SAND, T_TARMAC, T_HWY, T_BRIDGE, T_CEM, T_PLAZA, T_RUNWAY`. Water anywhere that isn't a bridge or highway sinks the car.
+- **Tiles** (`tileAt`): `T_WATER, T_ROAD, T_WALK, T_LOT, T_PARK, T_SAND, T_TARMAC, T_HWY, T_BRIDGE, T_CEM, T_PLAZA, T_RUNWAY, T_MARSH, T_PARKING`. Zone codes: 1 park, 2 beach, 3 tarmac, 4 cemetery, 5 plaza, 6 marsh, 7 striped parking. Water anywhere that isn't a bridge or highway sinks the car.
 
 ## Data formats
 - **Box instance** (`INST` = 14 floats): `x y z  sx sy sz  qx qy qz qw  r g b  mat`
@@ -57,6 +57,12 @@ An arcade police-chase game set on a real, drivable map of all five NYC boroughs
 - Helpers: `lb` (part in the landmark frame), `lr` (frame position + its own yaw; use it whenever a part's yaw differs from the frame yaw), `beam(a,b,th)` (bar between two 3D points), `qy/qa/qm` quaternions.
 - Heights are deliberately exaggerated (ESB antenna ≈ 29, One WTC spire ≈ 34) so they read over the generic skyline. `r` also clears generic lots and park props around them.
 - The Brooklyn Bridge Gothic towers and cable web live in `buildBridgeGeometry()` (world.js, style `gothic`).
+
+## Staten Island (borough-by-borough pass, Nov 2026)
+- **Bloomfield logistics park** (Gulf Ave, west shore, by address: JFK8 at 546, DYY6 at 566; OSM was not reachable so placement is approximate). Laid out in a **site frame** `BF` (map.js) aligned to the West Shore Expwy: `bfW(s, t)` with `s` = units south along the expressway, `t` = units west toward the Arthur Kill. `BF_ZONES` paints the employee parking (zone 7, t 3.2–15), the paved site (zone 3, t 15–50) and **Bloomfield Marsh** (zone 6, t 3.2–90, s −26…150; real water still wins).
+- Buildings are **generic big-box warehouses, no logos, wordmarks or brand colours** (trademark-safe): tilt-up panel sections, ribs, base + parapet bands, skylights, HVAC, glass entrance, blank monument sign, truck docks with trailers (some with tractors) on JFK8's west side, van doors + rows of plain white delivery vans at DYY6. `buildSite()` (chunkgen.js) builds everything once into `SITE_BOXES`/`SITE_COLS`; `addSite(ctx)` copies boxes whose centre is in the chunk and every collider overlapping it. Chunks record `ch.ex` (how far boxes overhang) so big buildings aren't culled early.
+- Labels: `LM` entries of type `label` with `sub` (shown instead of LANDMARK): JFK8, DYY6, BLOOMFIELD MARSH.
+- **Marsh** (`T_MARSH`): drivable, slower (0.82, open pools 0.7), texture from `marshWet()` value noise (grass, reeds, mud, pools). `marshFX` (game.js) sprays water/mud from the rear wheels (player and nearby cops), with a burst + thump when you hit a pool above 9 u/s. Reed clumps are decor boxes (no collider, no heat).
 
 ## Roads, missions
 - **Road width**: `mkGrid` adds `ROAD_WA` (1.2) to every avenue and `ROAD_WS` (0.8) to every street, taken out of the blocks. Sidewalks are `GRID_SW` (0.6, baked into `GROUND_FS`). Highways ×`HWY_K` (1.25), bridges ×`BRIDGE_K` (1.2). Manhattan blocks are now 9.5×4.2, so landmarks must fit 4.2 deep.

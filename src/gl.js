@@ -638,7 +638,7 @@ const GFX = {
       sliceU(prog, 1);
       for (const ch of S.chunks) {
         if (!ch.gfx || !ch.gfx.count) continue;
-        if (!M4.boxVisible(pl, ch.x0, -1, ch.z0, ch.x0 + CH, ch.maxH || 40, ch.z0 + CH)) continue;
+        { const e = ch.ex || 0; if (!M4.boxVisible(pl, ch.x0 - e, -1, ch.z0 - e, ch.x0 + CH + e, ch.maxH || 40, ch.z0 + CH + e)) continue; }
         draw(ch.gfx);
       }
       sliceU(prog, 0);

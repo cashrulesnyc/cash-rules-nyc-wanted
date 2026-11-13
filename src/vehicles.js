@@ -355,7 +355,7 @@ function stepVehicle(v, dt) {
     return;
   }
   const t = tileAt(v.x, v.z);
-  const surf = (t === T_PARK || t === T_SAND || t === T_CEM) ? 0.78 : (t === T_WALK || t === T_LOT) ? 0.92 : 1;
+  const surf = (t === T_PARK || t === T_SAND || t === T_CEM) ? 0.78 : t === T_MARSH ? (marshWet(v.x, v.z) > 0.56 ? 0.7 : 0.82) : (t === T_WALK || t === T_LOT) ? 0.92 : 1;
   const maxV = v.maxV * surf * (v.boost || 1);
   if (v.thr > 0) { if (vf < maxV) vf += maxV * 1.25 * dt * (1 - Math.max(0, vf) / maxV) + (vf < 0 ? 20 * dt : 0); else vf -= (vf - maxV) * 2 * dt; }
   else if (v.thr < 0) { if (vf > 0.5) vf -= 32 * dt; else vf = Math.max(vf - 14 * dt, -maxV * 0.38); }
