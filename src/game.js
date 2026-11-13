@@ -501,6 +501,7 @@ function vehQuat(v) {
   return q;
 }
 function pushVehicle(v, t) {
+  if (v.m.mesh && GFX.meshes && GFX.meshes[v.m.mesh]) return pushVehicleMesh(v, t);
   const q = vehQuat(v), wr = v.wreck;
   const bc = v.color, bd = [bc[0] * 0.72, bc[1] * 0.72, bc[2] * 0.72];
   const blink = Math.floor(t * 7) % 2 === 0;
@@ -519,8 +520,22 @@ function pushVehicle(v, t) {
     dpush(v.x + o[0], v.y + o[1] + (v.lift || 0), v.z + o[2], p[3], p[4], p[5], pq, col, m);
   }
 }
+// dedicated-mesh vehicles: one body instance + wheels that spin with road speed and steer
+function pushVehicleMesh(v, t) {
+  const m = v.m, q = vehQuat(v), lift = v.lift || 0, pl = v === G.P && G.state !== 'garage';
+  const dt = Math.min(0.1, Math.max(0, t - (v._t || t))); v._t = t;
+  const fwd = v.vx * Math.sin(v.h) - v.vz * Math.cos(v.h); v.wspin = ((v.wspin || 0) + fwd * dt / m.wheels[0][3]) % (Math.PI * 2);
+  const siren = v.role === 'cop' && !v.wreck && !(v.ai && v.ai.lost) ? (Math.floor(t * 7) % 2 ? 1 : 2) : 0;
+  const dim = v.wreck ? 0.3 : (v.dim || 0), brake = v.thr < 0 ? 1 : 0;
+  GFX.meshPush(m.mesh, pl, v.x, v.y + lift, v.z, q, 1, 1, 1, v.color, siren, dim, brake);
+  const spinQ = qAxis(1, 0, 0, v.wspin);
+  for (const w of m.wheels) {
+    const o = qRot(q, [w[0], w[1], w[2]]), wq = w[5] ? qMul(q, qMul(qYaw(-(v.steer || 0) * 0.45), spinQ)) : qMul(q, spinQ);
+    GFX.meshPush('wheel', pl, v.x + o[0], v.y + o[1] + lift, v.z + o[2], wq, w[4], w[3], w[3], m.rim || [0.75, 0.77, 0.8], 0, dim, 0);
+  }
+}
 function buildDynamic(t) {
-  DYN.n = 0;
+  DYN.n = 0; if (GFX.meshReset) GFX.meshReset();
   if (G.state === 'garage') { garageScene(t); return 0; }
   const P = G.P;
   if (P) pushVehicle(P, t);
@@ -1002,6 +1017,7 @@ function boot() {
   if (mobile) GFX.setShadowSize(1536);
   GFX.shadowOn = SAVE.shadows; GFX.night = SAVE.night ? 1 : 0;
   BILL_TEX = GFX.makeTex(makeBillboards(), 1024, 1024, false, true);
+  buildVehicleMeshes();
   STATIC_BR = GFX.makeInst(buildBridgeGeometry());
   MAPC = makeMapCanvas();
   const mini = $('mini'); mini.width = mini.height = Math.round(mini.clientWidth * Math.min(2, window.devicePixelRatio || 1)) || 260;

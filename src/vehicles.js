@@ -45,7 +45,7 @@ function sedanParts(extra) {
   return extra ? p.concat(extra) : p;
 }
 const MODELS = {
-  sedan: { name: 'STREET SEDAN', parts: sedanParts(), len: 2.2, wid: 1.1, maxV: 24, turn: 2.7, grip: 7, hp: 100, mass: 1, price: 0, color: hex('#f2f2f2') },
+  sedan: { name: 'STREET SEDAN', parts: sedanParts(), build: (M) => buildSedan(M), wheels: [[0.47, 0.215, 0.70, 0.215, 0.18, 1], [-0.47, 0.215, 0.70, 0.215, 0.18, 1], [0.47, 0.215, -0.70, 0.215, 0.18, 0], [-0.47, 0.215, -0.70, 0.215, 0.18, 0]], rim: hex('#c3c8cf'), len: 2.2, wid: 1.1, maxV: 24, turn: 2.7, grip: 7, hp: 100, mass: 1, price: 0, color: hex('#f2f2f2') },
   taxi: { name: 'YELLOW CAB', parts: sedanParts([[0, 0.98, -0.18, 0.5, 0.14, 0.22, VC.white, 2], [0, 0.93, -0.18, 0.56, 0.03, 0.26, VC.dark, 0],
     [0.545, 0.4, 0, 0.02, 0.07, 1.7, VC.black, 0], [-0.545, 0.4, 0, 0.02, 0.07, 1.7, VC.black, 0]]), len: 2.2, wid: 1.1, maxV: 25.5, turn: 2.85, grip: 7.5, hp: 100, mass: 1, price: 1500, color: VC.yellow },
   ev: {
@@ -136,6 +136,143 @@ const MODELS = {
 };
 for (const k in MODELS) { const m = MODELS[k]; if (!m.len) continue; m.circles = []; const n = m.len > 3.5 ? 3 : 2; for (let i = 0; i < n; i++) m.circles.push((n === 3 ? (i - 1) * m.len * 0.33 : (i - 0.5) * m.len * 0.5)); m.cr = m.wid * 0.53; }
 const PLAYER_CARS = ['sedan', 'taxi', 'ev', 'muscle', 'truck'];
+
+// ============================================================
+//  Vehicle mesh builder (dedicated geometry, not boxes)
+//  A model's build(M) adds parts to a mesh builder; the result is one flat-shaded triangle list
+//  uploaded once to the GPU and drawn instanced (gl.js addMesh / meshPush). Same mesh in the garage
+//  and on the street. Wheels are a separate shared mesh so they can spin and steer.
+//  Style: { c: [r,g,b] colour, m: material, p: paint factor (0 = fixed colour, >0 = instance colour × p) }
+// ============================================================
+function MeshBuilder() { this.v = []; }
+MeshBuilder.prototype = {
+  // triangle with normal oriented away from `ref` (a point inside the part)
+  tri(a, b, c, S, ref) {
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz); if (l < 1e-9) return;
+    nx /= l; ny /= l; nz /= l;
+    const mx = (a[0] + b[0] + c[0]) / 3 - ref[0], my = (a[1] + b[1] + c[1]) / 3 - ref[1], mz = (a[2] + b[2] + c[2]) / 3 - ref[2];
+    if (nx * mx + ny * my + nz * mz < 0) { nx = -nx; ny = -ny; nz = -nz; const t = b; b = c; c = t; }
+    for (const p of [a, b, c]) this.v.push(p[0], p[1], p[2], nx, ny, nz, S.c[0], S.c[1], S.c[2], S.m || 0, S.p || 0);
+  },
+  quad(a, b, c, d, S, ref) { this.tri(a, b, c, S, ref); this.tri(a, c, d, S, ref); },
+  // closed hull through stations [{z, pts:[[x,y]...]}] (same point count, convex loops), capped at both ends
+  loft(st, S) {
+    let cx = 0, cy = 0, cz = 0, n = 0;
+    for (const s of st) for (const p of s.pts) { cx += p[0]; cy += p[1]; cz += s.z; n++; }
+    const ref = [cx / n, cy / n, cz / n], K = st[0].pts.length;
+    for (let i = 0; i + 1 < st.length; i++) for (let k = 0; k < K; k++) {
+      const a = st[i], b = st[i + 1], k2 = (k + 1) % K;
+      this.quad([a.pts[k][0], a.pts[k][1], a.z], [b.pts[k][0], b.pts[k][1], b.z], [b.pts[k2][0], b.pts[k2][1], b.z], [a.pts[k2][0], a.pts[k2][1], a.z], S, ref);
+    }
+    for (const s of [st[0], st[st.length - 1]]) {
+      let qx = 0, qy = 0; for (const p of s.pts) { qx += p[0]; qy += p[1]; } qx /= K; qy /= K;
+      for (let k = 0; k < K; k++) { const k2 = (k + 1) % K; this.tri([qx, qy, s.z], [s.pts[k][0], s.pts[k][1], s.z], [s.pts[k2][0], s.pts[k2][1], s.z], S, ref); }
+    }
+  },
+  // 8 corners (any order) → 6 faces of a convex hexahedron: c[0..3] one end, c[4..7] other end, same winding
+  hexa(c, S) {
+    const ref = [0, 1, 2].map(i => c.reduce((s, p) => s + p[i], 0) / 8);
+    const F = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+    for (const f of F) this.quad(c[f[0]], c[f[1]], c[f[2]], c[f[3]], S, ref);
+  },
+  // box centred at (x,y,z) size (sx,sy,sz); ch = chamfer on the 4 edges running along z
+  box(x, y, z, sx, sy, sz, S, ch) {
+    const hx = sx / 2, hy = sy / 2, c = Math.min(ch || 0, hx * 0.45, hy * 0.45);
+    const pts = c > 0 ? [[hx - c, -hy], [hx, -hy + c], [hx, hy - c], [hx - c, hy], [-hx + c, hy], [-hx, hy - c], [-hx, -hy + c], [-hx + c, -hy]] : [[hx, -hy], [hx, hy], [-hx, hy], [-hx, -hy]];
+    this.loft([-sz / 2, sz / 2].map(dz => ({ z: z + dz, pts: pts.map(p => [p[0] + x, p[1] + y]) })), S);
+  },
+  // bar between two 3D points; w = width across x, h = thickness in the y/z plane
+  beam(a, b, w, h, S) {
+    const t = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(...t); t[0] /= L; t[1] /= L; t[2] /= L;
+    let u = [0, -t[2], t[1]]; const ul = Math.hypot(...u) || 1; u = u.map(x => x / ul);         // perpendicular in the y/z plane
+    const v = [t[1] * u[2] - t[2] * u[1], t[2] * u[0] - t[0] * u[2], t[0] * u[1] - t[1] * u[0]];
+    const C = []; for (const P of [a, b]) for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) C.push([0, 1, 2].map(i => P[i] + u[i] * su * h / 2 + v[i] * sv * w / 2));
+    this.hexa(C, S);
+  },
+  // solid of revolution around the x axis through (0,cy,cz): profile [[x, r], ...]; styles per segment
+  revolve(cx, cy, cz, prof, seg, styles) {
+    for (let i = 0; i + 1 < prof.length; i++) {
+      const [x0, r0] = prof[i], [x1, r1] = prof[i + 1], S = styles[i];
+      for (let k = 0; k < seg; k++) {
+        const a0 = k / seg * Math.PI * 2, a1 = (k + 1) / seg * Math.PI * 2;
+        const P = (x, r, a) => [cx + x, cy + Math.sin(a) * r, cz + Math.cos(a) * r];
+        const ref = [cx + (x0 + x1) / 2 * 0.2, cy, cz];
+        this.quad(P(x0, r0, a0), P(x1, r1, a0), P(x1, r1, a1), P(x0, r0, a1), S, ref);
+      }
+    }
+  },
+  // flat arc band in the y/z plane at x (wheel-arch trim): radii r0..r1, angles a0..a1 (0 = +z, π/2 = up)
+  arc(x, cy, cz, r0, r1, a0, a1, seg, th, S) {
+    for (let k = 0; k < seg; k++) {
+      const A = a0 + (a1 - a0) * k / seg, B = a0 + (a1 - a0) * (k + 1) / seg;
+      const P = (r, a, dx) => [x + dx, cy + Math.sin(a) * r, cz + Math.cos(a) * r];
+      this.hexa([P(r0, A, -th / 2), P(r1, A, -th / 2), P(r1, B, -th / 2), P(r0, B, -th / 2), P(r0, A, th / 2), P(r1, A, th / 2), P(r1, B, th / 2), P(r0, B, th / 2)], S);
+    }
+  },
+  mirrorX(fn) { fn(1); fn(-1); },
+  out() { return new Float32Array(this.v); },
+};
+// shared wheel: radius 1, axle along x, width 1. Tyre (tread, shoulders, sidewalls), recessed rim (instance colour), spokes, hub
+function buildWheelMesh() {
+  const M = new MeshBuilder(), T = { c: hex('#1a1b1e') }, TR = { c: hex('#24252a') }, RIM = { c: [1, 1, 1], p: 1, m: 6 }, RD = { c: [1, 1, 1], p: 0.42 }, HUB = { c: hex('#3a3f46'), m: 6 };
+  const prof = [[-0.36, 0], [-0.36, 0.6], [-0.47, 0.66], [-0.5, 0.86], [-0.42, 1.0], [0.42, 1.0], [0.5, 0.86], [0.47, 0.66], [0.36, 0.6], [0.36, 0]];
+  M.revolve(0, 0, 0, prof, 16, [RD, RIM, T, T, TR, T, T, RIM, RD]);
+  for (const sx of [-1, 1]) {
+    for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2; M.beam([sx * 0.4, Math.sin(a) * 0.14, Math.cos(a) * 0.14], [sx * 0.4, Math.sin(a) * 0.56, Math.cos(a) * 0.56], 0.06, 0.13, RIM); }
+    M.revolve(sx * 0.42, 0, 0, sx > 0 ? [[-0.04, 0.17], [0.04, 0.13], [0.05, 0]] : [[0.04, 0.17], [-0.04, 0.13], [-0.05, 0]], 10, [HUB, HUB]);
+  }
+  return M.out();
+}
+// cross-section helper for lower bodies: chamfered bottom, shoulder crease, tumblehome to the top surface
+function sec(z, yb, ys, yt, wb, ws, wt, c) { c = c || 0.04; return { z, pts: [[wb - c, yb], [wb, yb + c], [ws, ys], [wt, yt], [-wt, yt], [-ws, ys], [-wb, yb + c], [-wb + c, yb]] }; }
+function gsec(z, yb, yt, wb, wt) { return { z, pts: [[wb, yb], [wt, yt], [-wt, yt], [-wb, yb]] }; }
+const CS = {
+  body: { c: [1, 1, 1], p: 1 }, bodyDk: { c: [1, 1, 1], p: 0.7 }, glass: { c: hex('#1c2838'), m: 6 }, trim: { c: hex('#1d1f24') }, black: { c: hex('#121316') },
+  chrome: { c: hex('#c9cdd2'), m: 6 }, head: { c: hex('#fff7d6'), m: 12 }, tail: { c: hex('#ff2a2a'), m: 13 }, plate: { c: hex('#f2f2ea') }, amber: { c: hex('#ffb020'), m: 2 },
+};
+// ---- STREET SEDAN (quality benchmark) ----
+function buildSedan(M) {
+  const B = CS;
+  // lower body: rear bumper face → trunk → cabin base → hood slope → nose
+  M.loft([
+    sec(-1.10, 0.17, 0.40, 0.50, 0.49, 0.515, 0.47, 0.05),
+    sec(-1.04, 0.15, 0.44, 0.585, 0.515, 0.545, 0.495),
+    sec(-0.66, 0.14, 0.45, 0.605, 0.52, 0.552, 0.505),
+    sec(0.42, 0.14, 0.45, 0.605, 0.52, 0.552, 0.505),
+    sec(0.82, 0.14, 0.44, 0.555, 0.52, 0.548, 0.50),
+    sec(1.05, 0.16, 0.40, 0.48, 0.50, 0.53, 0.465),
+    sec(1.11, 0.19, 0.36, 0.43, 0.46, 0.49, 0.42, 0.05),
+  ], B.body);
+  // glasshouse: rear glass → roof → windshield
+  M.loft([gsec(-0.67, 0.60, 0.605, 0.49, 0.47), gsec(-0.35, 0.60, 0.92, 0.49, 0.40), gsec(0.08, 0.60, 0.92, 0.49, 0.40), gsec(0.44, 0.60, 0.605, 0.49, 0.47)], B.glass);
+  M.box(0, 0.935, -0.135, 0.84, 0.035, 0.46, B.body, 0.015);                 // roof skin
+  M.mirrorX(s => {
+    M.beam([s * 0.47, 0.61, 0.44], [s * 0.392, 0.925, 0.075], 0.05, 0.06, B.body);    // A-pillar
+    M.beam([s * 0.488, 0.61, -0.12], [s * 0.402, 0.925, -0.12], 0.05, 0.07, B.body);  // B-pillar
+    M.beam([s * 0.47, 0.61, -0.67], [s * 0.392, 0.925, -0.34], 0.05, 0.09, B.body);   // C-pillar
+    M.box(s * 0.53, 0.19, 0, 0.04, 0.07, 1.0, B.trim);                              // sill
+    for (const z of [0.37, -0.12, -0.61]) M.box(s * 0.541, 0.33, z, 0.012, 0.25, 0.014, B.black); // door seams
+    for (const z of [0.14, -0.37]) M.box(s * 0.548, 0.44, z, 0.014, 0.025, 0.09, B.chrome);    // handles
+    M.box(s * 0.585, 0.64, 0.36, 0.08, 0.06, 0.11, B.body, 0.015); M.box(s * 0.54, 0.62, 0.36, 0.05, 0.025, 0.04, B.trim); // mirror
+    for (const z of [0.70, -0.70]) M.arc(s * 0.548, 0.21, z, 0.228, 0.262, 0, Math.PI, 9, 0.03, B.black);  // wheel arches
+    M.box(s * 0.33, 0.395, 1.085, 0.22, 0.075, 0.07, B.head, 0.02);                // headlight
+    M.box(s * 0.455, 0.395, 1.0, 0.035, 0.06, 0.12, B.head);                       // headlight wrap
+    M.box(s * 0.36, 0.475, -1.075, 0.25, 0.07, 0.06, B.tail, 0.015);               // taillight
+    M.box(s * 0.505, 0.475, -1.0, 0.035, 0.06, 0.12, B.tail);                      // taillight wrap
+    M.box(s * 0.31, 0.215, 1.135, 0.12, 0.035, 0.02, B.amber);                     // fog / indicator
+  });
+  M.box(0, 0.315, 1.11, 0.44, 0.11, 0.03, B.black, 0.02); M.box(0, 0.315, 1.118, 0.48, 0.13, 0.012, B.chrome, 0.02); // grille + surround
+  M.box(0, 0.215, 1.10, 1.0, 0.1, 0.09, B.trim, 0.03); M.box(0, 0.22, -1.10, 1.0, 0.1, 0.09, B.trim, 0.03);           // bumpers
+  M.box(0, 0.37, -1.108, 0.26, 0.085, 0.012, B.plate); M.box(0, 0.53, -1.07, 0.5, 0.02, 0.02, B.chrome);              // plate + trunk chrome
+  M.box(0.3, 0.17, -1.1, 0.06, 0.05, 0.08, B.chrome);                                                               // exhaust
+  M.box(0, 0.165, 0, 0.98, 0.03, 1.95, B.black);                                                                    // underbody
+}
+function buildVehicleMeshes() {
+  if (!GFX.ok) return;
+  GFX.addMesh('wheel', buildWheelMesh());
+  for (const k in MODELS) { const m = MODELS[k]; if (!m.build) continue; const M = new MeshBuilder(); m.build(M); m.mesh = 'car_' + k; m.tris = M.v.length / 33; GFX.addMesh(m.mesh, M.out()); }
+}
 
 let VEH_ID = 1;
 function makeVehicle(kind, x, z, h, opts) {

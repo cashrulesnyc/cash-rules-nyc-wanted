@@ -1,6 +1,7 @@
 // ============================================================
 //  Minimal WebGL2 voxel renderer (no external libraries)
 // ============================================================
+const MINST = 16; // floats per vehicle-mesh instance
 const M4 = {
   create() { const m = new Float32Array(16); m[0] = m[5] = m[10] = m[15] = 1; return m; },
   mul(o, a, b) {
@@ -179,6 +180,49 @@ const DEPTH_FS = `#version 300 es
 precision mediump float; void main(){}`;
 const SIL_FS = `#version 300 es
 precision mediump float; uniform vec4 uSil; out vec4 o; void main(){ o = uSil; }`;
+// ---------- vehicle meshes ----------
+// Dedicated (non-box) geometry for vehicles: each mesh is a flat-shaded triangle list built once in
+// vehicles.js, drawn instanced (one draw per mesh type). Vertex: pos3 nrm3 col3 mat paint.
+// Instance (MINST = 16 floats): pos3 quat4 scale3 rgb3 flags3 (siren, dim, brake).
+// paint > 0 means "use the instance colour × paint" (body paint, rims); mat as BOX_FS plus
+// 10 siren red · 11 siren blue · 12 headlight · 13 taillight.
+const MESH_VS = `#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec3 aCol; layout(location=3) in vec2 aMat;
+layout(location=4) in vec3 iPos; layout(location=5) in vec4 iRot; layout(location=6) in vec3 iScl; layout(location=7) in vec3 iCol; layout(location=8) in vec3 iFlg;
+uniform mat4 uVP; uniform mat4 uLVP;
+out vec3 vN; out vec3 vCol; out vec3 vW; out vec4 vS; flat out float vMat; flat out vec3 vFlg;
+vec3 qr(vec4 q, vec3 v){ return v + 2.0*cross(q.xyz, cross(q.xyz, v) + q.w*v); }
+void main(){
+  vec3 w = qr(iRot, aPos * iScl) + iPos;
+  vN = qr(iRot, normalize(aNrm / iScl)); vCol = aMat.y > 0.0 ? iCol * aMat.y : aCol; vMat = aMat.x; vFlg = iFlg; vW = w;
+  vS = uLVP * vec4(w, 1.0); gl_Position = uVP * vec4(w, 1.0);
+}`;
+const MESH_FS = `#version 300 es
+precision highp float;
+in vec3 vN; in vec3 vCol; in vec3 vW; in vec4 vS; flat in float vMat; flat in vec3 vFlg; out vec4 o;
+${LIGHT_FS}
+void main(){
+  vec3 n = normalize(vN), base = vCol, emi = vec3(0.0); float m = vMat, spec = 0.0, gloss = 0.18;
+  if (m > 5.5 && m < 6.5) { vec3 v = normalize(uCam - vW); float fr = pow(1.0 - abs(dot(v, n)), 2.0); base = mix(vCol, vec3(0.55, 0.68, 0.82) * (1.0 - 0.8 * uNight), 0.25 + 0.45 * fr); spec = 0.7; }
+  else if (m > 9.5 && m < 10.5) { if (vFlg.x > 0.5 && vFlg.x < 1.5) emi = vec3(1.0, 0.12, 0.1) * 1.4; else base = vec3(0.35, 0.08, 0.08); }
+  else if (m > 10.5 && m < 11.5) { if (vFlg.x > 1.5) emi = vec3(0.15, 0.35, 1.0) * 1.5; else base = vec3(0.08, 0.12, 0.35); }
+  else if (m > 11.5 && m < 12.5) { emi = vec3(1.0, 0.97, 0.88) * (uNight > 0.5 ? 1.1 : 0.25); spec = 0.5; }
+  else if (m > 12.5 && m < 13.5) { emi = vec3(1.0, 0.1, 0.08) * (vFlg.z > 0.5 ? 1.2 : (uNight > 0.5 ? 0.7 : 0.25)); }
+  else if (m > 1.5 && m < 2.5) emi = base * (uNight > 0.5 ? 1.0 : 0.6);
+  else if (m < 0.5) spec = gloss; // painted / lit surfaces get a soft clear-coat highlight
+  if (vFlg.y > 0.0) { base *= vFlg.y; emi = vec3(0.0); spec = 0.0; }
+  float sh = shadowAt(vS), ndl = max(dot(n, uSun), 0.0);
+  vec3 hemi = mix(vec3(0.62, 0.58, 0.54), vec3(1.04, 1.04, 1.08), n.y * 0.5 + 0.5);
+  float ao = 0.72 + 0.28 * smoothstep(0.05, 0.6, vW.y);
+  vec3 c = base * (uAmb * hemi * ao + uSunCol * ndl * sh) + emi;
+  if (spec > 0.0) { vec3 v = normalize(uCam - vW); c += spec * pow(max(dot(reflect(-uSun, n), v), 0.0), 18.0) * sh * (1.0 - 0.7 * uNight); }
+  o = vec4(fogit(c, vW), 1.0);
+}`;
+const MESH_DEPTH_VS = `#version 300 es
+layout(location=0) in vec3 aPos; layout(location=4) in vec3 iPos; layout(location=5) in vec4 iRot; layout(location=6) in vec3 iScl;
+uniform mat4 uVP;
+vec3 qr(vec4 q, vec3 v){ return v + 2.0*cross(q.xyz, cross(q.xyz, v) + q.w*v); }
+void main(){ gl_Position = uVP * vec4(qr(iRot, aPos * iScl) + iPos, 1.0); }`;
 const GROUND_VS = `#version 300 es
 layout(location=0) in vec2 aQ;
 uniform mat4 uVP; uniform mat4 uLVP; uniform vec4 uChunk;
@@ -315,6 +359,7 @@ const GFX = {
     };
     this.pBox = mk(BOX_VS, BOX_FS); this.pDepth = mk(DEPTH_VS, DEPTH_FS); this.pSil = mk(BOX_VS, SIL_FS);
     this.pGround = mk(GROUND_VS, GROUND_FS); this.pBill = mk(BILL_VS, BILL_FS);
+    this.pMesh = mk(MESH_VS, MESH_FS); this.pMeshD = mk(MESH_DEPTH_VS, DEPTH_FS); this.pMeshS = mk(MESH_VS, SIL_FS); this.meshes = {};
     // chamfered cube: 6 faces + 12 edge strips + 8 corner tris (44 tris). Vertex = pos, normal, inset-mask.
     const V = [], I = [];
     const vert = (p, n, inn) => { V.push(p[0], p[1], p[2], n[0], n[1], n[2], inn[0], inn[1], inn[2]); return V.length / 9 - 1; };
@@ -433,6 +478,48 @@ const GFX = {
     this.pl.count = pn;
   },
   // cam: {eye, target, fov, near, far}; light: {dir, center, half}
+  // ---- vehicle meshes ----
+  addMesh(name, verts) {
+    const gl = this.gl, vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+    const mk = () => {
+      const buf = gl.createBuffer(), cap = 64; gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, cap * MINST * 4, gl.DYNAMIC_DRAW);
+      const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+      const A = (loc, n, off) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, 44, off); };
+      A(0, 3, 0); A(1, 3, 12); A(2, 3, 24); A(3, 2, 36);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      const I = (loc, n, off) => { gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, gl.FLOAT, false, MINST * 4, off); gl.vertexAttribDivisor(loc, 1); };
+      I(4, 3, 0); I(5, 4, 12); I(6, 3, 28); I(7, 3, 40); I(8, 3, 52);
+      gl.bindVertexArray(null);
+      return { vao, buf, cap, data: new Float32Array(cap * MINST), n: 0 };
+    };
+    this.meshes[name] = { vb, nv: verts.length / 11, all: mk(), pl: mk() };
+  },
+  meshReset() { for (const k in this.meshes) { this.meshes[k].all.n = 0; this.meshes[k].pl.n = 0; } },
+  // push one instance: pos, quat, scale, colour, flags (siren, dim, brake); player instances also get the silhouette pass
+  meshPush(name, player, x, y, z, q, sx, sy, sz, col, f0, f1, f2) {
+    const M = this.meshes[name]; if (!M) return;
+    const L = player ? M.pl : M.all;
+    if (L.n >= L.cap) { const nd = new Float32Array(L.cap * 2 * MINST); nd.set(L.data); L.data = nd; L.cap *= 2; L.grow = true; }
+    const d = L.data, o = L.n * MINST;
+    d[o] = x; d[o + 1] = y; d[o + 2] = z; d[o + 3] = q[0]; d[o + 4] = q[1]; d[o + 5] = q[2]; d[o + 6] = q[3];
+    d[o + 7] = sx; d[o + 8] = sy; d[o + 9] = sz; d[o + 10] = col[0]; d[o + 11] = col[1]; d[o + 12] = col[2]; d[o + 13] = f0 || 0; d[o + 14] = f1 || 0; d[o + 15] = f2 || 0;
+    L.n++;
+  },
+  meshUpload() {
+    const gl = this.gl;
+    for (const k in this.meshes) for (const L of [this.meshes[k].all, this.meshes[k].pl]) {
+      if (!L.n) continue;
+      gl.bindBuffer(gl.ARRAY_BUFFER, L.buf);
+      if (L.grow) { gl.bufferData(gl.ARRAY_BUFFER, L.cap * MINST * 4, gl.DYNAMIC_DRAW); L.grow = false; }
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, L.data, 0, L.n * MINST);
+    }
+  },
+  meshDraw(which) { // which: 'all' | 'pl' | 'both'
+    const gl = this.gl;
+    for (const k in this.meshes) { const M = this.meshes[k];
+      for (const L of which === 'both' ? [M.all, M.pl] : [M[which]]) { if (!L.n) continue; gl.bindVertexArray(L.vao); gl.drawArraysInstanced(gl.TRIANGLES, 0, M.nv, L.n); this.stat.calls++; this.stat.tris = (this.stat.tris || 0) + M.nv / 3 * L.n; } }
+  },
   render(S) {
     const gl = this.gl, c = this.canvas;
     const asp = c.width / c.height;
@@ -451,7 +538,7 @@ const GFX = {
     M4.mul(this.LVP, this.LP, this.LV);
     const lplanes = M4.planes(this.LVP);
     let SH = false; // shadow pass: plain cube
-    this.stat = this.stat || { inst: 0, calls: 0 }; if (!SH) { this.stat.inst = 0; this.stat.calls = 0; }
+    this.stat = this.stat || { inst: 0, calls: 0 }; if (!SH) { this.stat.inst = 0; this.stat.calls = 0; this.stat.tris = 0; }
     const draw = (o) => { if (!SH) { this.stat.inst += o.count; this.stat.calls++; } gl.bindVertexArray(SH ? o.svao : o.vao); gl.drawElementsInstanced(gl.TRIANGLES, SH ? 36 : this.cubeN, gl.UNSIGNED_SHORT, 0, o.count); };
     const drawPlayer = () => { if (this.pl.count) draw(this.pl); };
     const sliceU = (prog, on) => { if (prog.u.uSliceOn) gl.uniform1f(prog.u.uSliceOn, on); };
@@ -473,6 +560,7 @@ const GFX = {
       gl.clear(gl.DEPTH_BUFFER_BIT); gl.useProgram(this.pDepth.p); gl.uniformMatrix4fv(this.pDepth.u.uVP, false, this.LVP); gl.uniform1f(this.pDepth.u.uBevel, this.bevel);
       gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(2, 4); gl.disable(gl.CULL_FACE);
       SH = true; drawBoxes(this.pDepth, lplanes, true); SH = false;
+      this.meshUpload(); gl.useProgram(this.pMeshD.p); gl.uniformMatrix4fv(this.pMeshD.u.uVP, false, this.LVP); this.meshDraw('both');
       gl.disable(gl.POLYGON_OFFSET_FILL); gl.enable(gl.CULL_FACE);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
@@ -526,8 +614,10 @@ const GFX = {
     }
     gl.enable(gl.CULL_FACE);
     // boxes
+    if (!this.shadowOn) this.meshUpload();
     const pb = this.pBox; gl.useProgram(pb.p); setCommon(pb);
     drawBoxes(pb, planes, false);
+    const pm = this.pMesh; gl.useProgram(pm.p); setCommon(pm); this.meshDraw('all');
     // billboards
     if (S.bills.length) {
       const pl = this.pBill; gl.useProgram(pl.p); gl.uniformMatrix4fv(pl.u.uVP, false, this.VP);
@@ -544,14 +634,16 @@ const GFX = {
       gl.enable(gl.CULL_FACE);
     }
     // player: silhouette where hidden by the world, then the car itself
-    if (S.sil && this.pl.count) {
+    if (S.sil) {
       const ps = this.pSil; gl.useProgram(ps.p); setCommon(ps);
       gl.uniform4fv(ps.u.uSil, S.sil.col);
       gl.depthFunc(gl.GREATER); gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-      drawPlayer();
+      if (this.pl.count) drawPlayer();
+      const pms = this.pMeshS; gl.useProgram(pms.p); gl.uniformMatrix4fv(pms.u.uVP, false, this.VP); gl.uniform4fv(pms.u.uSil, S.sil.col); this.meshDraw('pl');
       gl.depthFunc(gl.LESS); gl.depthMask(true); gl.disable(gl.BLEND);
     }
     if (this.pl.count) { gl.useProgram(pb.p); drawPlayer(); }
+    gl.useProgram(pm.p); this.meshDraw('pl');
     gl.bindVertexArray(null);
   }
 };
