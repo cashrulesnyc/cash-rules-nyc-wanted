@@ -202,10 +202,19 @@ precision highp float;
 in vec3 vN; in vec3 vCol; in vec3 vW; in vec4 vS; flat in float vMat; flat in vec3 vFlg; flat in float vPaint; out vec4 o;
 ${LIGHT_FS}
 // cheap environment: sky above, dark ground below, soft studio light streaks; darker at night
+uniform float uStudio;
 vec3 envRef(vec3 R){
-  vec3 sky = mix(vec3(0.70, 0.80, 0.93), vec3(0.06, 0.08, 0.14), uNight), gnd = mix(vec3(0.16, 0.16, 0.18), vec3(0.02), uNight);
-  vec3 e = mix(gnd, sky, smoothstep(-0.12, 0.4, R.y));
-  e += vec3(1.0, 0.98, 0.95) * smoothstep(0.93, 1.0, sin(R.x * 6.0 + R.z * 2.5) * 0.5 + 0.5) * smoothstep(0.0, 0.5, R.y) * (0.55 - 0.35 * uNight);
+  if (uStudio > 0.5) { // showroom: dark room, big overhead softbox + vertical light strips
+    vec3 e = mix(vec3(0.02, 0.022, 0.026), vec3(0.09, 0.095, 0.11), smoothstep(-0.2, 0.5, R.y));
+    e += vec3(1.0, 0.98, 0.95) * 1.1 * smoothstep(0.72, 0.86, R.y);
+    e += vec3(0.9, 0.95, 1.0) * 0.7 * smoothstep(0.88, 0.97, abs(sin(atan(R.z, R.x) * 2.0))) * smoothstep(-0.05, 0.25, R.y) * (1.0 - smoothstep(0.6, 0.8, R.y));
+    return e;
+  }
+  // street: crisp horizon (the classic car-paint reflection line), sky above, dark ground below
+  vec3 sky = mix(mix(vec3(0.78, 0.86, 0.95), vec3(0.5, 0.66, 0.88), smoothstep(0.05, 0.7, R.y)), vec3(0.06, 0.08, 0.14), uNight);
+  vec3 gnd = mix(vec3(0.2, 0.2, 0.22), vec3(0.02), uNight);
+  vec3 e = mix(gnd, sky, smoothstep(-0.03, 0.06, R.y));
+  e += vec3(1.0, 0.98, 0.95) * smoothstep(0.93, 1.0, sin(R.x * 6.0 + R.z * 2.5) * 0.5 + 0.5) * smoothstep(0.0, 0.5, R.y) * (0.45 - 0.3 * uNight);
   return e;
 }
 void main(){
@@ -230,7 +239,8 @@ void main(){
     c = c * (1.0 - 0.3 * fres) + env * (0.08 + 0.55 * fres) * (0.6 + 0.4 * sh);
     spec = 0.9; shin = 70.0;
   } else if (kind == 2) { // tinted glass: dark, very reflective at grazing angles
-    c = mix(vec3(0.04, 0.055, 0.08) + base * 0.25 * (uAmb + uSunCol * ndl * sh), env, 0.22 + 0.68 * fres);
+    vec3 tint = mix(vec3(0.025, 0.035, 0.05), vec3(0.09, 0.12, 0.16), clamp(n.y * 0.8 + 0.3, 0.0, 1.0)); // darker low, lighter toward the roof
+    c = mix(tint + base * 0.2 * (uAmb + uSunCol * ndl * sh), env, 0.25 + 0.65 * fres);
     spec = 1.1; shin = 90.0;
   } else if (kind == 3) { // chrome / polished metal
     c = env * mix(vec3(0.9), base, 0.35) * (0.7 + 0.3 * sh) + base * 0.08;
@@ -593,7 +603,7 @@ const GFX = {
       gl.uniformMatrix4fv(u.uVP, false, this.VP); if (u.uLVP) gl.uniformMatrix4fv(u.uLVP, false, this.LVP);
       if (u.uSun) gl.uniform3fv(u.uSun, S.sunDir); if (u.uSunCol) gl.uniform3fv(u.uSunCol, S.sunCol); if (u.uAmb) gl.uniform3fv(u.uAmb, S.amb);
       if (u.uFogCol) gl.uniform3fv(u.uFogCol, S.fogCol); if (u.uFog) gl.uniform2f(u.uFog, S.fog[0], S.fog[1]); if (u.uCam) gl.uniform3fv(u.uCam, S.eye);
-      if (u.uNight) gl.uniform1f(u.uNight, this.night); if (u.uShadowOn) gl.uniform1f(u.uShadowOn, this.shadowOn ? 1 : 0); if (u.uTime) gl.uniform1f(u.uTime, S.time);
+      if (u.uNight) gl.uniform1f(u.uNight, this.night); if (u.uShadowOn) gl.uniform1f(u.uShadowOn, this.shadowOn ? 1 : 0); if (u.uTime) gl.uniform1f(u.uTime, S.time); if (u.uStudio) gl.uniform1f(u.uStudio, S.studio ? 1 : 0);
       if (u.uBevel) gl.uniform1f(u.uBevel, this.bevel);
       if (u.uSlice) { const sl = S.slice; gl.uniform4f(u.uSlice, sl ? sl.x : 0, sl ? sl.z : 0, sl ? sl.minH : 0, sl ? 1 : 0); gl.uniform3f(u.uSliceDir, sl ? sl.fx : 0, sl ? sl.fz : 1, sl ? sl.slope : 1); gl.uniform1f(u.uSliceOn, 0); }
       if (u.uShadow) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.shTex); gl.uniform1i(u.uShadow, 1); }

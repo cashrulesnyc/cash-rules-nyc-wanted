@@ -45,7 +45,7 @@ function sedanParts(extra) {
   return extra ? p.concat(extra) : p;
 }
 const MODELS = {
-  sedan: { name: 'STREET SEDAN', parts: sedanParts(), build: (M) => buildSedan(M), wheels: [[0.465, 0.245, 0.72, 0.245, 0.2, 1], [-0.465, 0.245, 0.72, 0.245, 0.2, 1], [0.465, 0.245, -0.72, 0.245, 0.2, 0], [-0.465, 0.245, -0.72, 0.245, 0.2, 0]], rim: hex('#c3c8cf'), len: 2.2, wid: 1.1, maxV: 24, turn: 2.7, grip: 7, hp: 100, mass: 1, price: 0, color: hex('#f2f2f2') },
+  sedan: { name: 'STREET SEDAN', parts: sedanParts(), build: (M) => buildSedan(M), wheels: [[0.462, 0.25, 0.73, 0.25, 0.21, 1], [-0.462, 0.25, 0.73, 0.25, 0.21, 1], [0.462, 0.25, -0.73, 0.25, 0.21, 0], [-0.462, 0.25, -0.73, 0.25, 0.21, 0]], rim: hex('#c3c8cf'), len: 2.2, wid: 1.1, maxV: 24, turn: 2.7, grip: 7, hp: 100, mass: 1, price: 0, color: hex('#f2f2f2') },
   taxi: { name: 'YELLOW CAB', parts: sedanParts([[0, 0.98, -0.18, 0.5, 0.14, 0.22, VC.white, 2], [0, 0.93, -0.18, 0.56, 0.03, 0.26, VC.dark, 0],
     [0.545, 0.4, 0, 0.02, 0.07, 1.7, VC.black, 0], [-0.545, 0.4, 0, 0.02, 0.07, 1.7, VC.black, 0]]), len: 2.2, wid: 1.1, maxV: 25.5, turn: 2.85, grip: 7.5, hp: 100, mass: 1, price: 1500, color: VC.yellow },
   ev: {
@@ -231,72 +231,77 @@ const CS = {
   body: { c: [1, 1, 1], p: 1 }, bodyDk: { c: [1, 1, 1], p: 0.7 }, glass: { c: hex('#1c2838'), m: 6 }, trim: { c: hex('#1d1f24') }, black: { c: hex('#121316') },
   chrome: { c: hex('#d4d8dd'), m: 14 }, gold: { c: hex('#e8b923'), m: 14 }, gloss: { c: hex('#0f1012'), m: 6 }, rev: { c: hex('#e9ecef'), m: 2 }, head: { c: hex('#fff7d6'), m: 12 }, tail: { c: hex('#ff2a2a'), m: 13 }, plate: { c: hex('#f2f2ea') }, amber: { c: hex('#ffb020'), m: 2 },
 };
-const SEDAN_WHEEL = { x: 0.465, r: 0.245, w: 0.2, z: 0.72 };
-// ---- STREET SEDAN (quality benchmark) ----
-// Three-box NYC sedan: long hood, cabin set back, flat separate trunk deck, low roof. Front at +z.
+const SEDAN_WHEEL = { x: 0.462, r: 0.25, w: 0.21, z: 0.73 };
+// ---- STREET SEDAN (quality benchmark, frozen reference for the fleet once approved) ----
+// Three-box NYC sedan: long hood, long low cabin with a broad C-pillar, flat separate trunk deck. Front at +z.
 function buildSedan(M) {
   const B = CS, W = SEDAN_WHEEL;
-  // lower body: rear bumper → trunk deck → cabin base → long hood → nose
+  // lower body: beltline at 0.62 so there's real body above the wheel arches
   M.loft([
-    sec(-1.12, 0.18, 0.40, 0.50, 0.48, 0.51, 0.46, 0.05),
-    sec(-1.07, 0.16, 0.45, 0.575, 0.515, 0.548, 0.50),
-    sec(-0.56, 0.15, 0.46, 0.585, 0.52, 0.556, 0.505),
-    sec(0.32, 0.15, 0.46, 0.585, 0.52, 0.556, 0.505),
-    sec(0.80, 0.15, 0.45, 0.545, 0.52, 0.552, 0.50),
-    sec(1.06, 0.17, 0.41, 0.475, 0.50, 0.53, 0.465),
-    sec(1.12, 0.20, 0.37, 0.43, 0.46, 0.49, 0.42, 0.05),
+    sec(-1.12, 0.20, 0.42, 0.54, 0.48, 0.51, 0.46, 0.05),     // rear bumper face
+    sec(-1.07, 0.18, 0.48, 0.61, 0.515, 0.548, 0.50),         // trunk lid edge
+    sec(-0.64, 0.17, 0.49, 0.62, 0.52, 0.556, 0.505),         // trunk deck / rear glass base
+    sec(0.40, 0.17, 0.49, 0.62, 0.52, 0.556, 0.505),          // cowl
+    sec(0.80, 0.17, 0.48, 0.585, 0.52, 0.552, 0.50),          // hood
+    sec(1.06, 0.19, 0.44, 0.51, 0.50, 0.53, 0.465),
+    sec(1.12, 0.22, 0.40, 0.465, 0.46, 0.49, 0.42, 0.05),     // nose
   ], B.body);
-  // glasshouse: steep-ish rear glass → low roof → raked windshield
-  M.loft([gsec(-0.58, 0.585, 0.59, 0.495, 0.48), gsec(-0.30, 0.585, 0.875, 0.495, 0.395), gsec(-0.01, 0.585, 0.88, 0.495, 0.395), gsec(0.34, 0.585, 0.59, 0.495, 0.48)], B.glass);
-  M.box(0, 0.893, -0.155, 0.83, 0.03, 0.34, B.body, 0.015);                              // roof skin
-  M.box(0, 0.6, -1.045, 0.93, 0.022, 0.07, B.body, 0.008);                                // trunk lip
+  // glasshouse: long flat roof, fairly upright windshield and rear glass (sedan, not coupe)
+  M.loft([gsec(-0.64, 0.62, 0.625, 0.495, 0.48), gsec(-0.42, 0.62, 0.915, 0.495, 0.39), gsec(0.12, 0.62, 0.92, 0.495, 0.39), gsec(0.40, 0.62, 0.625, 0.495, 0.48)], B.glass);
+  M.box(0, 0.931, -0.15, 0.81, 0.028, 0.56, B.body, 0.014);                                   // roof skin
+  M.box(0, 0.632, -1.045, 0.93, 0.022, 0.07, B.body, 0.008);                                  // trunk lip
+  M.box(0, 0.623, -0.665, 0.9, 0.008, 0.014, B.black);                                        // trunk shut line
+  M.beam([0, 0.627, 0.42], [0, 0.592, 0.95], 0.34, 0.016, B.body);                             // hood centre bulge
   M.mirrorX(s => {
-    // pillars: body-colour A and wide C, gloss-black B
-    M.beam([s * 0.478, 0.595, 0.34], [s * 0.392, 0.885, -0.01], 0.05, 0.065, B.body);
-    M.beam([s * 0.492, 0.595, -0.135], [s * 0.405, 0.885, -0.135], 0.05, 0.08, B.gloss);
-    M.beam([s * 0.478, 0.595, -0.58], [s * 0.392, 0.885, -0.30], 0.05, 0.13, B.body);
-    M.beam([s * 0.502, 0.592, -0.56], [s * 0.502, 0.592, 0.31], 0.014, 0.018, B.chrome); // window belt chrome
-    // side: rocker, crease, door shut lines, handles with recess
-    M.box(s * 0.535, 0.19, -0.12, 0.04, 0.075, 1.05, B.trim, 0.01);
-    M.box(s * 0.557, 0.455, 0, 0.008, 0.012, 1.9, B.bodyDk);                               // shoulder crease
-    for (const z of [0.30, -0.13]) M.box(s * 0.553, 0.385, z, 0.012, 0.37, 0.018, B.black); // door fronts/rear
-    M.box(s * 0.548, 0.36, -0.545, 0.012, 0.33, 0.018, B.black);                            // rear door rear edge
-    M.box(s * 0.545, 0.205, -0.12, 0.012, 0.016, 0.85, B.black);                            // door bottoms
-    for (const z of [0.12, -0.36]) { M.box(s * 0.553, 0.49, z, 0.012, 0.04, 0.13, B.black); M.box(s * 0.562, 0.49, z, 0.012, 0.026, 0.11, B.chrome); }
-    // mirror: body shell on black stalk, amber repeater
-    M.box(s * 0.55, 0.615, 0.27, 0.06, 0.03, 0.06, B.trim);
-    M.box(s * 0.605, 0.64, 0.27, 0.1, 0.075, 0.14, B.body, 0.02); M.box(s * 0.606, 0.615, 0.33, 0.09, 0.012, 0.02, B.amber);
-    // wheel arches: body-colour flare lip + black liner
-    for (const z of [W.z, -W.z]) { M.arc(s * 0.557, W.r, z, W.r + 0.035, W.r + 0.075, -0.15, Math.PI + 0.15, 11, 0.035, B.body); M.arc(s * 0.551, W.r, z, W.r + 0.005, W.r + 0.04, -0.1, Math.PI + 0.1, 11, 0.03, B.black); }
-    // headlights: black housing, lens, LED daytime strip, side wrap
-    M.box(s * 0.32, 0.405, 1.09, 0.27, 0.095, 0.07, B.black, 0.02);
-    M.box(s * 0.325, 0.41, 1.112, 0.22, 0.06, 0.02, B.head, 0.015);
-    M.box(s * 0.32, 0.372, 1.118, 0.24, 0.012, 0.014, B.head);
-    M.box(s * 0.458, 0.405, 1.02, 0.04, 0.075, 0.14, B.head);
-    // bumper details: fog lights in black pods, amber corner markers
-    M.box(s * 0.37, 0.205, 1.148, 0.13, 0.05, 0.02, B.black); M.box(s * 0.37, 0.205, 1.156, 0.09, 0.03, 0.01, B.head);
-    M.box(s * 0.485, 0.27, 1.085, 0.04, 0.03, 0.06, B.amber);
-    // taillights: wide red bar with inner reverse lamp, wrap onto the quarter
-    M.box(s * 0.35, 0.475, -1.11, 0.31, 0.11, 0.05, B.black, 0.02);                      // smoked housing
-    M.box(s * 0.35, 0.478, -1.128, 0.27, 0.07, 0.02, B.tail, 0.015);
-    M.box(s * 0.35, 0.448, -1.137, 0.27, 0.012, 0.01, B.tail);                            // lower LED line
-    M.box(s * 0.23, 0.478, -1.14, 0.045, 0.045, 0.012, B.rev);
-    M.box(s * 0.502, 0.478, -1.02, 0.04, 0.075, 0.17, B.black); M.box(s * 0.512, 0.478, -1.02, 0.03, 0.05, 0.14, B.tail);
-    M.box(s * 0.3, 0.165, -1.135, 0.08, 0.05, 0.05, B.chrome);                              // dual exhaust
+    M.beam([s * 0.482, 0.63, 0.395], [s * 0.396, 0.905, 0.125], 0.04, 0.045, B.body);           // A-pillar
+    M.beam([s * 0.49, 0.63, -0.16], [s * 0.402, 0.91, -0.16], 0.04, 0.085, B.gloss);            // B-pillar (gloss black)
+    const sail = (o) => [[s * (0.49 + o), 0.625, -0.64], [s * (0.392 + o), 0.915, -0.42], [s * (0.39 + o), 0.917, -0.30], [s * (0.495 + o), 0.622, -0.47]];
+    { const a = sail(0.002), b = sail(0.016); M.hexa([a[0], a[1], a[2], a[3], b[0], b[1], b[2], b[3]], B.body); }   // broad C-pillar sail
+    M.beam([s * 0.503, 0.626, -0.62], [s * 0.503, 0.626, 0.39], 0.014, 0.018, B.chrome);      // window belt chrome
+    M.box(s * 0.535, 0.21, 0, 0.04, 0.075, 0.76, B.trim, 0.01);                               // rocker
+    M.box(s * 0.557, 0.5, -0.02, 0.008, 0.012, 1.86, B.bodyDk);                               // shoulder crease
+    // door shut lines (two doors per side) + door bottoms
+    for (const z of [0.37, -0.16, -0.44]) M.box(s * 0.553, 0.41, z, 0.014, 0.4, 0.022, B.black);
+    M.box(s * 0.546, 0.23, -0.03, 0.014, 0.02, 0.8, B.black);
+    for (const z of [0.15, -0.31]) { M.box(s * 0.55, 0.53, z, 0.016, 0.05, 0.15, B.black, 0.01); M.box(s * 0.561, 0.53, z, 0.014, 0.024, 0.12, B.chrome, 0.006); }
+    // mirror: tapered wedge shell on a black base, mirror glass, amber repeater
+    M.box(s * 0.545, 0.645, 0.33, 0.05, 0.03, 0.08, B.trim);
+    M.hexa([[s * 0.56, 0.635, 0.26], [s * 0.56, 0.72, 0.26], [s * 0.56, 0.72, 0.4], [s * 0.56, 0.635, 0.4], [s * 0.665, 0.65, 0.275], [s * 0.665, 0.71, 0.275], [s * 0.665, 0.71, 0.37], [s * 0.665, 0.65, 0.37]], B.body);
+    M.box(s * 0.612, 0.677, 0.266, 0.09, 0.055, 0.008, B.chrome);
+    M.box(s * 0.62, 0.643, 0.33, 0.09, 0.01, 0.07, B.amber);
+    // dark wheel wells behind the tyre + tight flush body lips
+    for (const z of [W.z, -W.z]) {
+      M.arc(s * 0.546, W.r, z, 0.0, W.r + 0.04, 0, Math.PI, 10, 0.02, B.black);
+      M.arc(s * 0.556, W.r, z, W.r + 0.03, W.r + 0.062, 0.05, Math.PI - 0.05, 12, 0.03, B.body);
+    }
+    // headlights on the front face: swept black housing, bright lens (outer corner higher), projector eye, fender wrap
+    M.hexa([[s * 0.225, 0.385, 1.136], [s * 0.225, 0.46, 1.134], [s * 0.455, 0.478, 1.128], [s * 0.455, 0.395, 1.13], [s * 0.225, 0.385, 1.1], [s * 0.225, 0.46, 1.1], [s * 0.455, 0.478, 1.1], [s * 0.455, 0.395, 1.1]], B.black);
+    M.hexa([[s * 0.24, 0.397, 1.146], [s * 0.24, 0.45, 1.144], [s * 0.44, 0.466, 1.139], [s * 0.44, 0.407, 1.141], [s * 0.24, 0.397, 1.12], [s * 0.24, 0.45, 1.12], [s * 0.44, 0.466, 1.12], [s * 0.44, 0.407, 1.12]], B.head);
+    M.box(s * 0.3, 0.424, 1.15, 0.055, 0.038, 0.012, B.black, 0.008);
+    M.box(s * 0.505, 0.44, 1.04, 0.04, 0.06, 0.13, B.head);
+    M.box(s * 0.39, 0.235, 1.158, 0.15, 0.065, 0.02, B.black, 0.012); M.box(s * 0.39, 0.235, 1.166, 0.08, 0.03, 0.01, B.head);
+    M.box(s * 0.49, 0.305, 1.09, 0.04, 0.03, 0.06, B.amber);
+    // taillights
+    M.box(s * 0.35, 0.515, -1.11, 0.31, 0.11, 0.05, B.black, 0.02);
+    M.box(s * 0.35, 0.518, -1.128, 0.27, 0.07, 0.02, B.tail, 0.015);
+    M.box(s * 0.35, 0.488, -1.137, 0.27, 0.012, 0.01, B.tail);
+    M.box(s * 0.23, 0.518, -1.14, 0.045, 0.045, 0.012, B.rev);
+    M.box(s * 0.502, 0.518, -1.02, 0.04, 0.075, 0.17, B.black); M.box(s * 0.512, 0.518, -1.02, 0.03, 0.05, 0.14, B.tail);
+    M.box(s * 0.3, 0.18, -1.135, 0.08, 0.05, 0.05, B.chrome);
   });
-  // front fascia: chrome-framed grille with slats + badge, body-colour bumper with black intake
-  M.box(0, 0.33, 1.112, 0.54, 0.15, 0.035, B.chrome, 0.03);
-  M.box(0, 0.33, 1.124, 0.48, 0.11, 0.02, B.black, 0.02);
-  for (const y of [0.30, 0.33, 0.36]) M.box(0, y, 1.136, 0.46, 0.011, 0.012, B.chrome);
-  M.box(0, 0.33, 1.145, 0.075, 0.05, 0.012, B.gold, 0.01);
-  M.box(0, 0.225, 1.11, 1.03, 0.12, 0.085, B.body, 0.035);
-  M.box(0, 0.19, 1.155, 0.52, 0.045, 0.02, B.black, 0.01); M.box(0, 0.165, 1.13, 0.9, 0.02, 0.05, B.trim);
-  // rear: chrome strip, recessed plate, body bumper + black diffuser
-  M.box(0, 0.475, -1.128, 0.36, 0.022, 0.012, B.chrome);
-  M.box(0, 0.36, -1.128, 0.3, 0.11, 0.012, B.black); M.box(0, 0.36, -1.136, 0.26, 0.085, 0.01, B.plate);
-  M.box(0, 0.235, -1.11, 1.03, 0.12, 0.085, B.body, 0.035);
-  M.box(0, 0.175, -1.145, 0.68, 0.045, 0.03, B.trim, 0.01);
-  M.box(0, 0.165, 0, 0.98, 0.03, 1.95, B.black);                                           // underbody
+  const trap = (z, wt, wb, yt, yb) => ({ z, pts: [[wt, yt], [-wt, yt], [-wb, yb], [wb, yb]] });
+  M.loft([trap(1.098, 0.255, 0.205, 0.44, 0.295), trap(1.134, 0.255, 0.205, 0.44, 0.295)], B.chrome);
+  M.loft([trap(1.12, 0.228, 0.183, 0.425, 0.31), trap(1.142, 0.228, 0.183, 0.425, 0.31)], B.black);
+  for (const [y, w] of [[0.33, 0.38], [0.355, 0.395], [0.38, 0.41], [0.405, 0.425]]) M.box(0, y, 1.146, w, 0.01, 0.012, B.chrome);
+  M.box(0, 0.368, 1.154, 0.075, 0.05, 0.012, B.gold, 0.01);
+  M.box(0, 0.255, 1.115, 1.04, 0.13, 0.09, B.body, 0.035);
+  M.box(0, 0.22, 1.162, 0.46, 0.045, 0.02, B.black, 0.01);
+  M.box(0, 0.185, 1.14, 0.9, 0.012, 0.05, B.chrome);
+  M.box(0, 0.515, -1.128, 0.36, 0.022, 0.012, B.chrome);
+  M.box(0, 0.39, -1.128, 0.3, 0.11, 0.012, B.black); M.box(0, 0.39, -1.136, 0.26, 0.085, 0.01, B.plate);
+  M.box(0, 0.265, -1.11, 1.03, 0.12, 0.085, B.body, 0.035);
+  M.box(0, 0.2, -1.145, 0.68, 0.045, 0.03, B.trim, 0.01);
+  M.box(0, 0.185, 0, 0.98, 0.03, 1.95, B.black);
 }
 function buildVehicleMeshes() {
   if (!GFX.ok) return;

@@ -932,7 +932,7 @@ function renderGarage3D(t, dt) {
     eye, target: [tx, ty, tz], fov: fov * Math.PI / 180, near: 0.5, far: 260,
     sunDir: L.sun, sunCol: L.sunCol, amb: L.amb, fogCol: SAVE.gar === 3 ? L.fog : GFX.night ? [0.03, 0.035, 0.05] : [0.1, 0.11, 0.13], waterCol: [0.08, 0.08, 0.1],
     fog: [90, 250], time: t, shadowCenter: [GX + GAR.camX, 0, tz], shadowHalf: 14,
-    chunks: [], statics: [], bills, billTex: BILL_TEX, sil: null, slice: null,
+    chunks: [], statics: [], bills, billTex: BILL_TEX, sil: null, slice: null, studio: true,
   });
 }
 function garageScene(t) {
@@ -986,9 +986,12 @@ function garageScene(t) {
     if (sel) disc(2.6, 0.012, 0.01, lv === 3 ? H('#fffaf0') : ring.map(c => c * 0.22), 2);        // light pool
     disc(1.85, 0.1, 0.2, plinth, lv === 3 ? 6 : 0);                                              // plinth
     for (let k = 0; k < 30; k++) { const a = k / 30 * Math.PI * 2; B(x + Math.cos(a) * 1.86, 0.2, Math.sin(a) * 1.86, 0.4, 0.035, 0.06, H('#d4d8dd'), 6, -a + Math.PI / 2); } // chrome edge
-    disc(1.7, 0.215, 0.03, H('#121417'), 6, rot);                                                // glossy turntable top
+    const top = [H('#2a2c31'), H('#5b5f66'), H('#121417'), H('#e9e6df')][lv];
+    disc(1.7, 0.215, 0.03, top, 6, rot);                                                         // glossy turntable top
+    // soft contact shadow under the car: three stacked rounded pads, darkest in the middle
+    [[1.34, 2.6, 0.62], [1.2, 2.38, 0.42], [1.04, 2.1, 0.24]].forEach(([w, l, k], n) => B(x, 0.233 + n * 0.002, 0, w, 0.004, l, top.map(c => c * k), 3, Math.PI - (sel ? 2.4 + rot : 2.25)));
     for (let k = 0; k < 36; k++) { const a = k / 36 * Math.PI * 2 + rot; B(x + Math.cos(a) * 1.55, 0.235, Math.sin(a) * 1.55, 0.2, 0.012, 0.05, ring, 2, -a + Math.PI / 2); } // LED ring
-    v.x = GX + x; v.z = GZ; v.y = 0.3 + (sel ? Math.sin(t * 1.6) * 0.03 : 0);
+    v.x = GX + x; v.z = GZ; v.y = 0.24; // sits on the turntable
     v.h = sel ? 2.4 + rot : 2.25; v.roll = 0; v.pitch = 0; v.vx = v.vz = 0;
     pushVehicle(v, t);
   });
