@@ -920,16 +920,18 @@ function renderGarage3D(t, dt) {
   const cv = GFX.canvas, asp = cv.clientWidth / Math.max(1, cv.clientHeight), portrait = asp < 1;
   GAR.camX += (GAR.idx * GSP - GAR.camX) * Math.min(1, dt * 6); GAR.spin += dt;
   const fov = portrait ? Math.min(70, 2 * Math.atan(Math.tan(19 * Math.PI / 180) / asp) * 180 / Math.PI) : 40;
-  const tx = GX + GAR.camX + (portrait ? 0 : 3.4), tz = GZ, ty = portrait ? -0.35 : 0.7; // landscape: car sits left of the side panel
-  const eye = portrait ? [tx + 1.3, 3.5, tz + 8.6] : [tx + 1.8, 3.4, tz + 9.0];
-  const L = GFX.night ? LIGHT.night : LIGHT.day;
+  // showroom framing: closer three-quarter view, slightly low, so the silhouette and wheels read
+  const tx = GX + GAR.camX + (portrait ? 0.15 : 2.4), tz = GZ, ty = portrait ? -0.45 : 0.5; // landscape: car sits left of the side panel
+  const eye = portrait ? [tx + 2.4, 2.15, tz + 5.7] : [tx + 2.4, 2.4, tz + 6.5];
+  // studio key light from the camera side (warm), cooler fill; night keeps the garage moody
+  const N = GFX.night, L = { sun: norm3([0.42, 0.8, 0.6]), sunCol: N ? [0.42, 0.42, 0.5] : [0.82, 0.78, 0.72], amb: N ? [0.32, 0.34, 0.44] : [0.5, 0.53, 0.6], fog: (GFX.night ? LIGHT.night : LIGHT.day).fog };
   buildDynamic(t); GFX.setDyn(DYN.data, DYN.n, 0);
   const bills = [];
   if (SAVE.gar === 2) bills.push([tx - (tx - GX) + 9.2, 5.2, GZ - 5.35, 7.5, 3.6, 0, 1, 0], [GX - 2.5, 4.6, GZ - 5.35, 5, 2.4, 0, 1, 4], [GX + 20.9, 4.6, GZ - 5.35, 5, 2.4, 0, 1, 6]);
   GFX.render({
     eye, target: [tx, ty, tz], fov: fov * Math.PI / 180, near: 0.5, far: 260,
     sunDir: L.sun, sunCol: L.sunCol, amb: L.amb, fogCol: SAVE.gar === 3 ? L.fog : GFX.night ? [0.03, 0.035, 0.05] : [0.1, 0.11, 0.13], waterCol: [0.08, 0.08, 0.1],
-    fog: [90, 250], time: t, shadowCenter: [tx, 0, tz], shadowHalf: 22,
+    fog: [90, 250], time: t, shadowCenter: [GX + GAR.camX, 0, tz], shadowHalf: 14,
     chunks: [], statics: [], bills, billTex: BILL_TEX, sil: null, slice: null,
   });
 }
@@ -975,20 +977,20 @@ function garageScene(t) {
     for (const x of [-6, W + 6]) { B(x, 0.4, -3.5, 0.9, 0.8, 0.9, H('#e8b923'), 6); B(x, 1.35, -3.5, 1.2, 1.2, 1.2, H('#3f9e45')); }
     B(cx, 0.03, 6.5, W + 6, 0.02, 0.3, H('#e8b923'), 6);
   }
-  // pedestals + floating cars
-  const ped = [[H('#1b1c20'), H('#f2b01e')], [H('#8f9aa6'), H('#ff9f1a')], [H('#121417'), H('#1fd65f')], [H('#f4f1e8'), H('#e8b923')]][lv];
+  // pedestals: glossy turntable with chrome edge and LED ring (rotates with the car), light pool on the floor; cars hover just above
+  const led = [H('#f2b01e'), H('#ff9f1a'), H('#1fd65f'), H('#e8b923')][lv], plinth = [H('#1b1c20'), H('#2b2d33'), H('#0c0d0f'), H('#f4f1e8')][lv];
   GAR.cars.forEach((v, i) => {
-    const x = i * GSP, sel = i === GAR.idx, owned = SAVE.owned.includes(v.kind);
-    // round platform from pie slices (radial boxes centre -> rim)
-    const disc = (R, y, h, col, m) => { const N = 28, cw = 2 * R * Math.sin(Math.PI / N) + 0.04; for (let k = 0; k < N; k++) { const a = (k + 0.5) / N * Math.PI * 2; B(x + Math.cos(a) * R / 2, y, Math.sin(a) * R / 2, R, h, cw, col, m, -a); } };
-    disc(1.7, 0.12, 0.24, ped[0], lv >= 2 ? 6 : 0);
-    disc(1.25, 0.26, 0.04, ped[0].map(c => c * 0.78), lv >= 2 ? 6 : 0);
-    for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2; B(x + Math.cos(a) * 1.62, 0.22, Math.sin(a) * 1.62, 0.44, 0.08, 0.12, owned ? ped[1] : H('#7a2a2a'), 2, -a + Math.PI / 2); } // light ring
-    if (sel) for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2 + t * 0.8; B(x + Math.cos(a) * 2.05, 0.03, Math.sin(a) * 2.05, 0.35, 0.02, 0.16, owned ? ped[1] : H('#7a2a2a'), 2, -a + Math.PI / 2); }
-    v.x = GX + x; v.z = GZ; v.y = 0.75 + Math.sin(t * 1.8 + i) * 0.1;
-    v.h = sel ? 2.5 + GAR.spin * 0.6 : 2.35; v.roll = 0; v.pitch = 0;
+    const x = i * GSP, sel = i === GAR.idx, owned = SAVE.owned.includes(v.kind), ring = owned ? led : H('#7a2a2a');
+    const rot = sel ? GAR.spin * 0.45 : 0;
+    const disc = (R, y, h, col, m, off) => { const N = 30, cw = 2 * R * Math.sin(Math.PI / N) + 0.04; for (let k = 0; k < N; k++) { const a = (k + 0.5) / N * Math.PI * 2 + (off || 0); B(x + Math.cos(a) * R / 2, y, Math.sin(a) * R / 2, R, h, cw, col, m, -a); } };
+    if (sel) disc(2.6, 0.012, 0.01, lv === 3 ? H('#fffaf0') : ring.map(c => c * 0.22), 2);        // light pool
+    disc(1.85, 0.1, 0.2, plinth, lv === 3 ? 6 : 0);                                              // plinth
+    for (let k = 0; k < 30; k++) { const a = k / 30 * Math.PI * 2; B(x + Math.cos(a) * 1.86, 0.2, Math.sin(a) * 1.86, 0.4, 0.035, 0.06, H('#d4d8dd'), 6, -a + Math.PI / 2); } // chrome edge
+    disc(1.7, 0.215, 0.03, H('#121417'), 6, rot);                                                // glossy turntable top
+    for (let k = 0; k < 36; k++) { const a = k / 36 * Math.PI * 2 + rot; B(x + Math.cos(a) * 1.55, 0.235, Math.sin(a) * 1.55, 0.2, 0.012, 0.05, ring, 2, -a + Math.PI / 2); } // LED ring
+    v.x = GX + x; v.z = GZ; v.y = 0.3 + (sel ? Math.sin(t * 1.6) * 0.03 : 0);
+    v.h = sel ? 2.4 + rot : 2.25; v.roll = 0; v.pitch = 0; v.vx = v.vz = 0;
     pushVehicle(v, t);
-    // glow under the car
   });
 }
 

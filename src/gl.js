@@ -190,32 +190,53 @@ const MESH_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec3 aCol; layout(location=3) in vec2 aMat;
 layout(location=4) in vec3 iPos; layout(location=5) in vec4 iRot; layout(location=6) in vec3 iScl; layout(location=7) in vec3 iCol; layout(location=8) in vec3 iFlg;
 uniform mat4 uVP; uniform mat4 uLVP;
-out vec3 vN; out vec3 vCol; out vec3 vW; out vec4 vS; flat out float vMat; flat out vec3 vFlg;
+out vec3 vN; out vec3 vCol; out vec3 vW; out vec4 vS; flat out float vMat; flat out vec3 vFlg; flat out float vPaint;
 vec3 qr(vec4 q, vec3 v){ return v + 2.0*cross(q.xyz, cross(q.xyz, v) + q.w*v); }
 void main(){
   vec3 w = qr(iRot, aPos * iScl) + iPos;
-  vN = qr(iRot, normalize(aNrm / iScl)); vCol = aMat.y > 0.0 ? iCol * aMat.y : aCol; vMat = aMat.x; vFlg = iFlg; vW = w;
+  vN = qr(iRot, normalize(aNrm / iScl)); vCol = aMat.y > 0.0 ? iCol * aMat.y : aCol; vMat = aMat.x; vFlg = iFlg; vW = w; vPaint = aMat.y;
   vS = uLVP * vec4(w, 1.0); gl_Position = uVP * vec4(w, 1.0);
 }`;
 const MESH_FS = `#version 300 es
 precision highp float;
-in vec3 vN; in vec3 vCol; in vec3 vW; in vec4 vS; flat in float vMat; flat in vec3 vFlg; out vec4 o;
+in vec3 vN; in vec3 vCol; in vec3 vW; in vec4 vS; flat in float vMat; flat in vec3 vFlg; flat in float vPaint; out vec4 o;
 ${LIGHT_FS}
+// cheap environment: sky above, dark ground below, soft studio light streaks; darker at night
+vec3 envRef(vec3 R){
+  vec3 sky = mix(vec3(0.70, 0.80, 0.93), vec3(0.06, 0.08, 0.14), uNight), gnd = mix(vec3(0.16, 0.16, 0.18), vec3(0.02), uNight);
+  vec3 e = mix(gnd, sky, smoothstep(-0.12, 0.4, R.y));
+  e += vec3(1.0, 0.98, 0.95) * smoothstep(0.93, 1.0, sin(R.x * 6.0 + R.z * 2.5) * 0.5 + 0.5) * smoothstep(0.0, 0.5, R.y) * (0.55 - 0.35 * uNight);
+  return e;
+}
 void main(){
-  vec3 n = normalize(vN), base = vCol, emi = vec3(0.0); float m = vMat, spec = 0.0, gloss = 0.18;
-  if (m > 5.5 && m < 6.5) { vec3 v = normalize(uCam - vW); float fr = pow(1.0 - abs(dot(v, n)), 2.0); base = mix(vCol, vec3(0.55, 0.68, 0.82) * (1.0 - 0.8 * uNight), 0.25 + 0.45 * fr); spec = 0.7; }
+  vec3 n = normalize(vN), base = vCol, emi = vec3(0.0); float m = vMat, spec = 0.0, shin = 18.0;
+  vec3 V = normalize(uCam - vW), R = reflect(-V, n); float fres = pow(1.0 - max(dot(V, n), 0.0), 3.0);
+  int kind = 0; // 1 paint, 2 glass, 3 chrome
+  if (m > 5.5 && m < 6.5) kind = 2;
+  else if (m > 13.5 && m < 14.5) kind = 3;
   else if (m > 9.5 && m < 10.5) { if (vFlg.x > 0.5 && vFlg.x < 1.5) emi = vec3(1.0, 0.12, 0.1) * 1.4; else base = vec3(0.35, 0.08, 0.08); }
   else if (m > 10.5 && m < 11.5) { if (vFlg.x > 1.5) emi = vec3(0.15, 0.35, 1.0) * 1.5; else base = vec3(0.08, 0.12, 0.35); }
-  else if (m > 11.5 && m < 12.5) { emi = vec3(1.0, 0.97, 0.88) * (uNight > 0.5 ? 1.1 : 0.25); spec = 0.5; }
-  else if (m > 12.5 && m < 13.5) { emi = vec3(1.0, 0.1, 0.08) * (vFlg.z > 0.5 ? 1.2 : (uNight > 0.5 ? 0.7 : 0.25)); }
+  else if (m > 11.5 && m < 12.5) { emi = vec3(1.0, 0.97, 0.9) * (uNight > 0.5 ? 1.15 : 0.35); spec = 0.6; shin = 40.0; }
+  else if (m > 12.5 && m < 13.5) { emi = vec3(1.0, 0.12, 0.08) * (vFlg.z > 0.5 ? 1.3 : (uNight > 0.5 ? 0.8 : 0.5)); spec = 0.4; shin = 40.0; }
   else if (m > 1.5 && m < 2.5) emi = base * (uNight > 0.5 ? 1.0 : 0.6);
-  else if (m < 0.5) spec = gloss; // painted / lit surfaces get a soft clear-coat highlight
-  if (vFlg.y > 0.0) { base *= vFlg.y; emi = vec3(0.0); spec = 0.0; }
+  else if (vPaint > 0.0) kind = 1;
+  if (vFlg.y > 0.0) { base *= vFlg.y; emi = vec3(0.0); kind = 0; }
   float sh = shadowAt(vS), ndl = max(dot(n, uSun), 0.0);
   vec3 hemi = mix(vec3(0.62, 0.58, 0.54), vec3(1.04, 1.04, 1.08), n.y * 0.5 + 0.5);
   float ao = 0.72 + 0.28 * smoothstep(0.05, 0.6, vW.y);
+  vec3 env = envRef(R);
   vec3 c = base * (uAmb * hemi * ao + uSunCol * ndl * sh) + emi;
-  if (spec > 0.0) { vec3 v = normalize(uCam - vW); c += spec * pow(max(dot(reflect(-uSun, n), v), 0.0), 18.0) * sh * (1.0 - 0.7 * uNight); }
+  if (kind == 1) { // clear-coat paint: keep the colour, add a glossy reflection that grows at glancing angles
+    c = c * (1.0 - 0.3 * fres) + env * (0.08 + 0.55 * fres) * (0.6 + 0.4 * sh);
+    spec = 0.9; shin = 70.0;
+  } else if (kind == 2) { // tinted glass: dark, very reflective at grazing angles
+    c = mix(vec3(0.04, 0.055, 0.08) + base * 0.25 * (uAmb + uSunCol * ndl * sh), env, 0.22 + 0.68 * fres);
+    spec = 1.1; shin = 90.0;
+  } else if (kind == 3) { // chrome / polished metal
+    c = env * mix(vec3(0.9), base, 0.35) * (0.7 + 0.3 * sh) + base * 0.08;
+    spec = 1.2; shin = 60.0;
+  }
+  if (spec > 0.0) c += spec * pow(max(dot(R, uSun), 0.0), shin) * sh * uSunCol * 1.6 * (1.0 - 0.7 * uNight);
   o = vec4(fogit(c, vW), 1.0);
 }`;
 const MESH_DEPTH_VS = `#version 300 es
