@@ -199,7 +199,10 @@ const SNUG = P(40.6437, -74.1027);
 const SNUG_RECT = [[SNUG[0] - 24, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] + 22], [SNUG[0] - 24, SNUG[1] + 22]];
 // Howland Hook container terminal: quay along the shore (s along the quay, t inland)
 const HH = (() => { const F = mkFrame(P(40.6430, -74.1850), P(40.6362, -74.1957)); return F; })();
-const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(SM, 48, 2.4, 132, 62)], [1, SNUG_RECT], [3, fRect(HH, -4, 2, 64, -31)]];  // land is on the -e side of this quay
+// St. George waterfront: ferry terminal (slips point NE at the ferry berth), Empire Outlets + ballpark along the north shore
+const SG = mkFrame(P(40.6437, -74.0728), P(40.6452, -74.0708));        // s = seaward toward the berth, t = 90deg right of that
+const SGW = mkFrame(P(40.6447, -74.0742), P(40.6466, -74.0800));       // along the shore heading WNW (outlets, ballpark); t = inland
+const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(SM, 48, 2.4, 132, 62)], [1, SNUG_RECT], [3, fRect(HH, -4, 2, 64, -31)], [5, fRect(SG, -14, -12, 2, 12)], [5, fRect(SGW, -2, 1, 36, -15)]];  // SGW: inland is -t  // land is on the -e side of this quay
 // smooth value noise (marsh pools / reed beds)
 function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
   const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; }
@@ -244,6 +247,22 @@ function placeGas() {
       apron: [L(-back - 0.05, -half), L(far, -half), L(far, half), L(-back - 0.05, half)] });
   }
 }
+// civic sites: CIVIC_SITES {type, x, z, yaw, name, sub}; pads (zone 5) clear the procedural block underneath
+const CIVIC_SITES = [];
+function placeCivic() {
+  CIVIC_SITES.length = 0;
+  for (const c of GEO.CIVIC) {
+    const p = P(c[1], c[2]), b = boroAt(p[0], p[1]) || 5, g = GRIDS[b];
+    let x = p[0], z = p[1], yaw = g ? -g.th : 0;
+    if (c[5]) { let best = null, bd = 12;                                     // face a named avenue
+      for (const sg of SEGS) { if (sg.type !== SEG_AVE || !sg.name) continue; const t = (x - sg.ax) * sg.dx + (z - sg.az) * sg.dz; if (t < 0 || t > sg.len) continue;
+        const fx = sg.ax + sg.dx * t, fz = sg.az + sg.dz * t, d = Math.hypot(x - fx, z - fz); if (d < bd) { bd = d; best = { sg, fx, fz }; } }
+      if (best) { const sg = best.sg; let nx = sg.dz, nz = -sg.dx; yaw = Math.atan2(sg.dx, sg.dz) + Math.PI / 2; if ((x - best.fx) * nx + (z - best.fz) * nz < 0) { nx = -nx; nz = -nz; yaw += Math.PI; } x = best.fx + nx * (sg.hw + 5); z = best.fz + nz * (sg.hw + 5); } }
+    const big = c[0] === 'hospital_big' ? 1.35 : 1, R = c[0].startsWith('hospital') ? 13 * big : c[0] === 'energy' ? 9 : c[0] === 'boroughhall' ? 7 : 6.5;
+    const cs = Math.cos(yaw), sn = Math.sin(yaw), L = (lx, lz) => [x + lx * cs + lz * sn, z - lx * sn + lz * cs];
+    CIVIC_SITES.push({ type: c[0], x, z, yaw, name: c[3], sub: c[4], R, pad: [L(-R, -R), L(R, -R), L(R, R), L(-R, R)] });
+  }
+}
 function buildMap() {
   const brd = GEO.BKQ_BORDER.slice().reverse().slice(1, -1);
   fillPoly(BORO, toW(GEO.NJ), 6);
@@ -266,6 +285,7 @@ function buildMap() {
   for (const s of sq) { const b = blockOf(g, s[0], s[1]); fillPoly(ZONE, blockRect(g, b[0], b[1], 1, 1, -0.01), 1, true); }
   buildRoads();
   placeGas(); for (const g of GAS_SITES) fillPoly(ZONE, g.apron, 3, true);
+  placeCivic(); for (const c of CIVIC_SITES) fillPoly(ZONE, c.pad, c.type === 'energy' ? 3 : 5, true);
   { const R = MALL_RING, h = R.w / 2, c = [[R.s0, R.t0], [R.s1, R.t0], [R.s1, R.t1], [R.s0, R.t1]];
     for (let k = 0; k < 4; k++) { const a = c[k], b = c[(k + 1) % 4], ds = Math.sign(b[0] - a[0]) * h, dt = Math.sign(b[1] - a[1]) * h;
       addSeg(fW(SM, a[0] - ds, a[1] - dt), fW(SM, b[0] + ds, b[1] + dt), R.w, SEG_AVE).name = 'RING RD'; }

@@ -292,7 +292,7 @@ GEO.QNS_SHORE = [[40.7365,-73.9615],
 [40.6250,-73.7700],[40.6220,-73.7900],[40.6350,-73.8100],[40.6450,-73.8250],[40.6520,-73.8400],
 [40.6530,-73.8520],[40.6470,-73.8580]];
 
-GEO.SI = [[40.6445,-74.0735],[40.6462,-74.0900],[40.6470,-74.1000],[40.6458,-74.1100],[40.6430,-74.1200],[40.6400,-74.1300],[40.6390,-74.1500],
+GEO.SI = [[40.6438,-74.0716],[40.6458,-74.0745],[40.6467,-74.0792],[40.6462,-74.0900],[40.6470,-74.1000],[40.6458,-74.1100],[40.6430,-74.1200],[40.6400,-74.1300],[40.6390,-74.1500],
 [40.6420,-74.1700],[40.6430,-74.1850],[40.6360,-74.1960],[40.6250,-74.2000],[40.6100,-74.1990],
 [40.5950,-74.2010],[40.5800,-74.2030],[40.5650,-74.2120],[40.5520,-74.2220],[40.5380,-74.2390],
 [40.5230,-74.2450],[40.5100,-74.2510],[40.5000,-74.2550],[40.4980,-74.2420],[40.5020,-74.2280],
@@ -481,6 +481,21 @@ GEO.RB = [];
 GEO.CAMPUS = [];
 // Paved lots around real big buildings (zone 3), [lat0, lat1, lon0, lon1]
 GEO.PAVE = [];
+
+// Civic landmarks (Staten Island): [type, lat, lon, name, sub, snapToRoad]
+// Addresses: NYPD 120 Pct 78 Richmond Terrace · 121 Pct 970 Richmond Ave · 122 Pct 2320 Hylan Blvd · 123 Pct 116 Main St (Tottenville)
+// RUMC 355 Bard Ave · SIUH North 475 Seaview Ave · SIUH South 375 Seguine Ave. Positions refined from OpenStreetMap when available.
+GEO.CIVIC = [
+ ['precinct', 40.6421, -74.0786, '120TH PRECINCT', 'NYPD · 78 RICHMOND TERRACE', 0],
+ ['precinct', 40.6180, -74.1543, '121ST PRECINCT', 'NYPD · 970 RICHMOND AVE', 1],
+ ['precinct', 40.5730, -74.1148, '122ND PRECINCT', 'NYPD · 2320 HYLAN BLVD', 0],
+ ['precinct', 40.5113, -74.2488, '123RD PRECINCT', 'NYPD · 116 MAIN ST · TOTTENVILLE', 0],
+ ['hospital', 40.6352, -74.1066, 'RUMC', 'RICHMOND UNIVERSITY MEDICAL CENTER · BARD AVE', 0],
+ ['hospital_big', 40.5840, -74.0853, 'SIUH NORTH', 'STATEN ISLAND UNIVERSITY HOSPITAL · SEAVIEW AVE', 0],
+ ['hospital', 40.5172, -74.1955, 'SIUH SOUTH', 'STATEN ISLAND UNIVERSITY HOSPITAL · SEGUINE AVE', 0],
+ ['boroughhall', 40.6425, -74.0770, 'BOROUGH HALL', '10 RICHMOND TERRACE · ST. GEORGE', 0],
+ ['energy', 40.6452, -74.1080, 'ENERGY FACILITY', 'SUBSTATION · RICHMOND TERRACE & DAVIS AVE', 0],
+];
 
 // ============================================================
 //  Map: projection, rasterised boroughs/zones, grids, roads
@@ -683,7 +698,10 @@ const SNUG = P(40.6437, -74.1027);
 const SNUG_RECT = [[SNUG[0] - 24, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] + 22], [SNUG[0] - 24, SNUG[1] + 22]];
 // Howland Hook container terminal: quay along the shore (s along the quay, t inland)
 const HH = (() => { const F = mkFrame(P(40.6430, -74.1850), P(40.6362, -74.1957)); return F; })();
-const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(SM, 48, 2.4, 132, 62)], [1, SNUG_RECT], [3, fRect(HH, -4, 2, 64, -31)]];  // land is on the -e side of this quay
+// St. George waterfront: ferry terminal (slips point NE at the ferry berth), Empire Outlets + ballpark along the north shore
+const SG = mkFrame(P(40.6437, -74.0728), P(40.6452, -74.0708));        // s = seaward toward the berth, t = 90deg right of that
+const SGW = mkFrame(P(40.6447, -74.0742), P(40.6466, -74.0800));       // along the shore heading WNW (outlets, ballpark); t = inland
+const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(SM, 48, 2.4, 132, 62)], [1, SNUG_RECT], [3, fRect(HH, -4, 2, 64, -31)], [5, fRect(SG, -14, -12, 2, 12)], [5, fRect(SGW, -2, 1, 36, -15)]];  // SGW: inland is -t  // land is on the -e side of this quay
 // smooth value noise (marsh pools / reed beds)
 function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
   const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; }
@@ -728,6 +746,22 @@ function placeGas() {
       apron: [L(-back - 0.05, -half), L(far, -half), L(far, half), L(-back - 0.05, half)] });
   }
 }
+// civic sites: CIVIC_SITES {type, x, z, yaw, name, sub}; pads (zone 5) clear the procedural block underneath
+const CIVIC_SITES = [];
+function placeCivic() {
+  CIVIC_SITES.length = 0;
+  for (const c of GEO.CIVIC) {
+    const p = P(c[1], c[2]), b = boroAt(p[0], p[1]) || 5, g = GRIDS[b];
+    let x = p[0], z = p[1], yaw = g ? -g.th : 0;
+    if (c[5]) { let best = null, bd = 12;                                     // face a named avenue
+      for (const sg of SEGS) { if (sg.type !== SEG_AVE || !sg.name) continue; const t = (x - sg.ax) * sg.dx + (z - sg.az) * sg.dz; if (t < 0 || t > sg.len) continue;
+        const fx = sg.ax + sg.dx * t, fz = sg.az + sg.dz * t, d = Math.hypot(x - fx, z - fz); if (d < bd) { bd = d; best = { sg, fx, fz }; } }
+      if (best) { const sg = best.sg; let nx = sg.dz, nz = -sg.dx; yaw = Math.atan2(sg.dx, sg.dz) + Math.PI / 2; if ((x - best.fx) * nx + (z - best.fz) * nz < 0) { nx = -nx; nz = -nz; yaw += Math.PI; } x = best.fx + nx * (sg.hw + 5); z = best.fz + nz * (sg.hw + 5); } }
+    const big = c[0] === 'hospital_big' ? 1.35 : 1, R = c[0].startsWith('hospital') ? 13 * big : c[0] === 'energy' ? 9 : c[0] === 'boroughhall' ? 7 : 6.5;
+    const cs = Math.cos(yaw), sn = Math.sin(yaw), L = (lx, lz) => [x + lx * cs + lz * sn, z - lx * sn + lz * cs];
+    CIVIC_SITES.push({ type: c[0], x, z, yaw, name: c[3], sub: c[4], R, pad: [L(-R, -R), L(R, -R), L(R, R), L(-R, R)] });
+  }
+}
 function buildMap() {
   const brd = GEO.BKQ_BORDER.slice().reverse().slice(1, -1);
   fillPoly(BORO, toW(GEO.NJ), 6);
@@ -750,6 +784,7 @@ function buildMap() {
   for (const s of sq) { const b = blockOf(g, s[0], s[1]); fillPoly(ZONE, blockRect(g, b[0], b[1], 1, 1, -0.01), 1, true); }
   buildRoads();
   placeGas(); for (const g of GAS_SITES) fillPoly(ZONE, g.apron, 3, true);
+  placeCivic(); for (const c of CIVIC_SITES) fillPoly(ZONE, c.pad, c.type === 'energy' ? 3 : 5, true);
   { const R = MALL_RING, h = R.w / 2, c = [[R.s0, R.t0], [R.s1, R.t0], [R.s1, R.t1], [R.s0, R.t1]];
     for (let k = 0; k < 4; k++) { const a = c[k], b = c[(k + 1) % 4], ds = Math.sign(b[0] - a[0]) * h, dt = Math.sign(b[1] - a[1]) * h;
       addSeg(fW(SM, a[0] - ds, a[1] - dt), fW(SM, b[0] + ds, b[1] + dt), R.w, SEG_AVE).name = 'RING RD'; }
@@ -1325,6 +1360,91 @@ function buildSite() {
     hb(30, 29, 0.9, 12, 1.8, 2.2, hex('#d6d9dc'), 0); hb(30, 29, 2.0, 14, 0.2, 4.0, hex('#2e6fb5'), 0); hc(30, 29, 12, 2.2, 1.8); // gatehouse canopy
     for (let s = 0; s < 62; s += 10) { hb(s, 7, 4, 0.2, 8, 0.2, C.pole, 0); hb(s, 7, 8.1, 1.2, 0.15, 0.4, C.lamp, 5); }
     const L = fW(F, 30, 16 * inl); LM.push({ type: 'label', x: L[0], z: L[1], r: 0, nr: 32, name: 'HOWLAND HOOK', sub: 'CONTAINER TERMINAL · RICHMOND TERRACE' });
+  }
+  // ---- civic landmarks (CIVIC_SITES, map.js): precincts, hospitals, Borough Hall, energy facility ----
+  for (const c of CIVIC_SITES) {
+    const X = c.x, Z = c.z, Y = c.yaw, lb = (lx, y, lz, sx, sy, sz, col, mat) => lbox(X, Z, Y, lx, y, lz, sx, sy, sz, col, mat);
+    const lc = (lx, lz, sx, sz, h) => { const q = rot(X, Z, Y, lx, lz); cols.push(q[0], q[1], Y, sx / 2, sz / 2, h); };
+    const copCar = (lx, lz, yy) => { const q = rot(X, Z, Y, lx, lz), yw = Y + yy; carBoxes(q[0], q[1], yw, hex('#f2f4f7'));
+      lbox(q[0], q[1], yw, 0, 0.42, 0, 1.1, 0.08, 1.4, hex('#1f4fb8'), 0); lbox(q[0], q[1], yw, -0.2, 0.97, -0.2, 0.32, 0.08, 0.2, hex('#ff2b2b'), 2); lbox(q[0], q[1], yw, 0.2, 0.97, -0.2, 0.32, 0.08, 0.2, hex('#2b6bff'), 2);
+      cols.push(q[0], q[1], yw, 0.55, 1.08, 1.0); };
+    if (c.type === 'precinct') {                         // limestone base, brick upper floors, the green lamps by the door, cars out front
+      lb(0, 0.45, 1, 6.4, 0.9, 4.2, hex('#cfc6b4'), 0); lb(0, 1.6, 1, 6.4, 1.4, 4.2, hex('#8f4b3a'), 1); lb(0, 2.38, 1, 6.6, 0.16, 4.4, hex('#d8d0c0'), 0);
+      lb(0, 0.7, -1.12, 1.2, 1.4, 0.08, hex('#22272e'), 0); lb(0, 1.55, -1.14, 2.2, 0.32, 0.06, hex('#1f4fb8'), 2); lb(0, 1.55, -1.16, 1.8, 0.08, 0.04, hex('#f4f4f4'), 2);
+      for (const sx of [-0.95, 0.95]) { lb(sx, 0.6, -1.3, 0.08, 1.2, 0.08, hex('#2a2c31'), 0); lb(sx, 1.25, -1.3, 0.26, 0.26, 0.26, hex('#2ecc71'), 2); }
+      lb(0, 0.08, -1.7, 2.4, 0.16, 1.0, hex('#cfc6b4'), 0);
+      lb(2.6, 1.8, -2.4, 0.08, 3.6, 0.08, hex('#c9cdd2'), 0); lb(2.6, 3.3, -2.0, 0.04, 0.5, 0.75, hex('#b22234'), 2); lb(2.6, 3.42, -2.2, 0.05, 0.28, 0.32, hex('#3c3b6e'), 2);
+      lc(0, 1, 6.4, 4.2, 2.4);
+      copCar(-2.4, -3.6, 0.5); copCar(-0.6, -3.9, 0.35); copCar(1.4, -3.7, -0.4);
+    } else if (c.type.startsWith('hospital')) {
+      const b = c.type === 'hospital_big' ? 1.35 : 1;
+      lb(0, 0.8, 0, 16 * b, 1.6, 11 * b, hex('#e3ddd2'), 1); lc(0, 0, 16 * b, 11 * b, 1.6);                                  // podium
+      lb(-2 * b, 1.6 + 2.4 * b, 0.6, 9 * b, 4.8 * b, 6 * b, hex('#a9bccb'), 7); lc(-2 * b, 0.6, 9 * b, 6 * b, 1.6 + 4.8 * b); // tower (glass bands)
+      lb(-2 * b, 1.6 + 4.8 * b + 0.05, 0.6, 9 * b - 0.2, 0.1, 6 * b - 0.2, hex('#7d838b'), 0);
+      lb(-4 * b, 1.6 + 4.8 * b + 0.4, 1.5, 2.2, 0.7, 1.6, hex('#9aa1a8'), 0);
+      if (b > 1) { const hy = 1.6 + 4.8 * b + 0.12; lb(0, hy, 0.6, 4, 0.06, 4, hex('#4a4f56'), 0); for (const [x, z, sx, sz] of [[-0.7, 0.6, 0.25, 1.6], [0.7, 0.6, 0.25, 1.6], [0, 0.6, 1.2, 0.25]]) lb(x, hy + 0.04, z, sx, 0.04, sz, hex('#f4f4f4'), 2);
+        for (const [x, z, sx, sz] of [[0, -1.35, 4, 0.12], [0, 2.55, 4, 0.12], [-1.95, 0.6, 0.12, 4], [1.95, 0.6, 0.12, 4]]) lb(x, hy + 0.03, z, sx, 0.03, sz, hex('#f5c518'), 2); }   // rooftop helipad
+      lb(5 * b, 1.5, -5.5 * b - 1.6, 5.5, 0.2, 3.2, hex('#3a3f46'), 0); lb(5 * b, 1.35, -5.5 * b - 3.2, 5.5, 0.3, 0.12, hex('#c0392b'), 2);   // ER canopy
+      for (const o of [-2.5, 2.5]) lb(5 * b + o, 0.7, -5.5 * b - 3.0, 0.2, 1.4, 0.2, hex('#d8d8d8'), 0);
+      for (const o of [3.6, 5.0, 6.4]) { lb(o * b, 0.6, -5.5 * b - 1.7, 1.0, 1.1, 2.2, hex('#f4f4f4'), 0); lb(o * b, 0.55, -5.5 * b - 1.7, 1.02, 0.18, 2.2, hex('#e67e22'), 0); lb(o * b, 1.2, -5.5 * b - 0.75, 0.6, 0.1, 0.2, hex('#ff2b2b'), 2); lc(o * b, -5.5 * b - 1.7, 1.0, 2.2, 1.2); }
+      lb(-7 * b, 1.6, -6 * b - 1.5, 0.15, 3.2, 0.15, hex('#4d535b'), 0); lb(-7 * b, 3.1, -6 * b - 1.5, 0.12, 1.4, 1.4, hex('#1f5fbf'), 2); // blue H sign
+      for (const [y, z, sy, sz] of [[3.1, -0.4, 0.9, 0.16], [3.1, 0.4, 0.9, 0.16], [3.1, 0, 0.16, 0.8]]) lb(-7 * b - 0.08, y, -6 * b - 1.5 + z, 0.04, sy, sz, hex('#ffffff'), 2);
+      lb(-2 * b, 0.8, -5.5 * b - 0.05, 6 * b, 1.4, 0.08, hex('#2c3e55'), 7);                                               // main entrance glass
+    } else if (c.type === 'boroughhall') {               // brick with stone trim, mansard roof, the clock tower
+      lb(0, 1.3, 0, 9, 2.6, 5, hex('#a0523d'), 1); lb(0, 2.7, 0, 9.3, 0.2, 5.3, hex('#d8cdb8'), 0); lb(0, 3.15, 0, 8.4, 0.8, 4.4, hex('#3f4650'), 0);
+      lb(3.4, 3.0, -1.4, 1.7, 6.0, 1.7, hex('#a0523d'), 1); lb(3.4, 6.1, -1.4, 1.9, 0.2, 1.9, hex('#d8cdb8'), 0);
+      for (const [x, z] of [[3.4, -2.27], [3.4, -0.53], [2.53, -1.4], [4.27, -1.4]]) lb(x, 5.4, z, x === 3.4 ? 0.9 : 0.04, 0.9, x === 3.4 ? 0.04 : 0.9, hex('#f6f1dc'), 2);
+      for (let k = 0; k < 3; k++) lb(3.4, 6.4 + k * 0.3, -1.4, 1.5 - k * 0.45, 0.32, 1.5 - k * 0.45, hex('#3f4650'), 0);
+      lb(0, 0.15, -2.9, 3, 0.3, 0.9, hex('#d8cdb8'), 0); lc(0, 0, 9, 5, 2.6); lc(3.4, -1.4, 1.7, 1.7, 6);
+    } else if (c.type === 'energy') {                    // substation yard: transformers, steel gantries, lattice towers, control house, fence
+      for (let x = -8; x <= 8; x += 1.6) { lb(x, 0.6, -8, 0.06, 1.2, 0.06, hex('#6b7077'), 0); lb(x, 0.6, 8, 0.06, 1.2, 0.06, hex('#6b7077'), 0); lb(-8, 0.6, x, 0.06, 1.2, 0.06, hex('#6b7077'), 0); lb(8, 0.6, x, 0.06, 1.2, 0.06, hex('#6b7077'), 0); }
+      for (const [x, z, sx, sz] of [[0, 8, 16, 0.1], [-8, 0, 0.1, 16], [8, 0, 0.1, 16]]) lc(x, z, sx, sz, 1.2); lc(-4.5, -8, 7, 0.1, 1.2); lc(4.5, -8, 7, 0.1, 1.2);
+      for (let k = 0; k < 6; k++) { const x = -5 + (k % 3) * 5, z = k < 3 ? -2.5 : 3; lb(x, 0.7, z, 1.5, 1.4, 1.3, hex('#3f5a4a'), 0); for (let f = -2; f <= 2; f++) lb(x + f * 0.28, 0.7, z + 0.75, 0.06, 1.0, 0.25, hex('#33483c'), 0);
+        lb(x, 1.6, z, 0.18, 0.5, 0.18, hex('#b9bec3'), 0); lc(x, z, 1.5, 1.6, 1.4); }
+      for (const z of [-5.5, 0.3, 6]) { for (const x of [-6.5, 6.5]) lb(x, 1.8, z, 0.18, 3.6, 0.18, hex('#9aa1a8'), 0); lb(0, 3.55, z, 13.2, 0.16, 0.16, hex('#9aa1a8'), 0); for (let w = -5; w <= 5; w += 2.5) lb(w, 3.2, z, 0.05, 0.6, 0.05, hex('#d9d2c4'), 0); }
+      for (const x of [-11, 11]) { for (let k = 0; k < 5; k++) lb(x, 1.2 + k * 2.4, 4, 1.4 - k * 0.22, 2.4, 1.4 - k * 0.22, hex('#a7adb3'), 0); lb(x, 10.5, 4, 3.6, 0.18, 0.18, hex('#a7adb3'), 0); lc(x, 4, 1.4, 1.4, 12); }
+      lb(5, 0.85, -6.3, 4, 1.7, 2.6, hex('#8f4b3a'), 1); lc(5, -6.3, 4, 2.6, 1.7);
+    }
+    LM.push({ type: 'label', x: X, z: Z, r: c.R * 0.75, nr: c.R + 6, name: c.name, sub: c.sub });
+  }
+  // ---- St. George ferry terminal (SG frame: s seaward toward the berth, t across) ----
+  { const F = SG, gb = (s, t, y, ss, sy, st, col, m) => { const q = fW(F, s, t); box(q[0], y, q[1], st, sy, ss, F.yaw, col, m); };
+    const gc = (s, t, ss, st, h) => { const q = fW(F, s, t); cols.push(q[0], q[1], F.yaw, st / 2, ss / 2, h); };
+    gb(-3.5, 0, 1.6, 8, 3.2, 20, hex('#cfd6dc'), 0); gc(-3.5, 0, 8, 20, 3.2);                                       // waiting-room hall
+    gb(0.55, 0, 1.55, 0.1, 3.0, 19.6, hex('#8fb2c8'), 7);                                                             // big harbour-facing glass wall
+    gb(1.6, 0, 3.45, 3.4, 0.18, 21, hex('#eef1f3'), 0); gb(-3.5, 0, 3.28, 7.6, 0.08, 19.4, hex('#9aa1a8'), 0);      // visor roof
+    for (const t of [-9.6, -4.8, 0, 4.8, 9.6]) gb(3.1, t, 1.7, 0.16, 3.4, 0.16, hex('#d8dde2'), 0);
+    for (const t of [-6.5, 0, 6.5]) {                                                                                   // three ferry slips
+      for (const o of [-2.3, 2.3]) { gb(7, t + o, 0.7, 9, 1.4, 0.5, hex('#4a3b2c'), 0); gc(7, t + o, 9, 0.5, 1.4); }
+      gb(2.6, t, 0.35, 2.4, 0.1, 3.4, hex('#5d6670'), 0);
+      for (const o of [-1.9, 1.9]) gb(2.4, t + o, 2.0, 0.3, 4.0, 0.3, hex('#2f5f4f'), 0); gb(2.4, t, 3.95, 0.4, 0.3, 4.1, hex('#2f5f4f'), 0);
+    }
+    gb(-10, 0, 1.25, 4, 0.28, 16, hex('#a7adb3'), 0);                                                                  // elevated bus deck + columns
+    for (const t of [-7, -3.5, 0, 3.5, 7]) { gb(-10, t, 0.6, 0.3, 1.2, 0.3, hex('#8a9097'), 0); gc(-10, t, 0.3, 0.3, 1.2); }
+    for (let k = 0; k < 4; k++) gb(-10, 9.5 + k * 1.2, 1.05 - k * 0.3, 3.6, 0.22, 1.3, hex('#a7adb3'), 0);
+    const L = fW(F, -3.5, 0); LM.push({ type: 'label', x: L[0], z: L[1], r: 11, nr: 16, name: 'ST. GEORGE FERRY TERMINAL', sub: 'STATEN ISLAND FERRY · TO MANHATTAN' });
+  }
+  // ---- Empire Outlets + ballpark along the St. George shore (SGW frame: s heading WNW, inland is -t) ----
+  { const F = SGW, gb = (s, t, y, ss, sy, st, col, m) => { const q = fW(F, s, t); box(q[0], y, q[1], st, sy, ss, F.yaw, col, m); };
+    const gc = (s, t, ss, st, h) => { const q = fW(F, s, t); cols.push(q[0], q[1], F.yaw, st / 2, ss / 2, h); };
+    for (const [s0, s1, t0, t1] of [[1, 19, -1.6, -5], [4, 17, -8.2, -11.6]]) {
+      const sc = (s0 + s1) / 2, tc = (t0 + t1) / 2, Ls = s1 - s0, Lt = Math.abs(t1 - t0);
+      gb(sc, tc, 1.0, Ls, 2.0, Lt, hex('#e6e2da'), 0); gc(sc, tc, Ls, Lt, 2.0);
+      for (const tf of [t0, t1]) { gb(sc, tf + (tf === t0 ? 0.04 : -0.04) * -1, 0.75, Ls - 0.6, 1.1, 0.06, hex('#2c3e55'), 8); }   // storefront glass both sides
+      gb(sc, tc, 2.08, Ls - 0.4, 0.16, Lt - 0.4, hex('#8b6b4a'), 0);                                                     // timber roof deck
+      for (let s = s0 + 0.5; s < s1; s += 1) { gb(s, t0 + 0.05 * Math.sign(t1 - t0) * -1, 2.35, 0.05, 0.5, 0.05, hex('#c9cdd2'), 0); }
+      for (let s = s0 + 2; s < s1 - 1; s += 4.5) gb(s, tc, 2.4, 1.6, 0.6, Lt * 0.6, hex('#9cc8e0'), 6);                 // rooftop glass pavilions
+    }
+    beam([fW(F, 0, -6)[0], 1.7, fW(F, 0, -6)[1]], [fW(SG, -5, -9.5)[0], 1.7, fW(SG, -5, -9.5)[1]], 1.1, hex('#9cc8e0'), 6); // glass footbridge to the terminal
+    // ballpark: diamond with home plate inland, outfield toward the harbour, seating bowl behind home, light towers
+    const hs = 28, ht = -12; gb(hs, ht + 6, 0.03, 13, 0.04, 12, hex('#3f9b4a'), 0);
+    { const q = fW(F, hs, ht + 3.2); box(q[0], 0.05, q[1], 4.2, 0.04, 4.2, F.yaw + Math.PI / 4, hex('#b88a5a'), 0); box(q[0], 0.07, q[1], 3.0, 0.04, 3.0, F.yaw + Math.PI / 4, hex('#3f9b4a'), 0); }
+    for (let k = 0; k < 4; k++) for (const o of [-1, 1]) gb(hs + o * (3.5 + k * 0.3), ht - 0.6 - k * 0.55, 0.3 + k * 0.32, 3.2, 0.6 + k * 0.64, 0.6, hex(k % 2 ? '#2b5fb3' : '#d8dde2'), 0);
+    gb(hs, ht - 1.8, 0.9, 4, 1.8, 1.4, hex('#d8dde2'), 0); gc(hs, ht - 1.2, 12, 3, 1.8);
+    for (const [s, t] of [[hs - 7, ht - 1], [hs + 7, ht - 1], [hs - 7, ht + 11], [hs + 7, ht + 11]]) { gb(s, t, 3, 0.2, 6, 0.2, C.pole, 0); gb(s, t, 6.1, 1.4, 0.6, 0.2, C.lamp, 5); gc(s, t, 0.3, 0.3, 6); }
+    const L1 = fW(F, 10, -6), L2 = fW(F, hs, ht + 5);
+    LM.push({ type: 'label', x: L1[0], z: L1[1], r: 9, nr: 12, name: 'EMPIRE OUTLETS', sub: 'ST. GEORGE WATERFRONT' });
+    LM.push({ type: 'label', x: L2[0], z: L2[1], r: 7, nr: 10, name: 'BALLPARK', sub: 'ST. GEORGE WATERFRONT' });
   }
   // ---- gas stations (GAS_SITES, map.js) ----
   for (const g of GAS_SITES) gasStation(cols, g.x, g.z, g.yaw, g.big, g.accent);
