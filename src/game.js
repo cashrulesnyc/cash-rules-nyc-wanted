@@ -585,21 +585,19 @@ function render(t, dt) {
   const cv = GFX.canvas, asp = cv.clientWidth / Math.max(1, cv.clientHeight);
   const P = G.P;
   let fov, dist, pitch = CAM_PITCH, az = CAM_AZ;
-  const portrait = asp < 1;
-  fov = portrait ? Math.min(68, 2 * Math.atan(Math.tan(17 * Math.PI / 180) / asp) * 180 / Math.PI) : 36;
+  fov = 36; // landscape-only game (a portrait screen shows the rotate overlay)
   const sp = P ? vSpeed(P) : 0;
-  dist = (portrait ? 46 : Math.max(38, Math.min(52, 28 + cv.clientHeight * 0.033))) + sp * 0.35;
+  dist = Math.max(38, Math.min(52, 28 + cv.clientHeight * 0.033)) + sp * 0.35;
   let tx = G.cam.tx, tz = G.cam.tz;
   if (G.state === 'play' || G.state === 'over') {
-    const la = portrait ? 0.42 : 0.3;
+    const la = 0.3;
     const wx = P.x + P.vx * la, wz = P.z + P.vz * la;
     const k = 1 - Math.exp(-dt * 5);
     G.cam.tx += (wx - G.cam.tx) * k; G.cam.tz += (wz - G.cam.tz) * k;
     tx = G.cam.tx; tz = G.cam.tz;
   } else if (G.state === 'title') {
-    G.cam.orbit += dt * 0.1; az = CAM_AZ + G.cam.orbit; dist = portrait ? 46 : 40; pitch = 54 * Math.PI / 180;
+    G.cam.orbit += dt * 0.1; az = CAM_AZ + G.cam.orbit; dist = 40; pitch = 54 * Math.PI / 180;
     tx = G.cam.tx = P.x; tz = G.cam.tz = P.z;
-    if (portrait) { const f = [Math.sin(az), -Math.cos(az)]; tx += f[0] * 7; tz += f[1] * 7; }
   }
   const f = [Math.sin(az), -Math.cos(az)];
   let ex = tx - f[0] * dist * Math.cos(pitch), ez = tz - f[1] * dist * Math.cos(pitch), ey = dist * Math.sin(pitch);
@@ -617,8 +615,8 @@ function render(t, dt) {
   GFX.render({
     eye: [ex, ey, ez], target: [tx, ty, tz], fov: fov * Math.PI / 180, near: 1, far: 400,
     sunDir: L.sun, sunCol: L.sunCol, amb: L.amb, fogCol: L.fog, waterCol: L.water,
-    fog: [dist * 1.7, dist * 3.0 + (portrait ? 20 : 0)], time: t, // pushed out: haze only at the far edge
-    shadowCenter: [tx, 0, tz], shadowHalf: portrait ? 52 : 46,
+    fog: [dist * 1.7, dist * 3.0], time: t, // pushed out: haze only at the far edge
+    shadowCenter: [tx, 0, tz], shadowHalf: 46,
     chunks, statics: STATIC_BR ? [STATIC_BR] : [], bills, billTex: BILL_TEX, icons: ICONS, iconTex: ICON_TEX,
     sil: (G.state === 'play') ? { col: [1, 0.86, 0.15, 0.92], edge: [0.02, 0.02, 0.03, 0.9] } : null, // bold outline: dark rim + solid yellow
     blur: (G.state === 'play' && P && SAVE.blur !== false) ? { amt: G.blurAmt || 0, at: [P.x, 0.5, P.z] } : null,
@@ -730,7 +728,7 @@ function drawMini(t) {
   x.strokeStyle = 'rgba(0,0,0,.6)'; x.lineWidth = 3; x.beginPath(); x.arc(R, R, R - 1.5, 0, Math.PI * 2); x.stroke();
 }
 function drawBigMap() {
-  const cv = $('bigmap'), x = cv.getContext('2d'), P = G.P;
+  const cv = $('bigmap'), x = cv.getContext('2d'), pl = G.P;
   const W = cv.width = cv.clientWidth * 2, H = cv.height = cv.clientHeight * 2;
   const sc = Math.min(W / (MW * MAP_RES), H / (MH * MAP_RES)) * 1.0;
   x.fillStyle = '#2c78be'; x.fillRect(0, 0, W, H);
@@ -741,7 +739,7 @@ function drawBigMap() {
   for (const [n, ll] of Object.entries({ MANHATTAN: [40.79, -73.965], BRONX: [40.86, -73.87], BROOKLYN: [40.645, -73.95], QUEENS: [40.72, -73.82], 'STATEN ISLAND': [40.585, -74.15], 'NEW JERSEY': [40.75, -74.13] })) {
     const p = toS(...P(ll[0], ll[1])); x.fillStyle = 'rgba(0,0,0,.55)'; x.fillText(n, p[0] + 1, p[1] + 1); x.fillStyle = '#fff'; x.fillText(n, p[0], p[1]);
   }
-  if (P) { const p = toS(P.x, P.z); x.save(); x.translate(p[0], p[1]); x.rotate(P.h); x.fillStyle = '#ff3e7e'; x.strokeStyle = '#fff'; x.lineWidth = 3; const k = W / 120; x.beginPath(); x.moveTo(0, -k); x.lineTo(k * 0.75, k * 0.8); x.lineTo(-k * 0.75, k * 0.8); x.closePath(); x.fill(); x.stroke(); x.restore(); }
+  if (pl) { const p = toS(pl.x, pl.z); x.save(); x.translate(p[0], p[1]); x.rotate(pl.h); x.fillStyle = '#ff3e7e'; x.strokeStyle = '#fff'; x.lineWidth = 3; const k = W / 120; x.beginPath(); x.moveTo(0, -k); x.lineTo(k * 0.75, k * 0.8); x.lineTo(-k * 0.75, k * 0.8); x.closePath(); x.fill(); x.stroke(); x.restore(); }
 }
 
 // ---------- HUD ----------
@@ -812,8 +810,17 @@ function goTitle() {
   $('over').classList.remove('on'); $('pause').classList.remove('on');
   resetRun(); G.state = 'title'; titleCar = SAVE.car; spawnPlayer(SAVE.boro); $('title').classList.add('on'); $('hud').classList.remove('on'); renderTitle();
 }
+// landscape only: lock where the browser allows it (installed app / Android fullscreen); iOS gets the rotate overlay
+function lockLandscape() {
+  const o = screen.orientation; if (!o || !o.lock) return;
+  o.lock('landscape').catch(() => {
+    if (!matchMedia('(pointer:coarse)').matches || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+    document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => o.lock('landscape')).catch(() => {});
+  });
+}
+window.addEventListener('resize', () => { if (innerHeight > innerWidth && G.state === 'play') pause(true); });
 function startRun() {
-  AUD.init();
+  AUD.init(); lockLandscape();
   SAVE.car = titleCar; SAVE.stats.runs++; save();
   resetRun();
   const keep = G.P ? { x: G.P.x, z: G.P.z, h: G.P.h } : null;
@@ -950,12 +957,12 @@ function renderGarage() {
   for (const v of GAR.cars) v.dim = SAVE.owned.includes(v.kind) ? 0 : 0.3;
 }
 function renderGarage3D(t, dt) {
-  const cv = GFX.canvas, asp = cv.clientWidth / Math.max(1, cv.clientHeight), portrait = asp < 1;
+  const cv = GFX.canvas, asp = cv.clientWidth / Math.max(1, cv.clientHeight);
   GAR.camX += (GAR.idx * GSP - GAR.camX) * Math.min(1, dt * 6); GAR.spin += dt;
-  const fov = portrait ? Math.min(70, 2 * Math.atan(Math.tan(19 * Math.PI / 180) / asp) * 180 / Math.PI) : 40;
+  const fov = 40;
   // showroom framing: closer three-quarter view, slightly low, so the silhouette and wheels read
-  const tx = GX + GAR.camX + (portrait ? 0.15 : 2.4), tz = GZ, ty = portrait ? -0.45 : 0.5; // landscape: car sits left of the side panel
-  const eye = portrait ? [tx + 2.4, 2.15, tz + 5.7] : [tx + 2.4, 2.4, tz + 6.5];
+  const tx = GX + GAR.camX + 2.4, tz = GZ, ty = 0.5; // car sits left of the side panel
+  const eye = [tx + 2.4, 2.4, tz + 6.5];
   // studio key light from the camera side (warm), cooler fill; night keeps the garage moody
   const N = GFX.night, L = { sun: norm3([0.42, 0.8, 0.6]), sunCol: N ? [0.42, 0.42, 0.5] : [0.82, 0.78, 0.72], amb: N ? [0.32, 0.34, 0.44] : [0.5, 0.53, 0.6], fog: (GFX.night ? LIGHT.night : LIGHT.day).fog };
   buildDynamic(t); GFX.setDyn(DYN.data, DYN.n, 0);

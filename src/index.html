@@ -154,6 +154,11 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
 #overStats span{font-size:10px;letter-spacing:.15em;opacity:.7}
 #overStats .best,#overStats .keep{grid-column:1/3;color:var(--gold);font-size:14px}
 #overStats .keep{color:var(--g)}
+#rotate{display:none;position:fixed;inset:0;z-index:98;background:#0b0d10;color:#fff;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;padding:24px;font-family:'Bungee',Impact,sans-serif}
+#rotate .ph{width:54px;height:92px;border:4px solid var(--g);border-radius:12px;animation:rot 1.8s ease-in-out infinite}
+#rotate b{font-size:22px;letter-spacing:.04em}#rotate span{font-family:system-ui,sans-serif;font-size:13px;opacity:.7;letter-spacing:.12em}
+@keyframes rot{0%,20%{transform:rotate(0)}55%,100%{transform:rotate(-90deg)}}
+@media (orientation:portrait){#rotate{display:flex}}
 #err{display:none;position:fixed;inset:0;z-index:99;background:#111;color:#fff;padding:40px 20px;font-size:16px;text-align:center}
 @media (min-width:900px){#mini{width:170px;height:170px}#pauseBtn{top:calc(190px + var(--safe-t))}#stars{font-size:36px}.tind{display:none}}
 @media (max-height:500px) and (orientation:landscape){
@@ -235,6 +240,7 @@ button{font-family:inherit;cursor:pointer;border:0;color:inherit}
   <div id="overStats"></div>
   <div class="row"><button class="btn" id="againBtn">RUN IT BACK</button><button class="btn alt" id="menuBtn">GARAGE</button></div>
 </div>
+<div id="rotate"><div class="ph"></div><b>ROTATE YOUR PHONE</b><span>LANDSCAPE ONLY</span></div>
 <div id="err"></div>
 
 <script id="shared">

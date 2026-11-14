@@ -5,7 +5,7 @@
  "start_url": "./",
  "scope": "./",
  "display": "fullscreen",
- "orientation": "any",
+ "orientation": "landscape",
  "background_color": "#0b0d10",
  "theme_color": "#0b0d10",
  "description": "Police chase across all five NYC boroughs. Lose the heat at Cash Rules Customs.",

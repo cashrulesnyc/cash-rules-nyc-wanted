@@ -40,7 +40,7 @@ for n in icons:
     shutil.copyfile(os.path.join(ROOT, 'assets', 'icons', n), os.path.join(DIST, 'icons', n))
 manifest = {
     'name': 'CASH RULES NYC: WANTED', 'short_name': 'CR NYC', 'id': './', 'start_url': './', 'scope': './',
-    'display': 'fullscreen', 'orientation': 'any', 'background_color': '#0b0d10', 'theme_color': '#0b0d10',
+    'display': 'fullscreen', 'orientation': 'landscape', 'background_color': '#0b0d10', 'theme_color': '#0b0d10',
     'description': 'Police chase across all five NYC boroughs. Lose the heat at Cash Rules Customs.',
     'icons': [{'src': 'icons/icon-192.png', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any maskable'},
               {'src': 'icons/icon-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any maskable'}],

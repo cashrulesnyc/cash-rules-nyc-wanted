@@ -1,7 +1,7 @@
 // Service worker for "Add to Home Screen" + offline play. Generated into dist/ by build.py.
 // Network-first for the game page (so a new deploy shows up on the next launch when online),
 // cache fallback when offline. Google Fonts are cached on first use so the HUD fonts work offline too.
-const CACHE = 'crnyc-830ca33f68';
+const CACHE = 'crnyc-83562e3cf0';
 const PRECACHE = ["./", "index.html", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));

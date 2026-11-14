@@ -1004,7 +1004,7 @@ Existing elements:
 - Neighborhood and landmark labels.
 - Touch indicators.
 
-Keep the screen readable on iPhone portrait.
+Keep the screen readable on a phone in landscape.
 
 ## 25. PAUSE AND MAP
 
@@ -1292,11 +1292,10 @@ Do not introduce architectural complexity without a measurable reason.
 
 The current product is a mobile-first web game and installable PWA.
 
-The immediate development priority is iPhone portrait.
+The game is **landscape only** (owner instruction, November 14, 2026). Holding a phone upright shows a "rotate your phone" screen and pauses the run. The immediate development priority is iPhone landscape.
 
 The game should also remain functional in:
 
-- iPhone landscape.
 - Desktop browsers.
 - Other mobile browsers.
 
