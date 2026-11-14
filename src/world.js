@@ -271,7 +271,9 @@ function buildBridgeGeometry() {
 const BOATS = [];
 function initBoats() {
   const path = (pts) => { const w = pts.map(PL); const L = [0]; for (let i = 1; i < w.length; i++) L.push(L[i - 1] + Math.hypot(w[i][0] - w[i - 1][0], w[i][1] - w[i - 1][1])); return { w, L, total: L[L.length - 1] }; };
-  const ferry = path([[40.6998, -74.0128], [40.6930, -74.0200], [40.6750, -74.0420], [40.6560, -74.0640], [40.6452, -74.0708]]);
+  // the ferry lines up with the St. George centre slip (SG frame, map.js) and docks inside it
+  const LL = (w) => [40.71 - w[1] * 18 / 111132, -73.98 + w[0] * 18 / 84390];
+  const ferry = path([[40.6998, -74.0128], [40.6930, -74.0200], [40.6750, -74.0420], LL(fW(SG, 60, 0)), LL(fW(SG, 30, 0)), LL(fW(SG, 15.6, 0))]);
   BOATS.push({ p: ferry, s: 0, v: 7, kind: 'ferry', dir: 1, wait: 0 }, { p: ferry, s: ferry.total, v: 7, kind: 'ferry', dir: -1, wait: 0 });
   BOATS.push({ p: path([[40.8500, -73.9540], [40.8000, -73.9820], [40.7600, -74.0110], [40.7200, -74.0240], [40.6950, -74.0300]]), s: 40, v: 5, kind: 'tug', dir: 1, wait: 0 });
   BOATS.push({ p: path([[40.7990, -73.9330], [40.7700, -73.9460], [40.7450, -73.9650], [40.7230, -73.9690], [40.7050, -73.9950], [40.6990, -74.0060]]), s: 10, v: 4.5, kind: 'barge', dir: 1, wait: 0 });
@@ -297,7 +299,12 @@ function pushBoats(push) {
     if (b.x === undefined) continue;
     const q = qYaw(b.yaw), bob = Math.sin(performance.now() / 700 + b.s) * 0.05;
     const P = (lx, ly, lz, sx, sy, sz, col, m) => { const v = qRot(q, [lx, ly, lz]); push(b.x + v[0], ly + bob, b.z + v[2], sx, sy, sz, q, col, m || 0); };
-    if (b.kind === 'ferry') { P(0, 0.2, 0, 2.6, 0.9, 8.5, orange); P(0, 0.95, 0, 2.3, 0.6, 7.2, white, 1); P(0, 1.45, 0, 2.1, 0.4, 6.4, orange, 0); P(0, 1.85, 0, 1.4, 0.4, 2.2, white); }
+    if (b.kind === 'ferry') {   // double-ended ferry, sized for the St. George slips (12 x 3.2)
+      P(0, 0.25, 0, 3.2, 1.0, 12, orange); for (const e of [-6.2, 6.2]) P(0, 0.25, e, 2.5, 0.9, 0.6, orange); P(0, 0.76, 0, 3.24, 0.08, 12.04, blk);
+      P(0, 1.08, 0, 3.0, 0.66, 10.4, white, 1); P(0, 1.6, 0, 2.94, 0.4, 9.8, orange); P(0, 2.05, 0, 2.6, 0.5, 7.2, white, 1);
+      for (const e of [-3.1, 3.1]) { P(0, 2.55, e, 2.0, 0.5, 1.3, white); P(0, 2.6, e + Math.sign(e) * 0.66, 1.8, 0.24, 0.04, dark); }
+      P(0, 2.75, 0, 0.55, 0.9, 0.8, orange); P(0, 3.25, 0, 0.6, 0.1, 0.85, blk);
+    }
     else if (b.kind === 'tug') { P(0, 0.2, 0, 1.4, 0.7, 3.2, red); P(0, 0.9, -0.3, 0.9, 0.7, 1.2, white); P(0, 1.5, -0.3, 0.3, 0.6, 0.3, blk); P(0, 0.2, -4.4, 2.2, 0.6, 4.6, dark); }
     else if (b.kind === 'barge') { P(0, 0.2, 0, 2.6, 0.6, 7, hex('#5b4a3b')); P(0, 0.8, 0.5, 2.2, 0.6, 4.5, hex('#8a6a4a')); }
     else { P(0, 0.2, 0, 1.6, 0.7, 5, white); P(0, 0.8, -0.2, 1.4, 0.5, 3.6, hex('#2b4a7a'), 1); P(0, 1.2, -0.4, 1.2, 0.3, 2.4, white); }

@@ -477,44 +477,81 @@ function buildSite() {
     }
     LM.push({ type: 'label', x: X, z: Z, r: c.R * 0.75, nr: c.R + 6, name: c.name, sub: c.sub });
   }
-  // ---- St. George ferry terminal (SG frame: s seaward toward the berth, t across) ----
+  // ---- St. George ferry terminal (SG frame: s seaward toward the slips, t across; +t = south-east) ----
+  // Built from the real terminal footprint (~215 x 160 m) at ~2x, on fill (map.js SG_FILL) so it fits beside the outlets.
   { const F = SG, gb = (s, t, y, ss, sy, st, col, m) => { const q = fW(F, s, t); box(q[0], y, q[1], st, sy, ss, F.yaw, col, m); };
     const gc = (s, t, ss, st, h) => { const q = fW(F, s, t); cols.push(q[0], q[1], F.yaw, st / 2, ss / 2, h); };
-    gb(-3.5, 0, 1.6, 8, 3.2, 20, hex('#cfd6dc'), 0); gc(-3.5, 0, 8, 20, 3.2);                                       // waiting-room hall
-    gb(0.55, 0, 1.55, 0.1, 3.0, 19.6, hex('#8fb2c8'), 7);                                                             // big harbour-facing glass wall
-    gb(1.6, 0, 3.45, 3.4, 0.18, 21, hex('#eef1f3'), 0); gb(-3.5, 0, 3.28, 7.6, 0.08, 19.4, hex('#9aa1a8'), 0);      // visor roof
-    for (const t of [-9.6, -4.8, 0, 4.8, 9.6]) gb(3.1, t, 1.7, 0.16, 3.4, 0.16, hex('#d8dde2'), 0);
-    for (const t of [-6.5, 0, 6.5]) {                                                                                   // three ferry slips
-      for (const o of [-2.3, 2.3]) { gb(7, t + o, 0.7, 9, 1.4, 0.5, hex('#4a3b2c'), 0); gc(7, t + o, 9, 0.5, 1.4); }
-      gb(2.6, t, 0.35, 2.4, 0.1, 3.4, hex('#5d6670'), 0);
-      for (const o of [-1.9, 1.9]) gb(2.4, t + o, 2.0, 0.3, 4.0, 0.3, hex('#2f5f4f'), 0); gb(2.4, t, 3.95, 0.4, 0.3, 4.1, hex('#2f5f4f'), 0);
+    const S0 = -6, S1 = 7.8, T0 = -12, T1 = 10, TC = (T0 + T1) / 2, TW = T1 - T0;
+    const conc = hex('#d6d9dc'), white = hex('#eef1f3'), glass = hex('#8fb2c8'), steel = hex('#9aa1a8'), green = hex('#2f6f4f'), pile = hex('#4a3b2c'), wale = hex('#3a2e22');
+    gb((S0 + S1) / 2, TC, 1.2, S1 - S0, 2.4, TW, conc, 1); gc((S0 + S1) / 2, TC, S1 - S0, TW, 2.4);                     // podium (ground floor + mezzanine)
+    gb((S0 + S1) / 2 + 0.6, TC, 3.8, S1 - S0 - 1.4, 2.8, TW - 1.2, hex('#b9c7d2'), 7); gc((S0 + S1) / 2 + 0.6, TC, S1 - S0 - 1.4, TW - 1.2, 5.2);   // glass waiting hall
+    gb(S1 - 0.02, TC, 2.95, 0.12, 5.1, TW - 0.4, glass, 7);                                                             // full-height harbour glass wall
+    for (let t = T0 + 0.6; t <= T1 - 0.5; t += 1.2) gb(S1 + 0.06, t, 2.95, 0.1, 5.1, 0.09, white, 0);                 // mullions
+    for (let k = 0; k < 4; k++) gb(S1 + 0.06, TC, 1.25 + k * 1.3, 0.1, 0.07, TW - 0.4, white, 0);                     // transoms
+    for (let k = 0; k < 12; k++) { const s = S0 + 1.2 + (k + 0.5) * 16 / 12; gb(s, TC, 5.45 + k * 0.1, 16 / 12 + 0.02, 0.2, TW + 1.2, k % 3 === 1 ? hex('#9cc8e0') : white, k % 3 === 1 ? 6 : 0); }  // visor roof rising to the harbour, skylight bands
+    gb(S0 + 17.25, TC, 6.62, 0.2, 0.42, TW + 1.4, hex('#cfd5da'), 0); gb(S0 + 1.15, TC, 5.38, 0.2, 0.3, TW + 1.4, hex('#cfd5da'), 0);   // roof fascias
+    for (let t = T0 + 1; t < T1; t += 4.4) gb(S0 + 8.5, t, 5.95, 15.5, 0.12, 0.14, hex('#b9c0c7'), 0);               // roof ribs
+    for (let t = T0 + 0.4; t <= T1; t += 3.6) { gb(S1 + 2.6, t, 3.1, 0.24, 6.2, 0.24, white, 0); gb(S0 + 1.6, t, 3.0, 0.24, 6.0, 0.24, white, 0); }                     // columns under the overhang
+    gb(S0 - 0.06, TC, 1.1, 0.1, 2.0, 8, glass, 7); gb(S0 - 1.3, TC, 2.3, 2.6, 0.16, 10.5, steel, 0);                  // landside entrance + canopy
+    for (const t of [TC - 4.6, TC + 4.6]) { gb(S0 - 2.4, t, 2.0, 0.08, 4.0, 0.08, hex('#c9cdd2'), 0); gb(S0 - 2.4, t + 0.35, 3.6, 0.04, 0.5, 0.7, hex('#b22234'), 2); }  // flagpoles
+    // landside bus deck: elevated slab on columns, ramp down at the south-east end, city buses
+    gb(-8.8, TC, 1.6, 4.6, 0.3, TW - 1, hex('#a7adb3'), 0); gb(-11.05, TC, 1.95, 0.08, 0.42, TW - 1, steel, 0);
+    for (const s of [-10.6, -7.0]) for (let t = T0 + 1; t <= T1 - 1; t += 3.6) { gb(s, t, 0.75, 0.3, 1.5, 0.3, hex('#8a9097'), 0); gc(s, t, 0.3, 0.3, 1.5); }
+    for (let k = 0; k < 5; k++) gb(-8.8, T1 + 0.1 + k * 1.2, 1.45 - k * 0.3, 4.2, 0.26, 1.25, hex('#a7adb3'), 0);
+    for (const t of [T0 + 3, TC, T1 - 4]) { gb(-8.8, t, 2.3, 1.1, 1.0, 3.6, hex('#e8ecef'), 0); gb(-8.8, t, 2.05, 1.12, 0.2, 3.62, hex('#2b5fb3'), 0); gb(-8.8, t, 2.5, 1.12, 0.34, 3.3, hex('#2c3e55'), 7); }
+    // five slips: pile racks with wales, dolphins at the end, transfer apron + green gantry at the head
+    for (const tc of [-9, -4.5, 0, 4.5, 9]) {
+      for (const o of [-2.0, 2.0]) {
+        for (let s = 9.4; s <= 22.2; s += 0.85) gb(s, tc + o, 0.55, 0.26, 1.9, 0.26, pile, 0);
+        for (const y of [0.9, 1.4]) gb(15.8, tc + o, y, 13, 0.18, 0.34, wale, 0);
+        gb(22.9, tc + o, 0.7, 0.95, 2.3, 0.95, wale, 0); gb(22.9, tc + o, 1.9, 1.0, 0.12, 1.0, hex('#c9a227'), 0);
+      }
+      gb(8.7, tc, 0.55, 1.8, 0.2, 3.4, hex('#5d6670'), 0);                                                              // transfer apron
+      for (const o of [-1.95, 1.95]) gb(8.6, tc + o, 2.1, 0.36, 4.2, 0.36, green, 0);                                    // gantry towers
+      gb(8.6, tc, 4.15, 0.42, 0.32, 4.3, green, 0); gb(8.6, tc, 4.55, 0.9, 0.5, 1.3, green, 0);                          // crossbeam + hoist house
     }
-    gb(-10, 0, 1.25, 4, 0.28, 16, hex('#a7adb3'), 0);                                                                  // elevated bus deck + columns
-    for (const t of [-7, -3.5, 0, 3.5, 7]) { gb(-10, t, 0.6, 0.3, 1.2, 0.3, hex('#8a9097'), 0); gc(-10, t, 0.3, 0.3, 1.2); }
-    for (let k = 0; k < 4; k++) gb(-10, 9.5 + k * 1.2, 1.05 - k * 0.3, 3.6, 0.22, 1.3, hex('#a7adb3'), 0);
-    const L = fW(F, -3.5, 0); LM.push({ type: 'label', x: L[0], z: L[1], r: 11, nr: 16, name: 'ST. GEORGE FERRY TERMINAL', sub: 'STATEN ISLAND FERRY · TO MANHATTAN' });
+    const L = fW(F, 0, TC); LM.push({ type: 'label', x: L[0], z: L[1], r: 13, nr: 18, name: 'ST. GEORGE FERRY TERMINAL', sub: 'STATEN ISLAND FERRY · TO MANHATTAN' });
   }
-  // ---- Empire Outlets + ballpark along the St. George shore (SGW frame: s heading WNW, inland is -t) ----
+  // ---- Empire Outlets + ballpark on the St. George waterfront (SGW frame: s heading WNW along the shore, +t = seaward) ----
   { const F = SGW, gb = (s, t, y, ss, sy, st, col, m) => { const q = fW(F, s, t); box(q[0], y, q[1], st, sy, ss, F.yaw, col, m); };
     const gc = (s, t, ss, st, h) => { const q = fW(F, s, t); cols.push(q[0], q[1], F.yaw, st / 2, ss / 2, h); };
-    for (const [s0, s1, t0, t1] of [[1, 19, -1.6, -5], [4, 17, -8.2, -11.6]]) {
-      const sc = (s0 + s1) / 2, tc = (t0 + t1) / 2, Ls = s1 - s0, Lt = Math.abs(t1 - t0);
-      gb(sc, tc, 1.0, Ls, 2.0, Lt, hex('#e6e2da'), 0); gc(sc, tc, Ls, Lt, 2.0);
-      for (const tf of [t0, t1]) { gb(sc, tf + (tf === t0 ? 0.04 : -0.04) * -1, 0.75, Ls - 0.6, 1.1, 0.06, hex('#2c3e55'), 8); }   // storefront glass both sides
-      gb(sc, tc, 2.08, Ls - 0.4, 0.16, Lt - 0.4, hex('#8b6b4a'), 0);                                                     // timber roof deck
-      for (let s = s0 + 0.5; s < s1; s += 1) { gb(s, t0 + 0.05 * Math.sign(t1 - t0) * -1, 2.35, 0.05, 0.5, 0.05, hex('#c9cdd2'), 0); }
-      for (let s = s0 + 2; s < s1 - 1; s += 4.5) gb(s, tc, 2.4, 1.6, 0.6, Lt * 0.6, hex('#9cc8e0'), 6);                 // rooftop glass pavilions
+    const gby = (s, t, y, ss, sy, st, yaw, col, m) => { const q = fW(F, s, t); box(q[0], y, q[1], st, sy, ss, F.yaw + yaw, col, m); };
+    const timber = hex('#8b6b4a'), glass = hex('#2c3e55'), glassL = hex('#9cc8e0'), mull = hex('#c9cdd2');
+    // two 2-storey outlet buildings either side of a pedestrian street (t 5..8), storefronts on both faces
+    const bar = (s0, s1, t0, t1) => {
+      const sc = (s0 + s1) / 2, tc = (t0 + t1) / 2, Ls = s1 - s0, Lt = t1 - t0;
+      gb(sc, tc, 0.75, Ls, 1.5, Lt, hex('#e6e2da'), 0); gb(sc, tc, 2.25, Ls - 0.2, 1.5, Lt - 0.2, hex('#d8d2c6'), 1); gc(sc, tc, Ls, Lt, 3.0);
+      for (const tf of [t0 - 0.05, t1 + 0.05]) { gb(sc, tf, 0.72, Ls - 0.5, 1.22, 0.08, glass, 8); for (let s = s0 + 0.6; s < s1 - 0.3; s += 1.0) gb(s, tf, 0.72, 0.07, 1.24, 0.1, mull, 0); }
+      for (let s = s0 + 0.15; s <= s1; s += 3.4) for (const tf of [t0 - 0.12, t1 + 0.12]) gb(s, tf, 1.5, 0.32, 3.0, 0.24, timber, 0);   // timber fins
+      gb(sc, tc, 3.04, Ls, 0.08, Lt, timber, 0);                                                                         // roof deck
+      for (const tf of [t0 + 0.05, t1 - 0.05]) gb(sc, tf, 3.32, Ls, 0.5, 0.05, glassL, 6);                            // glass railings
+      for (let s = s0 + 2.5; s < s1 - 1.5; s += 5) { gb(s, tc, 3.6, 2.4, 1.1, Lt * 0.5, glassL, 6); gb(s, tc, 4.2, 2.7, 0.1, Lt * 0.55, hex('#e6e2da'), 0); }
+    };
+    bar(3, 14, 0, 5); bar(3, 14, 8, 13);
+    for (const tf of [5.6, 7.4]) gb(8.5, tf, 1.65, 11, 0.1, 1.2, hex('#3a4855'), 0);                                   // street canopies
+    for (let s = 4.5; s < 14; s += 3) { gb(s, 6.5, 0.6, 0.14, 1.2, 0.14, hex('#5a3e24'), 0); gb(s, 6.5, 1.55, 1.0, 0.9, 1.0, hex('#3f8b4a'), 0); }   // street trees
+    gb(3.9, 10.5, 2.5, 1.8, 5.0, 5.2, hex('#d8d2c6'), 1); gb(3.9, 10.5, 5.1, 1.9, 0.2, 5.3, timber, 0); gc(3.9, 10.5, 1.8, 5.2, 5.0);   // corner tower facing the terminal
+    gb(14, 17.2, 0.5, 34, 0.5, 0.06, mull, 0);                                                                          // waterfront railing
+    for (let s = -2; s < 32; s += 4) { gb(s, 16.4, 0.9, 0.12, 1.8, 0.12, hex('#4d535b'), 0); gb(s, 16.4, 1.85, 0.5, 0.1, 0.2, hex('#f4f1e0'), 5); }   // promenade lamps
+    beam([fW(F, 2.6, 2.5)[0], 2.4, fW(F, 2.6, 2.5)[1]], [fW(SG, 0, -12.3)[0], 2.4, fW(SG, 0, -12.3)[1]], 1.2, glassL, 6);   // glass footbridge to the terminal
+    // ballpark beside the outlets: home plate at (20, 8), centre field up the shore and out over the fill (A0 from +t toward +s)
+    const HS = 20, HT = 8, R = 10, A0 = 1.22, ang = (a, r) => [HS + Math.sin(a + A0) * r, HT + Math.cos(a + A0) * r];
+    for (let k = -4; k <= 4; k++) { const a = k * Math.PI / 16, m = ang(a, R / 2); gby(m[0], m[1], 0.03, R * 0.2, 0.04, R, a + A0, hex('#3f9b4a'), 0); }   // outfield grass fan
+    for (let k = -4; k <= 4; k++) { const a = k * Math.PI / 16, m = ang(a, R + 0.5); gby(m[0], m[1], 0.035, R * 0.2 + 0.4, 0.04, 1.1, a + A0, hex('#b88a5a'), 0);
+      const w = ang(a, R + 1.15); gby(w[0], w[1], 0.5, R * 0.2 + 0.45, 1.0, 0.25, a + A0, hex('#1f5f3f'), 0); gby(w[0], w[1], 1.02, R * 0.2 + 0.45, 0.05, 0.27, a + A0, hex('#f5c518'), 0); gc(w[0], w[1], R * 0.2 + 0.45, 0.3, 1.0); }
+    { const m = ang(0, 2.3); gby(m[0], m[1], 0.05, 3.4, 0.04, 3.4, Math.PI / 4 + A0, hex('#b88a5a'), 0); gby(m[0], m[1], 0.07, 2.3, 0.04, 2.3, Math.PI / 4 + A0, hex('#3f9b4a'), 0);
+      gby(m[0], m[1], 0.09, 0.5, 0.06, 0.5, A0, hex('#b88a5a'), 0);
+      for (const [a, r] of [[0, 0.1], [Math.PI / 4, 2.3], [-Math.PI / 4, 2.3], [0, 3.25]]) { const b = ang(a, r); gby(b[0], b[1], 0.1, 0.24, 0.06, 0.24, Math.PI / 4 + A0, hex('#f4f4f4'), 0); } }
+    for (let tier = 0; tier < 5; tier++) for (let k = -14; k <= 14; k++) {                                             // seating bowl from 1st to 3rd base (fine segments, stepped tiers)
+      const a = Math.PI + k * Math.PI / 21, r = 2.8 + tier * 0.8, m = ang(a, r), y = 0.2 + tier * 0.36;
+      gby(m[0], m[1], y, r * Math.PI / 21 + 0.06, 0.4 + tier * 0.72, 0.8, a + A0, hex(tier === 2 ? '#e6e2da' : (Math.abs(k) % 7 === 0 ? '#c9cdd2' : '#2b5fb3')), 0);
+      if (tier === 4) { gc(m[0], m[1], r * Math.PI / 21, 0.8, 2.4); const c = ang(a, r + 0.9); gby(c[0], c[1], 3.5, r * Math.PI / 21 + 0.3, 0.16, 1.4, a + A0, hex('#e6e2da'), 0); }
     }
-    beam([fW(F, 0, -6)[0], 1.7, fW(F, 0, -6)[1]], [fW(SG, -5, -9.5)[0], 1.7, fW(SG, -5, -9.5)[1]], 1.1, hex('#9cc8e0'), 6); // glass footbridge to the terminal
-    // ballpark: diamond with home plate inland, outfield toward the harbour, seating bowl behind home, light towers
-    const hs = 28, ht = -12; gb(hs, ht + 6, 0.03, 13, 0.04, 12, hex('#3f9b4a'), 0);
-    { const q = fW(F, hs, ht + 3.2); box(q[0], 0.05, q[1], 4.2, 0.04, 4.2, F.yaw + Math.PI / 4, hex('#b88a5a'), 0); box(q[0], 0.07, q[1], 3.0, 0.04, 3.0, F.yaw + Math.PI / 4, hex('#3f9b4a'), 0); }
-    for (let k = 0; k < 4; k++) for (const o of [-1, 1]) gb(hs + o * (3.5 + k * 0.3), ht - 0.6 - k * 0.55, 0.3 + k * 0.32, 3.2, 0.6 + k * 0.64, 0.6, hex(k % 2 ? '#2b5fb3' : '#d8dde2'), 0);
-    gb(hs, ht - 1.8, 0.9, 4, 1.8, 1.4, hex('#d8dde2'), 0); gc(hs, ht - 1.2, 12, 3, 1.8);
-    for (const [s, t] of [[hs - 7, ht - 1], [hs + 7, ht - 1], [hs - 7, ht + 11], [hs + 7, ht + 11]]) { gb(s, t, 3, 0.2, 6, 0.2, C.pole, 0); gb(s, t, 6.1, 1.4, 0.6, 0.2, C.lamp, 5); gc(s, t, 0.3, 0.3, 6); }
-    const L1 = fW(F, 10, -6), L2 = fW(F, hs, ht + 5);
-    LM.push({ type: 'label', x: L1[0], z: L1[1], r: 9, nr: 12, name: 'EMPIRE OUTLETS', sub: 'ST. GEORGE WATERFRONT' });
-    LM.push({ type: 'label', x: L2[0], z: L2[1], r: 7, nr: 10, name: 'BALLPARK', sub: 'ST. GEORGE WATERFRONT' });
+    for (const a of [-0.6, 0.6, -1.3, 1.3, -2.1, 2.1]) { const p = ang(a, a * a > 2 ? 7.4 : R + 2.0); gb(p[0], p[1], 3.6, 0.22, 7.2, 0.22, hex('#9aa1a8'), 0); gby(p[0], p[1], 7.3, 1.6, 0.7, 0.25, a + A0, hex('#f4f1e0'), 5); gc(p[0], p[1], 0.3, 0.3, 7.2); }
+    { const p = ang(0, R + 2.4); gby(p[0], p[1], 2.8, 4.4, 2.4, 0.3, A0, hex('#1b1e23'), 0); gby(p[0], p[1], 2.9, 3.8, 1.8, 0.34, A0, hex('#3aa86b'), 5); gb(p[0], p[1], 0.8, 0.3, 1.6, 0.3, hex('#4d535b'), 0); gc(p[0], p[1], 4.4, 0.4, 4.0); }
+    const L1 = fW(F, 8.5, 6.5), L2 = fW(F, ang(0, 6)[0], ang(0, 6)[1]);
+    LM.push({ type: 'label', x: L1[0], z: L1[1], r: 9, nr: 14, name: 'EMPIRE OUTLETS', sub: 'ST. GEORGE WATERFRONT' });
+    LM.push({ type: 'label', x: L2[0], z: L2[1], r: 11, nr: 14, name: 'BALLPARK', sub: 'ST. GEORGE WATERFRONT' });
   }
   // ---- gas stations (GAS_SITES, map.js) ----
   for (const g of GAS_SITES) gasStation(cols, g.x, g.z, g.yaw, g.big, g.accent);

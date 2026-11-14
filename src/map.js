@@ -207,8 +207,11 @@ const SNUG_RECT = [[SNUG[0] - 24, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] - 7.5],
 const HH = (() => { const F = mkFrame(P(40.6430, -74.1850), P(40.6362, -74.1957)); return F; })();
 // St. George waterfront: ferry terminal (slips point NE at the ferry berth), Empire Outlets + ballpark along the north shore
 const SG = mkFrame(P(40.6437, -74.0728), P(40.6452, -74.0708));        // s = seaward toward the berth, t = 90deg right of that
-const SGW = mkFrame(P(40.6447, -74.0742), P(40.6466, -74.0800));       // along the shore heading WNW (outlets, ballpark); t = inland
-const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(PZ, 48, 2.4, 132, 62)], [1, SNUG_RECT], [3, fRect(HH, -4, 2, 64, -31)], [5, fRect(SG, -14, -12, 2, 12)], [5, fRect(SGW, -2, 1, 36, -15)]];  // SGW: inland is -t  // land is on the -e side of this quay
+const SGW = mkFrame(P(40.6447, -74.0742), P(40.6466, -74.0800));       // along the shore heading WNW (outlets, ballpark); +t = seaward
+// The terminal, outlets and ballpark are built at ~2x their real footprints (the game draws objects bigger than the true-distance map),
+// so the St. George waterfront gets harbour fill to stand on: real drivable land, added to the borough raster before the land blur.
+const SG_FILL = [fRect(SG, -12, -13, 8.3, 11.5), fRect(SGW, -6, -2, 16, 17.5), fRect(SGW, 15, -2, 34, 19.5)];   // stops short of the Kill Van Kull narrows (Bayonne is ~25 units off from s = 40)
+const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(PZ, 48, 2.4, 132, 62)], [1, SNUG_RECT], [3, fRect(HH, -4, 2, 64, -31)], [5, fRect(SG, -12, -13, 8.3, 16)], [5, fRect(SGW, -6, -1, 16, 17.5)], [5, fRect(SGW, 15, -1, 34, 19.5)]];  // SGW: +t is seaward (fill)  // land is on the -e side of this quay
 // smooth value noise (marsh pools / reed beds)
 function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
   const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; }
@@ -275,6 +278,7 @@ function buildMap() {
   const brd = GEO.BKQ_BORDER.slice().reverse().slice(1, -1);
   fillPoly(BORO, toW(GEO.NJ), 6);
   fillPoly(BORO, toW(GEO.SI), 5);
+  for (const f of SG_FILL) fillPoly(BORO, f, 5);                    // St. George waterfront fill
   fillPoly(BORO, toW(GEO.SILVER_LAKE), 0); // inland lake
   fillPoly(BORO, toW(GEO.BKN_SHORE.concat(brd)), 3);
   fillPoly(BORO, toW(GEO.QNS_SHORE.concat(brd)), 4);
