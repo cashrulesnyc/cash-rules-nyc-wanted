@@ -344,6 +344,16 @@ function buildSite() {
       } else if (st === 1) {
         box(p[0], h / 2, p[1], sx, h, sz, y, RET[n % 2], 0); box(p[0], h + 0.04, p[1], sx - 0.2, 0.08, sz - 0.2, y, hex('#a9adb2'), 0);
         box(p[0], h - 0.2, p[1], sx + 0.05, 0.4, sz + 0.05, y, hex('#5d6670'), 0);
+      } else if (st === 3) {   // industrial / self-storage: ribbed metal walls, a row of roll-up doors on both long sides, roof vents
+        const IND = [hex('#b8bec4'), hex('#cfc7b4'), hex('#9fb0bf'), hex('#c9c2ae')], c = IND[n % 4], long = sx >= sz, L = long ? sx : sz, W = long ? sz : sx;
+        box(p[0], h / 2, p[1], sx, h, sz, y, c, 0); box(p[0], h + 0.04, p[1], sx - 0.1, 0.08, sz - 0.1, y, hex('#8d949b'), 0);
+        for (let r = -L / 2 + 0.3; r < L / 2 - 0.2; r += 0.6) for (const sd of [-1, 1]) { const q = long ? rot(p[0], p[1], y, r, sd * (W / 2 + 0.02)) : rot(p[0], p[1], y, sd * (W / 2 + 0.02), r);
+          box(q[0], h / 2, q[1], long ? 0.05 : 0.04, h, long ? 0.04 : 0.05, y, hex('#9aa1a8'), 0); }                         // wall ribs
+        const nd = Math.max(1, Math.floor((L - 0.6) / 1.1));
+        for (let k = 0; k < nd; k++) { const r = -L / 2 + 0.85 + k * (L - 1.1) / Math.max(1, nd - 1 || 1); for (const sd of [-1, 1]) {
+          const q = long ? rot(p[0], p[1], y, r, sd * (W / 2 + 0.04)) : rot(p[0], p[1], y, sd * (W / 2 + 0.04), r);
+          box(q[0], 0.42, q[1], long ? 0.7 : 0.05, 0.84, long ? 0.05 : 0.7, y, [hex('#d9822b'), hex('#2f6f9f'), hex('#5d6670')][n % 3], 0); } }   // roll-up doors
+        for (let k = 0; k < Math.min(4, Math.floor(L / 2.5)); k++) { const q = long ? rot(p[0], p[1], y, -L / 2 + 1.2 + k * 2.5, 0) : rot(p[0], p[1], y, 0, -L / 2 + 1.2 + k * 2.5); box(q[0], h + 0.25, q[1], 0.45, 0.4, 0.45, y, hex('#a7adb3'), 0); }
       } else {
         box(p[0], h / 2, p[1], sx, h, sz, y, INSTC[n % 2], 1); box(p[0], h + 0.05, p[1], sx - 0.15, 0.1, sz - 0.15, y, hex('#6d6f73'), 0);
       }
