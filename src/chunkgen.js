@@ -70,7 +70,7 @@ function initWorldData() {
     for (const c of GEO.CAMPUS) { let la = 0, lo = 0; for (const q of c[2]) { la += q[0]; lo += q[1]; } const w = P(la / c[2].length, lo / c[2].length); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr: 16, name: c[0], sub: c[1] }); }
     for (const [s, t, nr, name, sub] of [[66, 40, 18, 'RICHMOND AVE PLAZA', '2795 RICHMOND AVE · ELECTRONICS · GROCERY'], [97, 40, 14, 'RICHMOND SHOPPING CENTER', '2873 RICHMOND AVE · DEPARTMENT STORE'], [119, 38, 18, 'WAREHOUSE CLUB', '2975 RICHMOND AVE · GAS · TIRES']]) {
       const w = fW(PZ, s, t); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr, name, sub }); } }
-  initLots(); buildSite(); carveSites();
+  initLots(); buildSite(); carveSites(); gridSnap();
   for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
     ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
     ['rock', 40.7587, -73.9787, 5.0, 'ROCKEFELLER CENTER', 0], ['esb', 40.7484, -73.9857, 5.5, 'EMPIRE STATE BUILDING', 0],
@@ -158,7 +158,7 @@ function genChunk(cx, cz) {
       // alpha: 32*borough where the street grid decides the tile (the ground shader then draws roads,
       // sidewalks and markings analytically, sharp at any resolution); 255 = use the texture colour as-is
       const k = (j * CTEX + i) * 4; tex[k] = o[0]; tex[k + 1] = o[1]; tex[k + 2] = o[2];
-      tex[k + 3] = (t === T_ROAD || t === T_WALK || t === T_LOT) && LASTG ? LASTG.boro * 32 : (t === T_HWY || t === T_RUNWAY) ? 224 : 255; // 224 = highway/avenue/runway segment
+      tex[k + 3] = (t === T_ROAD || t === T_WALK || t === T_LOT) && LASTG && !LASTMOD ? LASTG.boro * 32 : (t === T_HWY || t === T_RUNWAY) ? 224 : 255; // 224 = highway/avenue/runway segment
       if (t !== T_WATER) land++;
     }
   }
@@ -601,7 +601,9 @@ function buildSite() {
 // tarmac); bare grid lots under a footprint become plaza so no procedural house grows inside it. Mapped avenues and
 // highways (segments) are not touched: sites are placed clear of them.
 let CARVED = 0;
+const FORCE_OFF = new Map();   // street pieces under site buildings (key -> zone), removed by gridSnap no matter the coverage
 function carveSites() {
+  FORCE_OFF.clear();
   if (!SITE_COLS) return;
   const S = SITE_COLS, done = new Set(), sw = GRID_SW;
   const zAt = (x, z) => { const m = landIdx(x, z); return m < 0 ? -1 : ZONE[m]; };
@@ -614,10 +616,12 @@ function carveSites() {
     if (zc === 0) fillPoly(ZONE, [W(-ha - 0.6, -hb - 0.6), W(ha + 0.6, -hb - 0.6), W(ha + 0.6, hb + 0.6), W(-ha - 0.6, hb + 0.6)], 5, true);
     const rect = (u0, u1, v0, v1) => fillPoly(ZONE, [gWorld(g, u0, v0), gWorld(g, u1, v0), gWorld(g, u1, v1), gWorld(g, u0, v1)], val, true);
     for (let a = -ha - 0.4; a <= ha + 0.4; a += 0.5) for (let d = -hb - 0.4; d <= hb + 0.4; d += 0.5) {
-      const q = W(a, d); if (zAt(q[0], q[1]) !== 0 || boroAt(q[0], q[1]) !== b || segHit(q[0], q[1])) continue;
+      const q = W(a, d); if (boroAt(q[0], q[1]) !== b || segHit(q[0], q[1])) continue;   // painted zone or not: streets under buildings go
       const l = gLocal(g, q[0], q[1]), iu = Math.round(l[0] / g.A), jv = Math.round(l[1] / g.S);
-      const onA = Math.abs(l[0] - iu * g.A) < g.wa / 2 + sw, onS = Math.abs(l[1] - jv * g.S) < g.ws / 2 + sw;
-      if (!onA && !onS) continue;
+      if (blockDist(Math.abs(l[0] - iu * g.A) - g.wa / 2, Math.abs(l[1] - jv * g.S) - g.ws / 2, g.r) >= sw) continue;   // in a lot, not the street band
+      FORCE_OFF.set(streetKey(b, g, l[0], l[1]), val);                                                                     // gridSnap: this piece goes, always
+      const onA0 = Math.abs(l[0] - iu * g.A) < g.wa / 2 + sw, onS0 = Math.abs(l[1] - jv * g.S) < g.ws / 2 + sw;
+      const onA = onA0 || !onS0, onS = onS0 || !onA0;                                                                       // rounded-corner fillets count as the intersection
       const key = b + ':' + (onA && onS ? 'x' + iu + ',' + jv : onA ? 'a' + iu + ',' + Math.floor(l[1] / g.S) : 's' + Math.floor(l[0] / g.A) + ',' + jv);
       if (done.has(key)) continue; done.add(key); CARVED++;
       const ea = g.wa / 2 + sw + MAP_RES * 0.6, es = g.ws / 2 + sw + MAP_RES * 0.6;   // + over half a raster cell, so no sliver of curb survives
@@ -626,6 +630,68 @@ function carveSites() {
       else { const i0 = Math.floor(l[0] / g.A); rect(i0 * g.A + g.wa / 2, (i0 + 1) * g.A - g.wa / 2, jv * g.S - es, jv * g.S + es); }        // street, one block
     }
   }
+}
+
+// Decide every grid street piece and park block once, after all zones/sites exist (see STREET_OFF in map.js).
+// Pieces: avenue legs (t 1), street legs (t 2), intersections (t 0). A leg covered >= 50% by a zone becomes that zone; an
+// intersection goes only when at most one of its legs is still a street (a dead end) and it is mostly zone, or when no leg is
+// left. Park / cemetery / campus blocks (zones 1, 4) snap to whole blocks: >= 50% covered -> the whole block, curb to curb;
+// < 50% -> back to ordinary lots, unless a site building stands in the block.
+function gridSnap() {
+  STREET_OFF.clear(); GRID_SNAPPED = false;
+  const legs = new Map(), xs = new Map(), blocks = new Map();
+  for (let iy = 0; iy < MH; iy++) for (let ix = 0; ix < MW; ix++) {
+    const m = iy * MW + ix, zc = ZONE[m]; if (!zc) continue;
+    const b = BORO[m], g = GRIDS[b]; if (!g) continue;
+    const l = gLocal(g, WX0 + (ix + 0.5) * MAP_RES, WZ0 + (iy + 0.5) * MAP_RES);
+    const iu = Math.round(l[0] / g.A), jv = Math.round(l[1] / g.S), i0 = Math.floor(l[0] / g.A), j0 = Math.floor(l[1] / g.S);
+    legs.set(pieceKey(b, 1, iu, j0), [b, 1, iu, j0]); legs.set(pieceKey(b, 2, i0, jv), [b, 2, i0, jv]); xs.set(pieceKey(b, 0, iu, jv), [b, iu, jv]);
+    if (zc === 1 || zc === 4) blocks.set(pieceKey(b, 0, i0, j0) + 0.5, [b, i0, j0]);
+  }
+  const zAt = (x, z) => { const m = landIdx(x, z); return m < 0 ? -1 : ZONE[m]; };
+  const judge = (b, g, pts) => {   // -> majority zone code if zone covers >= half of the land samples, else 0
+    let land = 0, cov = 0; const cnt = {};
+    for (const [u, v] of pts) { const q = gWorld(g, u, v); if (boroAt(q[0], q[1]) !== b) continue; land++; const z = zAt(q[0], q[1]); if (z > 0) { cov++; cnt[z] = (cnt[z] || 0) + 1; } }
+    if (!land || cov * 2 < land) return 0;
+    let best = 0, bn = -1; for (const k in cnt) if (cnt[k] > bn) { bn = cnt[k]; best = +k; } return best;
+  };
+  for (const [k, [b, t, i, j]] of legs) {
+    const g = GRIDS[b], pts = [];
+    if (t === 1) { const v0 = j * g.S + g.ws / 2 + g.sw, v1 = (j + 1) * g.S - g.ws / 2 - g.sw; for (let a = 0; a < 7; a++) for (const o of [-0.35, 0, 0.35]) pts.push([i * g.A + o * g.wa, v0 + (a + 0.5) * (v1 - v0) / 7]); }
+    else { const u0 = i * g.A + g.wa / 2 + g.sw, u1 = (i + 1) * g.A - g.wa / 2 - g.sw; for (let a = 0; a < 7; a++) for (const o of [-0.35, 0, 0.35]) pts.push([u0 + (a + 0.5) * (u1 - u0) / 7, j * g.S + o * g.ws]); }
+    const z = judge(b, g, pts); if (z) STREET_OFF.set(k, z);
+  }
+  for (const [k, [b, i, j]] of xs) {
+    const g = GRIDS[b], pts = [];
+    for (const a of [-0.4, 0, 0.4]) for (const c of [-0.4, 0, 0.4]) pts.push([i * g.A + a * g.wa, j * g.S + c * g.ws]);
+    const z = judge(b, g, pts);
+    const legK = [pieceKey(b, 1, i, j - 1), pieceKey(b, 1, i, j), pieceKey(b, 2, i - 1, j), pieceKey(b, 2, i, j)];
+    let kept = 0, zc = z; for (const lk of legK) { const zz = STREET_OFF.get(lk); if (zz === undefined) { const q = gWorld(g, i * g.A, j * g.S); kept++; } else if (!zc) zc = zz; }
+    if ((kept <= 1 && z) || kept === 0) STREET_OFF.set(k, zc || 5);
+  }
+  for (const [k, z] of FORCE_OFF) STREET_OFF.set(k, z);   // nothing stands on a street, ever
+  // park / cemetery / campus blocks snap to whole blocks
+  const siteBlk = new Set();
+  if (SITE_COLS) for (let i = 0; i < SITE_COLS.length; i += 6) { const b = boroAt(SITE_COLS[i], SITE_COLS[i + 1]), g = GRIDS[b]; if (!g) continue;
+    const r = Math.hypot(SITE_COLS[i + 3], SITE_COLS[i + 4]); for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) { const l = gLocal(g, SITE_COLS[i] + dx, SITE_COLS[i + 1] + dz); siteBlk.add(pieceKey(b, 0, Math.floor(l[0] / g.A), Math.floor(l[1] / g.S))); } }
+  for (const [, [b, i, j]] of blocks) {
+    const g = GRIDS[b], u0 = i * g.A + g.wa / 2, u1 = (i + 1) * g.A - g.wa / 2, v0 = j * g.S + g.ws / 2, v1 = (j + 1) * g.S - g.ws / 2, pts = [];
+    for (let a = 0; a < 5; a++) for (let c = 0; c < 5; c++) pts.push([u0 + g.sw + (a + 0.5) * (u1 - u0 - 2 * g.sw) / 5, v0 + g.sw + (c + 0.5) * (v1 - v0 - 2 * g.sw) / 5]);
+    let z = judge(b, g, pts); const rect = [gWorld(g, u0, v0), gWorld(g, u1, v0), gWorld(g, u1, v1), gWorld(g, u0, v1)];
+    if (!z && siteBlk.has(pieceKey(b, 0, i, j))) {   // a block with real buildings (a campus) and any lawn: the whole block is the campus
+      for (const [u, v] of pts) { const q = gWorld(g, u, v); const zz = zAt(q[0], q[1]); if (zz === 1 || zz === 4) { z = zz; break; } } }
+    if (z === 1 || z === 4) fillPoly(ZONE, rect, z, true);
+    else if (!z && !siteBlk.has(pieceKey(b, 0, i, j))) {   // mostly lots: drop the stray park/campus cells in it
+      let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const q of rect) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); }
+      for (let iy = Math.max(0, Math.floor((z0 - WZ0) / MAP_RES)); iy <= Math.min(MH - 1, Math.floor((z1 - WZ0) / MAP_RES)); iy++)
+        for (let ix = Math.max(0, Math.floor((x0 - WX0) / MAP_RES)); ix <= Math.min(MW - 1, Math.floor((x1 - WX0) / MAP_RES)); ix++) {
+          const m = iy * MW + ix; if (ZONE[m] !== 1 && ZONE[m] !== 4) continue; if (BORO[m] !== b) continue;
+          const l = gLocal(g, WX0 + (ix + 0.5) * MAP_RES, WZ0 + (iy + 0.5) * MAP_RES);
+          if (l[0] > u0 && l[0] < u1 && l[1] > v0 && l[1] < v1) ZONE[m] = 0;
+        }
+    }
+  }
+  GRID_SNAPPED = true;
 }
 
 function addSite(ctx) {

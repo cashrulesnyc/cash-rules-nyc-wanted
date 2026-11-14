@@ -267,13 +267,13 @@ const GROUND_FS = `#version 300 es
 precision highp float;
 in vec2 vUV; in vec3 vW; in vec4 vS; out vec4 o;
 uniform sampler2D uTex; uniform vec3 uFlat; uniform float uUseTex;
-uniform vec4 uGa[7]; uniform vec4 uGb[7];
+uniform vec4 uGa[7]; uniform vec4 uGb[7]; uniform float uGr[7];
 uniform vec4 uSegA[32]; uniform vec4 uSegB[32]; uniform int uSegN; // nearby highway/avenue/runway segments
 ${LIGHT_FS}
 float cov(float d, float hw, float f){ return clamp((hw - d) / f + 0.5, 0.0, 1.0) * clamp(2.0 * hw / f, 0.0, 1.0); }
 float dsh(float a, float p, float f){ float x = fract(a / p) * p; return cov(abs(x - p * 0.5), p * 0.25, f); }
 vec3 C(float r, float g, float b){ return vec3(r, g, b) / 255.0; }
-float bdist(float a, float b){ const float R = ${GRID_R.toFixed(3)}; if (a > 0.0 && b > 0.0 && a < R && b < R) return R - length(vec2(R - a, R - b)); return min(a, b); }
+float bdist(float a, float b, float R){ if (a > 0.0 && b > 0.0 && a < R && b < R) return R - length(vec2(R - a, R - b)); return min(a, b); }
 vec3 gridColor(int bo, vec3 lot){
   vec4 ga = uGa[bo], gb = uGb[bo];
   vec2 r = vW.xz - ga.xy;
@@ -286,7 +286,7 @@ vec3 gridColor(int bo, vec3 lot){
   vec3 walk = C(196.0, 192.0, 184.0) * (0.96 + 0.07 * n);
   float joint = max(cov(abs(fract(u / 1.4) - 0.5) * 1.4, 0.09, fu), cov(abs(fract(v / 1.4) - 0.5) * 1.4, 0.09, fv));
   walk *= 1.0 - 0.08 * joint;
-  float bd = bdist(du - wa * 0.5, dv - ws * 0.5), fb = max(fwidth(bd), 1e-3);   // rounded-corner blocks (GRID_R)
+  float bd = bdist(du - wa * 0.5, dv - ws * 0.5, uGr[bo]), fb = max(fwidth(bd), 1e-3);   // rounded-corner blocks (per-borough radius)
   float inner = cov(abs(bd - (sw - 0.1)), 0.1, fb);
   walk *= 1.0 - 0.14 * inner; // shade where the sidewalk meets the building line
   float curb = cov(abs(bd - 0.1), 0.1, fb);
@@ -676,10 +676,10 @@ const GFX = {
     // ground
     const pg = this.pGround; gl.useProgram(pg.p); setCommon(pg);
     if (!this.gridA && typeof GRIDS !== 'undefined') {
-      this.gridA = new Float32Array(28); this.gridB = new Float32Array(28);
-      for (let i = 1; i < 7; i++) { const g = GRIDS[i]; if (!g) continue; this.gridA.set([g.ox, g.oz, g.ex, g.ez], i * 4); this.gridB.set([g.A, g.S, g.wa, g.ws], i * 4); }
+      this.gridA = new Float32Array(28); this.gridB = new Float32Array(28); this.gridR = new Float32Array(7);
+      for (let i = 1; i < 7; i++) { const g = GRIDS[i]; if (!g) continue; this.gridA.set([g.ox, g.oz, g.ex, g.ez], i * 4); this.gridB.set([g.A, g.S, g.wa, g.ws], i * 4); this.gridR[i] = g.r; }
     }
-    if (this.gridA) { gl.uniform4fv(pg.u['uGa[0]'] || pg.u.uGa, this.gridA); gl.uniform4fv(pg.u['uGb[0]'] || pg.u.uGb, this.gridB); }
+    if (this.gridA) { gl.uniform4fv(pg.u['uGa[0]'] || pg.u.uGa, this.gridA); gl.uniform4fv(pg.u['uGb[0]'] || pg.u.uGb, this.gridB); if (pg.u['uGr[0]'] || pg.u.uGr) gl.uniform1fv(pg.u['uGr[0]'] || pg.u.uGr, this.gridR); }
     // nearest 32 non-bridge segments to the view centre (refreshed when the view moves 8+ units)
     if (typeof SEGS !== 'undefined') {
       const tx = S.target[0], tz = S.target[2];

@@ -560,15 +560,17 @@ const toW = a => a.map(PL);
 // Roads were widened for arcade driving: every avenue +ROAD_WA, every street +ROAD_WS (taken out of the
 // blocks), sidewalks GRID_SW wide. GRID_SW is also baked into the ground shader (gl.js).
 const GRID_SW = 0.6, ROAD_WA = 1.2, ROAD_WS = 0.8, HWY_K = 1.25, BRIDGE_K = 1.2;
-// Rounded street corners: every block is a rounded rectangle (curb radius GRID_R), so turns flow instead of snapping 90 deg.
-// blockDist(a, b) = signed distance into the block from its curb, where a/b = distance past the avenue/street road edge.
+// Rounded street corners: every block is a rounded rectangle (curb radius g.r), so turns flow instead of snapping 90 deg.
+// The radius suits the block size: GRID_R (2.0) on suburban grids with big blocks, GRID_R_CITY (0.6) on dense city grids,
+// the largest that keeps every corner lot (rowhouses run to within 0.04 of the lot line) inside the block.
+// blockDist(a, b, r) = signed distance into the block from its curb, where a/b = distance past the avenue/street road edge.
 // Mirrored in GROUND_FS (gl.js). Road < 0 <= sidewalk < GRID_SW <= lot.
-const GRID_R = 2.0;
-function blockDist(a, b) { if (a > 0 && b > 0 && a < GRID_R && b < GRID_R) return GRID_R - Math.hypot(GRID_R - a, GRID_R - b); return Math.min(a, b); }
+const GRID_R = 2.0, GRID_R_CITY = 0.6;
+function blockDist(a, b, r) { if (a > 0 && b > 0 && a < r && b < r) return r - Math.hypot(r - a, r - b); return Math.min(a, b); }
 function mkGrid(boro, thDeg, A, S, wa, ws, oLat, oLon, style) {
   const th = thDeg * Math.PI / 180, o = P(oLat, oLon);
   wa += ROAD_WA; ws += ROAD_WS;
-  return { boro, A, S, wa, ws, sw: GRID_SW, ox: o[0], oz: o[1], dx: Math.sin(th), dz: -Math.cos(th), ex: Math.cos(th), ez: Math.sin(th), th, style };
+  return { boro, A, S, wa, ws, sw: GRID_SW, r: style === 'sub' ? GRID_R : GRID_R_CITY, ox: o[0], oz: o[1], dx: Math.sin(th), dz: -Math.cos(th), ex: Math.cos(th), ez: Math.sin(th), th, style };
 }
 const GRIDS = [];
 GRIDS[1] = mkGrid(1, 29, 15.5, 9, 3.6, 2.8, 40.7681, -73.9819, 'city');
@@ -848,7 +850,7 @@ function buildMap() {
 }
 
 // ---------- tile classification ----------
-let LASTU = 0, LASTV = 0, LASTG = null;
+let LASTU = 0, LASTV = 0, LASTG = null, LASTMOD = false, LASTBD = 0;   // LASTMOD: street tile reshaped by gridSnap (texture-painted, not shader grid)
 function tileAt(x, z) {
   if (mapIdx(x, z) < 0) return T_WATER;
   const m = landIdx(x, z);
@@ -861,16 +863,55 @@ function tileAt(x, z) {
   }
   if (b === 0) return T_WATER;
   const zn = ZONE[m];
-  if (zn) return zn === 1 ? T_PARK : zn === 2 ? T_SAND : zn === 3 ? T_TARMAC : zn === 4 ? T_CEM : zn === 6 ? T_MARSH : zn === 7 ? T_PARKING : T_PLAZA;
-  const g = GRIDS[b]; LASTG = g;
+  if (zn && !GRID_SNAPPED) return zoneTile(zn);
+  const g = GRIDS[b];
+  if (!g) return zn ? zoneTile(zn) : T_LOT;
+  LASTG = g; LASTMOD = false;
   const rx = x - g.ox, rz = z - g.oz;
   const u = rx * g.ex + rz * g.ez, v = rx * g.dx + rz * g.dz; LASTU = u; LASTV = v;
   const du = Math.abs(u - g.A * Math.round(u / g.A)), dv = Math.abs(v - g.S * Math.round(v / g.S));
-  const bd = blockDist(du - g.wa / 2, dv - g.ws / 2);
-  if (bd < 0) return T_ROAD;
-  if (bd < g.sw) return T_WALK;
-  return T_LOT;
+  const bd = blockDist(du - g.wa / 2, dv - g.ws / 2, g.r);
+  if (bd < g.sw) {   // street band (road + sidewalks): a street piece is either whole street or wholly zone (gridSnap)
+    if (STREET_OFF.size) {
+      const k = streetKey(b, g, u, v), z2 = STREET_OFF.get(k); if (z2 !== undefined) return zoneTile(z2);
+      const t = Math.floor(k / 40000 / 40000) % 3, iu = Math.round(u / g.A), jv = Math.round(v / g.S);
+      if (t === 0) {   // kept intersection: on the side of a removed leg the crossing street's curb + sidewalk run straight on
+        const aK = pieceKey(b, 1, iu, v < jv * g.S ? jv - 1 : jv), sK = pieceKey(b, 2, u < iu * g.A ? iu - 1 : iu, jv);
+        const aG = STREET_OFF.get(aK), sG = STREET_OFF.get(sK);
+        if (aG !== undefined || sG !== undefined) {
+          const e = blockDist(aG !== undefined ? 1e9 : du - g.wa / 2, sG !== undefined ? 1e9 : dv - g.ws / 2, g.r);
+          LASTMOD = true; LASTBD = e;
+          return e < 0 ? T_ROAD : e < g.sw ? T_WALK : zoneTile(aG !== undefined ? aG : sG);
+        }
+      } else {         // kept leg: if the intersection at this end is gone, the street ends with a sidewalk across it
+        const xK = pieceKey(b, 0, iu, jv), xG = STREET_OFF.get(xK);
+        if (xG !== undefined) {
+          const e = t === 1 ? dv - (g.ws / 2 + g.sw) : du - (g.wa / 2 + g.sw);   // distance into the leg from the old intersection
+          if (e < g.sw) { LASTMOD = true; LASTBD = g.sw - e; return e < 0 ? zoneTile(xG) : T_WALK; }
+        }
+      }
+    }
+    return bd < 0 ? T_ROAD : T_WALK;
+  }
+  return zn ? zoneTile(zn) : T_LOT;
 }
+function zoneTile(zn) { return zn === 1 ? T_PARK : zn === 2 ? T_SAND : zn === 3 ? T_TARMAC : zn === 4 ? T_CEM : zn === 6 ? T_MARSH : zn === 7 ? T_PARKING : T_PLAZA; }
+// Whole street pieces (owner: roads must never just turn into grass). After every zone and site is painted, gridSnap()
+// (chunkgen.js) decides each grid piece once: an avenue leg / street leg between two intersections, or an intersection
+// (including its rounded corners). A piece that a zone covers by at least half becomes that zone (STREET_OFF: key -> zone);
+// every other piece is drawn as a complete street with its sidewalks, even where a park or campus outline crosses it.
+// Before gridSnap runs (map build, site placement, carving) the raster zone wins everywhere, as it always did.
+let GRID_SNAPPED = false;
+const STREET_OFF = new Map();
+function streetKey(b, g, u, v) {
+  const iu = Math.round(u / g.A), jv = Math.round(v / g.S), du = Math.abs(u - iu * g.A), dv = Math.abs(v - jv * g.S);
+  const ea = g.wa / 2 + g.sw, es = g.ws / 2 + g.sw;
+  let t = 0, i = iu, j = jv;
+  if (du < ea && dv >= es) { t = 1; j = Math.floor(v / g.S); }
+  else if (dv < es && du >= ea) { t = 2; i = Math.floor(u / g.A); }
+  return pieceKey(b, t, i, j);
+}
+function pieceKey(b, t, i, j) { return ((b * 3 + t) * 40000 + (i + 20000)) * 40000 + (j + 20000); }
 function drivable(x, z) { return tileAt(x, z) !== T_WATER; }
 function isRoadish(t) { return t === T_ROAD || t === T_HWY || t === T_BRIDGE || t === T_RUNWAY; }
 
@@ -936,8 +977,8 @@ function texel(x, z, out) {
       const g = LASTG, u = LASTU, v = LASTV;
       const du = Math.abs(u - g.A * Math.round(u / g.A)), dv = Math.abs(v - g.S * Math.round(v / g.S));
       c = shade(COL.walk, 0.96 + 0.07 * n, _sc);
-      const bd = blockDist(du - g.wa / 2, dv - g.ws / 2);
-      if (bd < 0.2) c = COL.curb;
+      const bd = LASTMOD ? LASTBD : blockDist(du - g.wa / 2, dv - g.ws / 2, g.r);
+      if (bd < 0.2 && bd > -0.5) c = COL.curb;
       else if (fr(u / 1.4) < 0.13 || fr(v / 1.4) < 0.13) c = shade(COL.walk, 0.9, _sc);
       // building-side shadow line (fake AO where the sidewalk meets the lot)
       else if (bd > g.sw - 0.2) c = shade(COL.walk, 0.84, _sc);
@@ -1078,7 +1119,7 @@ function initWorldData() {
     for (const c of GEO.CAMPUS) { let la = 0, lo = 0; for (const q of c[2]) { la += q[0]; lo += q[1]; } const w = P(la / c[2].length, lo / c[2].length); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr: 16, name: c[0], sub: c[1] }); }
     for (const [s, t, nr, name, sub] of [[66, 40, 18, 'RICHMOND AVE PLAZA', '2795 RICHMOND AVE · ELECTRONICS · GROCERY'], [97, 40, 14, 'RICHMOND SHOPPING CENTER', '2873 RICHMOND AVE · DEPARTMENT STORE'], [119, 38, 18, 'WAREHOUSE CLUB', '2975 RICHMOND AVE · GAS · TIRES']]) {
       const w = fW(PZ, s, t); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr, name, sub }); } }
-  initLots(); buildSite(); carveSites();
+  initLots(); buildSite(); carveSites(); gridSnap();
   for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
     ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
     ['rock', 40.7587, -73.9787, 5.0, 'ROCKEFELLER CENTER', 0], ['esb', 40.7484, -73.9857, 5.5, 'EMPIRE STATE BUILDING', 0],
@@ -1166,7 +1207,7 @@ function genChunk(cx, cz) {
       // alpha: 32*borough where the street grid decides the tile (the ground shader then draws roads,
       // sidewalks and markings analytically, sharp at any resolution); 255 = use the texture colour as-is
       const k = (j * CTEX + i) * 4; tex[k] = o[0]; tex[k + 1] = o[1]; tex[k + 2] = o[2];
-      tex[k + 3] = (t === T_ROAD || t === T_WALK || t === T_LOT) && LASTG ? LASTG.boro * 32 : (t === T_HWY || t === T_RUNWAY) ? 224 : 255; // 224 = highway/avenue/runway segment
+      tex[k + 3] = (t === T_ROAD || t === T_WALK || t === T_LOT) && LASTG && !LASTMOD ? LASTG.boro * 32 : (t === T_HWY || t === T_RUNWAY) ? 224 : 255; // 224 = highway/avenue/runway segment
       if (t !== T_WATER) land++;
     }
   }
@@ -1609,7 +1650,9 @@ function buildSite() {
 // tarmac); bare grid lots under a footprint become plaza so no procedural house grows inside it. Mapped avenues and
 // highways (segments) are not touched: sites are placed clear of them.
 let CARVED = 0;
+const FORCE_OFF = new Map();   // street pieces under site buildings (key -> zone), removed by gridSnap no matter the coverage
 function carveSites() {
+  FORCE_OFF.clear();
   if (!SITE_COLS) return;
   const S = SITE_COLS, done = new Set(), sw = GRID_SW;
   const zAt = (x, z) => { const m = landIdx(x, z); return m < 0 ? -1 : ZONE[m]; };
@@ -1622,10 +1665,12 @@ function carveSites() {
     if (zc === 0) fillPoly(ZONE, [W(-ha - 0.6, -hb - 0.6), W(ha + 0.6, -hb - 0.6), W(ha + 0.6, hb + 0.6), W(-ha - 0.6, hb + 0.6)], 5, true);
     const rect = (u0, u1, v0, v1) => fillPoly(ZONE, [gWorld(g, u0, v0), gWorld(g, u1, v0), gWorld(g, u1, v1), gWorld(g, u0, v1)], val, true);
     for (let a = -ha - 0.4; a <= ha + 0.4; a += 0.5) for (let d = -hb - 0.4; d <= hb + 0.4; d += 0.5) {
-      const q = W(a, d); if (zAt(q[0], q[1]) !== 0 || boroAt(q[0], q[1]) !== b || segHit(q[0], q[1])) continue;
+      const q = W(a, d); if (boroAt(q[0], q[1]) !== b || segHit(q[0], q[1])) continue;   // painted zone or not: streets under buildings go
       const l = gLocal(g, q[0], q[1]), iu = Math.round(l[0] / g.A), jv = Math.round(l[1] / g.S);
-      const onA = Math.abs(l[0] - iu * g.A) < g.wa / 2 + sw, onS = Math.abs(l[1] - jv * g.S) < g.ws / 2 + sw;
-      if (!onA && !onS) continue;
+      if (blockDist(Math.abs(l[0] - iu * g.A) - g.wa / 2, Math.abs(l[1] - jv * g.S) - g.ws / 2, g.r) >= sw) continue;   // in a lot, not the street band
+      FORCE_OFF.set(streetKey(b, g, l[0], l[1]), val);                                                                     // gridSnap: this piece goes, always
+      const onA0 = Math.abs(l[0] - iu * g.A) < g.wa / 2 + sw, onS0 = Math.abs(l[1] - jv * g.S) < g.ws / 2 + sw;
+      const onA = onA0 || !onS0, onS = onS0 || !onA0;                                                                       // rounded-corner fillets count as the intersection
       const key = b + ':' + (onA && onS ? 'x' + iu + ',' + jv : onA ? 'a' + iu + ',' + Math.floor(l[1] / g.S) : 's' + Math.floor(l[0] / g.A) + ',' + jv);
       if (done.has(key)) continue; done.add(key); CARVED++;
       const ea = g.wa / 2 + sw + MAP_RES * 0.6, es = g.ws / 2 + sw + MAP_RES * 0.6;   // + over half a raster cell, so no sliver of curb survives
@@ -1634,6 +1679,68 @@ function carveSites() {
       else { const i0 = Math.floor(l[0] / g.A); rect(i0 * g.A + g.wa / 2, (i0 + 1) * g.A - g.wa / 2, jv * g.S - es, jv * g.S + es); }        // street, one block
     }
   }
+}
+
+// Decide every grid street piece and park block once, after all zones/sites exist (see STREET_OFF in map.js).
+// Pieces: avenue legs (t 1), street legs (t 2), intersections (t 0). A leg covered >= 50% by a zone becomes that zone; an
+// intersection goes only when at most one of its legs is still a street (a dead end) and it is mostly zone, or when no leg is
+// left. Park / cemetery / campus blocks (zones 1, 4) snap to whole blocks: >= 50% covered -> the whole block, curb to curb;
+// < 50% -> back to ordinary lots, unless a site building stands in the block.
+function gridSnap() {
+  STREET_OFF.clear(); GRID_SNAPPED = false;
+  const legs = new Map(), xs = new Map(), blocks = new Map();
+  for (let iy = 0; iy < MH; iy++) for (let ix = 0; ix < MW; ix++) {
+    const m = iy * MW + ix, zc = ZONE[m]; if (!zc) continue;
+    const b = BORO[m], g = GRIDS[b]; if (!g) continue;
+    const l = gLocal(g, WX0 + (ix + 0.5) * MAP_RES, WZ0 + (iy + 0.5) * MAP_RES);
+    const iu = Math.round(l[0] / g.A), jv = Math.round(l[1] / g.S), i0 = Math.floor(l[0] / g.A), j0 = Math.floor(l[1] / g.S);
+    legs.set(pieceKey(b, 1, iu, j0), [b, 1, iu, j0]); legs.set(pieceKey(b, 2, i0, jv), [b, 2, i0, jv]); xs.set(pieceKey(b, 0, iu, jv), [b, iu, jv]);
+    if (zc === 1 || zc === 4) blocks.set(pieceKey(b, 0, i0, j0) + 0.5, [b, i0, j0]);
+  }
+  const zAt = (x, z) => { const m = landIdx(x, z); return m < 0 ? -1 : ZONE[m]; };
+  const judge = (b, g, pts) => {   // -> majority zone code if zone covers >= half of the land samples, else 0
+    let land = 0, cov = 0; const cnt = {};
+    for (const [u, v] of pts) { const q = gWorld(g, u, v); if (boroAt(q[0], q[1]) !== b) continue; land++; const z = zAt(q[0], q[1]); if (z > 0) { cov++; cnt[z] = (cnt[z] || 0) + 1; } }
+    if (!land || cov * 2 < land) return 0;
+    let best = 0, bn = -1; for (const k in cnt) if (cnt[k] > bn) { bn = cnt[k]; best = +k; } return best;
+  };
+  for (const [k, [b, t, i, j]] of legs) {
+    const g = GRIDS[b], pts = [];
+    if (t === 1) { const v0 = j * g.S + g.ws / 2 + g.sw, v1 = (j + 1) * g.S - g.ws / 2 - g.sw; for (let a = 0; a < 7; a++) for (const o of [-0.35, 0, 0.35]) pts.push([i * g.A + o * g.wa, v0 + (a + 0.5) * (v1 - v0) / 7]); }
+    else { const u0 = i * g.A + g.wa / 2 + g.sw, u1 = (i + 1) * g.A - g.wa / 2 - g.sw; for (let a = 0; a < 7; a++) for (const o of [-0.35, 0, 0.35]) pts.push([u0 + (a + 0.5) * (u1 - u0) / 7, j * g.S + o * g.ws]); }
+    const z = judge(b, g, pts); if (z) STREET_OFF.set(k, z);
+  }
+  for (const [k, [b, i, j]] of xs) {
+    const g = GRIDS[b], pts = [];
+    for (const a of [-0.4, 0, 0.4]) for (const c of [-0.4, 0, 0.4]) pts.push([i * g.A + a * g.wa, j * g.S + c * g.ws]);
+    const z = judge(b, g, pts);
+    const legK = [pieceKey(b, 1, i, j - 1), pieceKey(b, 1, i, j), pieceKey(b, 2, i - 1, j), pieceKey(b, 2, i, j)];
+    let kept = 0, zc = z; for (const lk of legK) { const zz = STREET_OFF.get(lk); if (zz === undefined) { const q = gWorld(g, i * g.A, j * g.S); kept++; } else if (!zc) zc = zz; }
+    if ((kept <= 1 && z) || kept === 0) STREET_OFF.set(k, zc || 5);
+  }
+  for (const [k, z] of FORCE_OFF) STREET_OFF.set(k, z);   // nothing stands on a street, ever
+  // park / cemetery / campus blocks snap to whole blocks
+  const siteBlk = new Set();
+  if (SITE_COLS) for (let i = 0; i < SITE_COLS.length; i += 6) { const b = boroAt(SITE_COLS[i], SITE_COLS[i + 1]), g = GRIDS[b]; if (!g) continue;
+    const r = Math.hypot(SITE_COLS[i + 3], SITE_COLS[i + 4]); for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) { const l = gLocal(g, SITE_COLS[i] + dx, SITE_COLS[i + 1] + dz); siteBlk.add(pieceKey(b, 0, Math.floor(l[0] / g.A), Math.floor(l[1] / g.S))); } }
+  for (const [, [b, i, j]] of blocks) {
+    const g = GRIDS[b], u0 = i * g.A + g.wa / 2, u1 = (i + 1) * g.A - g.wa / 2, v0 = j * g.S + g.ws / 2, v1 = (j + 1) * g.S - g.ws / 2, pts = [];
+    for (let a = 0; a < 5; a++) for (let c = 0; c < 5; c++) pts.push([u0 + g.sw + (a + 0.5) * (u1 - u0 - 2 * g.sw) / 5, v0 + g.sw + (c + 0.5) * (v1 - v0 - 2 * g.sw) / 5]);
+    let z = judge(b, g, pts); const rect = [gWorld(g, u0, v0), gWorld(g, u1, v0), gWorld(g, u1, v1), gWorld(g, u0, v1)];
+    if (!z && siteBlk.has(pieceKey(b, 0, i, j))) {   // a block with real buildings (a campus) and any lawn: the whole block is the campus
+      for (const [u, v] of pts) { const q = gWorld(g, u, v); const zz = zAt(q[0], q[1]); if (zz === 1 || zz === 4) { z = zz; break; } } }
+    if (z === 1 || z === 4) fillPoly(ZONE, rect, z, true);
+    else if (!z && !siteBlk.has(pieceKey(b, 0, i, j))) {   // mostly lots: drop the stray park/campus cells in it
+      let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const q of rect) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); }
+      for (let iy = Math.max(0, Math.floor((z0 - WZ0) / MAP_RES)); iy <= Math.min(MH - 1, Math.floor((z1 - WZ0) / MAP_RES)); iy++)
+        for (let ix = Math.max(0, Math.floor((x0 - WX0) / MAP_RES)); ix <= Math.min(MW - 1, Math.floor((x1 - WX0) / MAP_RES)); ix++) {
+          const m = iy * MW + ix; if (ZONE[m] !== 1 && ZONE[m] !== 4) continue; if (BORO[m] !== b) continue;
+          const l = gLocal(g, WX0 + (ix + 0.5) * MAP_RES, WZ0 + (iy + 0.5) * MAP_RES);
+          if (l[0] > u0 && l[0] < u1 && l[1] > v0 && l[1] < v1) ZONE[m] = 0;
+        }
+    }
+  }
+  GRID_SNAPPED = true;
 }
 
 function addSite(ctx) {
@@ -2600,13 +2707,13 @@ const GROUND_FS = `#version 300 es
 precision highp float;
 in vec2 vUV; in vec3 vW; in vec4 vS; out vec4 o;
 uniform sampler2D uTex; uniform vec3 uFlat; uniform float uUseTex;
-uniform vec4 uGa[7]; uniform vec4 uGb[7];
+uniform vec4 uGa[7]; uniform vec4 uGb[7]; uniform float uGr[7];
 uniform vec4 uSegA[32]; uniform vec4 uSegB[32]; uniform int uSegN; // nearby highway/avenue/runway segments
 ${LIGHT_FS}
 float cov(float d, float hw, float f){ return clamp((hw - d) / f + 0.5, 0.0, 1.0) * clamp(2.0 * hw / f, 0.0, 1.0); }
 float dsh(float a, float p, float f){ float x = fract(a / p) * p; return cov(abs(x - p * 0.5), p * 0.25, f); }
 vec3 C(float r, float g, float b){ return vec3(r, g, b) / 255.0; }
-float bdist(float a, float b){ const float R = ${GRID_R.toFixed(3)}; if (a > 0.0 && b > 0.0 && a < R && b < R) return R - length(vec2(R - a, R - b)); return min(a, b); }
+float bdist(float a, float b, float R){ if (a > 0.0 && b > 0.0 && a < R && b < R) return R - length(vec2(R - a, R - b)); return min(a, b); }
 vec3 gridColor(int bo, vec3 lot){
   vec4 ga = uGa[bo], gb = uGb[bo];
   vec2 r = vW.xz - ga.xy;
@@ -2619,7 +2726,7 @@ vec3 gridColor(int bo, vec3 lot){
   vec3 walk = C(196.0, 192.0, 184.0) * (0.96 + 0.07 * n);
   float joint = max(cov(abs(fract(u / 1.4) - 0.5) * 1.4, 0.09, fu), cov(abs(fract(v / 1.4) - 0.5) * 1.4, 0.09, fv));
   walk *= 1.0 - 0.08 * joint;
-  float bd = bdist(du - wa * 0.5, dv - ws * 0.5), fb = max(fwidth(bd), 1e-3);   // rounded-corner blocks (GRID_R)
+  float bd = bdist(du - wa * 0.5, dv - ws * 0.5, uGr[bo]), fb = max(fwidth(bd), 1e-3);   // rounded-corner blocks (per-borough radius)
   float inner = cov(abs(bd - (sw - 0.1)), 0.1, fb);
   walk *= 1.0 - 0.14 * inner; // shade where the sidewalk meets the building line
   float curb = cov(abs(bd - 0.1), 0.1, fb);
@@ -3009,10 +3116,10 @@ const GFX = {
     // ground
     const pg = this.pGround; gl.useProgram(pg.p); setCommon(pg);
     if (!this.gridA && typeof GRIDS !== 'undefined') {
-      this.gridA = new Float32Array(28); this.gridB = new Float32Array(28);
-      for (let i = 1; i < 7; i++) { const g = GRIDS[i]; if (!g) continue; this.gridA.set([g.ox, g.oz, g.ex, g.ez], i * 4); this.gridB.set([g.A, g.S, g.wa, g.ws], i * 4); }
+      this.gridA = new Float32Array(28); this.gridB = new Float32Array(28); this.gridR = new Float32Array(7);
+      for (let i = 1; i < 7; i++) { const g = GRIDS[i]; if (!g) continue; this.gridA.set([g.ox, g.oz, g.ex, g.ez], i * 4); this.gridB.set([g.A, g.S, g.wa, g.ws], i * 4); this.gridR[i] = g.r; }
     }
-    if (this.gridA) { gl.uniform4fv(pg.u['uGa[0]'] || pg.u.uGa, this.gridA); gl.uniform4fv(pg.u['uGb[0]'] || pg.u.uGb, this.gridB); }
+    if (this.gridA) { gl.uniform4fv(pg.u['uGa[0]'] || pg.u.uGa, this.gridA); gl.uniform4fv(pg.u['uGb[0]'] || pg.u.uGb, this.gridB); if (pg.u['uGr[0]'] || pg.u.uGr) gl.uniform1fv(pg.u['uGr[0]'] || pg.u.uGr, this.gridR); }
     // nearest 32 non-bridge segments to the view centre (refreshed when the view moves 8+ units)
     if (typeof SEGS !== 'undefined') {
       const tx = S.target[0], tz = S.target[2];

@@ -47,15 +47,17 @@ const toW = a => a.map(PL);
 // Roads were widened for arcade driving: every avenue +ROAD_WA, every street +ROAD_WS (taken out of the
 // blocks), sidewalks GRID_SW wide. GRID_SW is also baked into the ground shader (gl.js).
 const GRID_SW = 0.6, ROAD_WA = 1.2, ROAD_WS = 0.8, HWY_K = 1.25, BRIDGE_K = 1.2;
-// Rounded street corners: every block is a rounded rectangle (curb radius GRID_R), so turns flow instead of snapping 90 deg.
-// blockDist(a, b) = signed distance into the block from its curb, where a/b = distance past the avenue/street road edge.
+// Rounded street corners: every block is a rounded rectangle (curb radius g.r), so turns flow instead of snapping 90 deg.
+// The radius suits the block size: GRID_R (2.0) on suburban grids with big blocks, GRID_R_CITY (0.6) on dense city grids,
+// the largest that keeps every corner lot (rowhouses run to within 0.04 of the lot line) inside the block.
+// blockDist(a, b, r) = signed distance into the block from its curb, where a/b = distance past the avenue/street road edge.
 // Mirrored in GROUND_FS (gl.js). Road < 0 <= sidewalk < GRID_SW <= lot.
-const GRID_R = 2.0;
-function blockDist(a, b) { if (a > 0 && b > 0 && a < GRID_R && b < GRID_R) return GRID_R - Math.hypot(GRID_R - a, GRID_R - b); return Math.min(a, b); }
+const GRID_R = 2.0, GRID_R_CITY = 0.6;
+function blockDist(a, b, r) { if (a > 0 && b > 0 && a < r && b < r) return r - Math.hypot(r - a, r - b); return Math.min(a, b); }
 function mkGrid(boro, thDeg, A, S, wa, ws, oLat, oLon, style) {
   const th = thDeg * Math.PI / 180, o = P(oLat, oLon);
   wa += ROAD_WA; ws += ROAD_WS;
-  return { boro, A, S, wa, ws, sw: GRID_SW, ox: o[0], oz: o[1], dx: Math.sin(th), dz: -Math.cos(th), ex: Math.cos(th), ez: Math.sin(th), th, style };
+  return { boro, A, S, wa, ws, sw: GRID_SW, r: style === 'sub' ? GRID_R : GRID_R_CITY, ox: o[0], oz: o[1], dx: Math.sin(th), dz: -Math.cos(th), ex: Math.cos(th), ez: Math.sin(th), th, style };
 }
 const GRIDS = [];
 GRIDS[1] = mkGrid(1, 29, 15.5, 9, 3.6, 2.8, 40.7681, -73.9819, 'city');
@@ -335,7 +337,7 @@ function buildMap() {
 }
 
 // ---------- tile classification ----------
-let LASTU = 0, LASTV = 0, LASTG = null;
+let LASTU = 0, LASTV = 0, LASTG = null, LASTMOD = false, LASTBD = 0;   // LASTMOD: street tile reshaped by gridSnap (texture-painted, not shader grid)
 function tileAt(x, z) {
   if (mapIdx(x, z) < 0) return T_WATER;
   const m = landIdx(x, z);
@@ -348,16 +350,55 @@ function tileAt(x, z) {
   }
   if (b === 0) return T_WATER;
   const zn = ZONE[m];
-  if (zn) return zn === 1 ? T_PARK : zn === 2 ? T_SAND : zn === 3 ? T_TARMAC : zn === 4 ? T_CEM : zn === 6 ? T_MARSH : zn === 7 ? T_PARKING : T_PLAZA;
-  const g = GRIDS[b]; LASTG = g;
+  if (zn && !GRID_SNAPPED) return zoneTile(zn);
+  const g = GRIDS[b];
+  if (!g) return zn ? zoneTile(zn) : T_LOT;
+  LASTG = g; LASTMOD = false;
   const rx = x - g.ox, rz = z - g.oz;
   const u = rx * g.ex + rz * g.ez, v = rx * g.dx + rz * g.dz; LASTU = u; LASTV = v;
   const du = Math.abs(u - g.A * Math.round(u / g.A)), dv = Math.abs(v - g.S * Math.round(v / g.S));
-  const bd = blockDist(du - g.wa / 2, dv - g.ws / 2);
-  if (bd < 0) return T_ROAD;
-  if (bd < g.sw) return T_WALK;
-  return T_LOT;
+  const bd = blockDist(du - g.wa / 2, dv - g.ws / 2, g.r);
+  if (bd < g.sw) {   // street band (road + sidewalks): a street piece is either whole street or wholly zone (gridSnap)
+    if (STREET_OFF.size) {
+      const k = streetKey(b, g, u, v), z2 = STREET_OFF.get(k); if (z2 !== undefined) return zoneTile(z2);
+      const t = Math.floor(k / 40000 / 40000) % 3, iu = Math.round(u / g.A), jv = Math.round(v / g.S);
+      if (t === 0) {   // kept intersection: on the side of a removed leg the crossing street's curb + sidewalk run straight on
+        const aK = pieceKey(b, 1, iu, v < jv * g.S ? jv - 1 : jv), sK = pieceKey(b, 2, u < iu * g.A ? iu - 1 : iu, jv);
+        const aG = STREET_OFF.get(aK), sG = STREET_OFF.get(sK);
+        if (aG !== undefined || sG !== undefined) {
+          const e = blockDist(aG !== undefined ? 1e9 : du - g.wa / 2, sG !== undefined ? 1e9 : dv - g.ws / 2, g.r);
+          LASTMOD = true; LASTBD = e;
+          return e < 0 ? T_ROAD : e < g.sw ? T_WALK : zoneTile(aG !== undefined ? aG : sG);
+        }
+      } else {         // kept leg: if the intersection at this end is gone, the street ends with a sidewalk across it
+        const xK = pieceKey(b, 0, iu, jv), xG = STREET_OFF.get(xK);
+        if (xG !== undefined) {
+          const e = t === 1 ? dv - (g.ws / 2 + g.sw) : du - (g.wa / 2 + g.sw);   // distance into the leg from the old intersection
+          if (e < g.sw) { LASTMOD = true; LASTBD = g.sw - e; return e < 0 ? zoneTile(xG) : T_WALK; }
+        }
+      }
+    }
+    return bd < 0 ? T_ROAD : T_WALK;
+  }
+  return zn ? zoneTile(zn) : T_LOT;
 }
+function zoneTile(zn) { return zn === 1 ? T_PARK : zn === 2 ? T_SAND : zn === 3 ? T_TARMAC : zn === 4 ? T_CEM : zn === 6 ? T_MARSH : zn === 7 ? T_PARKING : T_PLAZA; }
+// Whole street pieces (owner: roads must never just turn into grass). After every zone and site is painted, gridSnap()
+// (chunkgen.js) decides each grid piece once: an avenue leg / street leg between two intersections, or an intersection
+// (including its rounded corners). A piece that a zone covers by at least half becomes that zone (STREET_OFF: key -> zone);
+// every other piece is drawn as a complete street with its sidewalks, even where a park or campus outline crosses it.
+// Before gridSnap runs (map build, site placement, carving) the raster zone wins everywhere, as it always did.
+let GRID_SNAPPED = false;
+const STREET_OFF = new Map();
+function streetKey(b, g, u, v) {
+  const iu = Math.round(u / g.A), jv = Math.round(v / g.S), du = Math.abs(u - iu * g.A), dv = Math.abs(v - jv * g.S);
+  const ea = g.wa / 2 + g.sw, es = g.ws / 2 + g.sw;
+  let t = 0, i = iu, j = jv;
+  if (du < ea && dv >= es) { t = 1; j = Math.floor(v / g.S); }
+  else if (dv < es && du >= ea) { t = 2; i = Math.floor(u / g.A); }
+  return pieceKey(b, t, i, j);
+}
+function pieceKey(b, t, i, j) { return ((b * 3 + t) * 40000 + (i + 20000)) * 40000 + (j + 20000); }
 function drivable(x, z) { return tileAt(x, z) !== T_WATER; }
 function isRoadish(t) { return t === T_ROAD || t === T_HWY || t === T_BRIDGE || t === T_RUNWAY; }
 
@@ -423,8 +464,8 @@ function texel(x, z, out) {
       const g = LASTG, u = LASTU, v = LASTV;
       const du = Math.abs(u - g.A * Math.round(u / g.A)), dv = Math.abs(v - g.S * Math.round(v / g.S));
       c = shade(COL.walk, 0.96 + 0.07 * n, _sc);
-      const bd = blockDist(du - g.wa / 2, dv - g.ws / 2);
-      if (bd < 0.2) c = COL.curb;
+      const bd = LASTMOD ? LASTBD : blockDist(du - g.wa / 2, dv - g.ws / 2, g.r);
+      if (bd < 0.2 && bd > -0.5) c = COL.curb;
       else if (fr(u / 1.4) < 0.13 || fr(v / 1.4) < 0.13) c = shade(COL.walk, 0.9, _sc);
       // building-side shadow line (fake AO where the sidewalk meets the lot)
       else if (bd > g.sw - 0.2) c = shade(COL.walk, 0.84, _sc);
