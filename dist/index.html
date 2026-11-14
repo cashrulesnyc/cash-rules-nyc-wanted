@@ -337,6 +337,7 @@ GEO.ZONES = [
  [1,[[40.8720,-73.8820],[40.8700,-73.8700],[40.8450,-73.8700],[40.8450,-73.8800],[40.8600,-73.8850]]],
  [1,[[40.8800,-73.8100],[40.8770,-73.7860],[40.8650,-73.7920],[40.8500,-73.8060],[40.8450,-73.8150],[40.8600,-73.8200],[40.8750,-73.8180]]],
  [1,[[40.8420,-73.8980],[40.8400,-73.8910],[40.8350,-73.8930],[40.8370,-73.9000]]],
+ [1,[[40.6300,-74.0930],[40.6298,-74.1005],[40.6200,-74.1010],[40.6195,-74.0935]]], // Silver Lake Park + golf course
  [1,[[40.6100,-74.1440],[40.6050,-74.1200],[40.5800,-74.1180],[40.5680,-74.1330],[40.5760,-74.1480],[40.5960,-74.1500]]], // Greenbelt (kept east of the Richmond Ave strip)
  [1,[[40.5950,-74.2000],[40.5900,-74.1750],[40.5650,-74.1750],[40.5600,-74.2050],[40.5800,-74.2050]]],
  [1,[[40.7060,-74.0460],[40.7000,-74.0520],[40.6880,-74.0570],[40.6900,-74.0650],[40.7040,-74.0600]]],
@@ -354,8 +355,10 @@ GEO.ROADS = [
  [1,4.2,[[40.7015,-74.0125],[40.7060,-74.0030],[40.7090,-73.9950],[40.7110,-73.9860],[40.7140,-73.9785],[40.7210,-73.9745],[40.7290,-73.9750],[40.7360,-73.9755],[40.7430,-73.9730],[40.7490,-73.9695],[40.7560,-73.9630],[40.7630,-73.9565],[40.7700,-73.9495],[40.7770,-73.9440],[40.7840,-73.9435],[40.7900,-73.9375],[40.7960,-73.9315],[40.8020,-73.9310],[40.8070,-73.9345],[40.8150,-73.9358],[40.8240,-73.9358],[40.8340,-73.9343],[40.8440,-73.9303],[40.8520,-73.9262],[40.8600,-73.9212],[40.8670,-73.9163]]],
  // West Side Hwy / Henry Hudson Pkwy
  [1,4.2,[[40.7050,-74.0160],[40.7170,-74.0130],[40.7330,-74.0098],[40.7480,-74.0078],[40.7600,-74.0010],[40.7720,-73.9930],[40.7830,-73.9860],[40.7960,-73.9775],[40.8100,-73.9665],[40.8230,-73.9575],[40.8350,-73.9500],[40.8480,-73.9455],[40.8600,-73.9370],[40.8700,-73.9295],[40.8770,-73.9235],[40.8840,-73.9175],[40.9000,-73.9120],[40.9140,-73.9080]]],
- // Richmond Ave, Staten Island (Port Richmond -> Graniteville -> Bulls Head -> the mall -> Eltingville)
- [2,3.6,[[40.6395,-74.1350],[40.6300,-74.1440],[40.6200,-74.1520],[40.6085,-74.1595],[40.5950,-74.1615],[40.5822,-74.1612],[40.5700,-74.1650],[40.5560,-74.1690],[40.5420,-74.1665]],'RICHMOND AVE'],
+ // Richmond Ave, Staten Island (Forest Ave in Graniteville -> Bulls Head -> the mall -> Eltingville)
+ // Forest Ave (Victory Blvd at Silver Lake -> West Brighton -> Port Richmond -> Graniteville -> Mariners Harbor -> Goethals Rd N)
+ [2,3.6,[[40.6302,-74.0925],[40.6303,-74.0990],[40.6290,-74.1060],[40.6275,-74.1150],[40.6265,-74.1250],[40.6260,-74.1342],[40.6250,-74.1430],[40.6246,-74.1487],[40.6252,-74.1580],[40.6262,-74.1660],[40.6285,-74.1760]],'FOREST AVE'],
+ [2,3.6,[[40.6246,-74.1487],[40.6200,-74.1520],[40.6085,-74.1595],[40.5950,-74.1615],[40.5822,-74.1612],[40.5700,-74.1650],[40.5560,-74.1690],[40.5420,-74.1665]],'RICHMOND AVE'],
  // Broadway (Bowling Green -> Columbus Circle)
  [2,3.6,[[40.7050,-74.0135],[40.7128,-74.0078],[40.7190,-74.0020],[40.7255,-73.9970],[40.7359,-73.9906],[40.7410,-73.9897],[40.7497,-73.9877],[40.7570,-73.9860],[40.7681,-73.9819]]],
  // Trans-Manhattan / Cross Bronx
@@ -455,13 +458,25 @@ GEO.HOODS = [
  [2,'CO-OP CITY',40.8740,-73.8290],[2,'HIGHBRIDGE',40.8370,-73.9270],[2,'BELMONT',40.8550,-73.8880],[2,'VAN CORTLANDT PARK',40.8970,-73.8900],
  [5,'ST. GEORGE',40.6437,-74.0770],[5,'STAPLETON',40.6270,-74.0780],[5,'PORT RICHMOND',40.6340,-74.1290],[5,'NEW SPRINGVILLE',40.5940,-74.1620],
  [5,'GREAT KILLS',40.5540,-74.1510],[5,'TOTTENVILLE',40.5080,-74.2430],[5,'SOUTH BEACH',40.5880,-74.0710],[5,'TODT HILL',40.6000,-74.1000],
- [5,"MARINERS HARBOR",40.6330,-74.1580],[5,'ELTINGVILLE',40.5440,-74.1640],[5,'BLOOMFIELD',40.6150,-74.1760],[5,'NEW SPRINGVILLE',40.5900,-74.1630],[5,'BULLS HEAD',40.6085,-74.1620],[5,'NEW BRIGHTON',40.6420,-74.0950],[5,'FRESH KILLS',40.5800,-74.1900],
+ [5,"MARINERS HARBOR",40.6330,-74.1580],[5,'ELTINGVILLE',40.5440,-74.1640],[5,'BLOOMFIELD',40.6150,-74.1760],[5,'NEW SPRINGVILLE',40.5900,-74.1630],[5,'GRANITEVILLE',40.6230,-74.1480],[5,'WEST BRIGHTON',40.6280,-74.1080],[5,'SILVER LAKE',40.6255,-74.0920],[5,'BULLS HEAD',40.6085,-74.1620],[5,'NEW BRIGHTON',40.6420,-74.0950],[5,'FRESH KILLS',40.5800,-74.1900],
  [6,'JERSEY CITY',40.7178,-74.0431],[6,'HOBOKEN',40.7440,-74.0324],[6,'WEEHAWKEN',40.7695,-74.0204],[6,'FORT LEE',40.8509,-73.9701],
  [6,'BAYONNE',40.6687,-74.1143],[6,'ELIZABETH',40.6640,-74.2107],[6,'LIBERTY STATE PARK',40.7020,-74.0560],[6,'EDGEWATER',40.8270,-73.9750],
  [6,'PERTH AMBOY',40.5068,-74.2654],[6,'CARTERET',40.5770,-74.2280],[6,'UNION CITY',40.7780,-74.0280],[6,'NEWARK BAY',40.6800,-74.1500],
 ];
 
 GEO.BORO_NAMES = ['NEW YORK HARBOR','MANHATTAN','THE BRONX','BROOKLYN','QUEENS','STATEN ISLAND','NEW JERSEY'];
+
+// Gas stations [lat, lon] (Staten Island). Snapped to the nearest avenue/street at load (placeGas in map.js).
+GEO.GAS = [];
+// Silver Lake (reservoir lake inside Silver Lake Park, at the east end of Forest Ave)
+GEO.SILVER_LAKE = [[40.6293,-74.0958],[40.6288,-74.0944],[40.6252,-74.0951],[40.6233,-74.0965],[40.6237,-74.0979],[40.6270,-74.0972]];
+
+// Real buildings from OpenStreetMap footprints (Staten Island pass): [lat, lon, sx, sz, yawDeg, h, style]
+// style: 0 brick housing (projects), 1 big-box retail, 2 institutional/light masonry. Boxes come from a rectangle cover
+// of each footprint, so cross/L shapes are several boxes. Built by buildSite (chunkgen.js).
+GEO.RB = [];
+// Open campuses (zone 5 plaza) where the projects stand, replacing the generic street grid: [name, sub, [[lat,lon]...]]
+GEO.CAMPUS = [];
 
 // ============================================================
 //  Map: projection, rasterised boroughs/zones, grids, roads
@@ -659,15 +674,56 @@ function lotAt(x, z) { for (const L of LOTS) { const q = fLocal(L.F, x, z); if (
 // mall Ring Road (a loop inside the lot) as avenue segments, overlapping at the corners
 const MALL_RING = { s0: -38, s1: 38, t0: 8, t1: 66, w: 2.8 };
 // zone codes: 6 marsh (drivable, splashy), 7 striped parking lot
-const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)]];
+const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(SM, 48, 2.4, 132, 62)]];
 // smooth value noise (marsh pools / reed beds)
 function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
   const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; }
 function marshWet(x, z) { return vnoise(x / 7, z / 7) * 0.65 + vnoise(x / 2.6 + 17, z / 2.6 - 5) * 0.35; } // > 0.58: open water pool
+// ---- gas stations: snap each real location to the road it fronts, cut a concrete apron (zone 3) into the block ----
+// GAS_SITES: {x, z, yaw, big, accent}; yaw puts local +z along the road and local -x toward it (see gasStation in chunkgen.js)
+const GAS_SITES = [];
+const GAS_ACCENTS = ['#2f6f9f', '#b5452f', '#2e8b57', '#d4a017', '#5b3f8f', '#1f4e79', '#c0392b', '#127369'];
+function placeGas() {
+  GAS_SITES.length = 0;
+  for (const q of GEO.GAS) {
+    const p = P(q[0], q[1]), b = boroAt(p[0], p[1]); if (!b) continue;
+    if (zoneAt(p[0], p[1]) === 7) continue;                 // inside a site lot that builds its own pumps
+    const big = !!q[2], depth = 3.7, far = big ? 5.6 : 4.9, half = (big ? 4.5 : 3.5) + 0.9;
+    let x, z, yaw, back;                                      // back = distance from origin to the road edge
+    // 1) a mapped avenue/highway close by: face it
+    let best = null, bd = 9;
+    for (const sg of SEGS) { if (sg.type !== SEG_AVE && sg.type !== SEG_HWY) continue;
+      let t = (p[0] - sg.ax) * sg.dx + (p[1] - sg.az) * sg.dz; if (t < 2 || t > sg.len - 2) continue;
+      const fx = sg.ax + sg.dx * t, fz = sg.az + sg.dz * t, d = Math.hypot(p[0] - fx, p[1] - fz) - sg.hw;
+      if (d < bd) { bd = d; best = { sg, fx, fz }; } }
+    if (best) {
+      const sg = best.sg; let nx = sg.dz, nz = -sg.dx; yaw = Math.atan2(sg.dx, sg.dz);
+      if ((p[0] - best.fx) * nx + (p[1] - best.fz) * nz < 0) { nx = -nx; nz = -nz; yaw += Math.PI; }
+      const off = sg.hw + 0.3 + depth; x = best.fx + nx * off; z = best.fz + nz * off; back = depth + 0.3;
+    } else {
+      // 2) the borough grid: the nearer of the avenue / street lines, centred on the block face
+      const g = GRIDS[b]; if (!g) continue;
+      const l = gLocal(g, p[0], p[1]), ua = g.A * Math.round(l[0] / g.A), vs = g.S * Math.round(l[1] / g.S);
+      const du = Math.abs(l[0] - ua) - g.wa / 2, dv = Math.abs(l[1] - vs) - g.ws / 2;
+      let u, v, dir;
+      if (du <= dv + 2) { const sgn = l[0] >= ua ? 1 : -1; u = ua + sgn * (g.wa / 2 + g.sw + depth); v = g.S * Math.floor(l[1] / g.S) + g.S / 2; dir = [g.dx, g.dz]; back = g.sw + depth;
+        yaw = Math.atan2(dir[0], dir[1]); if (sgn < 0) yaw += Math.PI; }
+      else { const sgn = l[1] >= vs ? 1 : -1; v = vs + sgn * (g.ws / 2 + g.sw + depth); u = g.A * Math.floor(l[0] / g.A) + g.A / 2; dir = [g.ex, g.ez]; back = g.sw + depth;
+        yaw = Math.atan2(dir[0], dir[1]); if (sgn > 0) yaw += Math.PI; }
+      const w = gWorld(g, u, v); x = w[0]; z = w[1];
+    }
+    if (GAS_SITES.some(o => Math.hypot(o.x - x, o.z - z) < 8)) continue;
+    if (boroAt(x, z) !== b) continue;                         // snapped into the water
+    const c = Math.cos(yaw), sn = Math.sin(yaw), L = (lx, lz) => [x + lx * c + lz * sn, z - lx * sn + lz * c];
+    GAS_SITES.push({ x, z, yaw, big, accent: GAS_ACCENTS[(Math.abs(Math.round(x * 7 + z * 13))) % GAS_ACCENTS.length],
+      apron: [L(-back - 0.05, -half), L(far, -half), L(far, half), L(-back - 0.05, half)] });
+  }
+}
 function buildMap() {
   const brd = GEO.BKQ_BORDER.slice().reverse().slice(1, -1);
   fillPoly(BORO, toW(GEO.NJ), 6);
   fillPoly(BORO, toW(GEO.SI), 5);
+  fillPoly(BORO, toW(GEO.SILVER_LAKE), 0); // inland lake
   fillPoly(BORO, toW(GEO.BKN_SHORE.concat(brd)), 3);
   fillPoly(BORO, toW(GEO.QNS_SHORE.concat(brd)), 4);
   fillPoly(BORO, toW(GEO.ROCKAWAY), 4);
@@ -676,16 +732,19 @@ function buildMap() {
   fillPoly(BORO, toW(GEO.BRX), 2);
   for (const z of GEO.ZONES) fillPoly(ZONE, toW(z[1]), z[0], true);
   for (const z of BF_ZONES) fillPoly(ZONE, z[1], z[0], true);
+  for (const c of GEO.CAMPUS) fillPoly(ZONE, toW(c[2]), 5, true);
   // grid-aligned Manhattan parks
   const g = GRIDS[1], ins = g.wa / 2 + g.sw;
   fillPoly(ZONE, gRect(g, ins, g.ws / 2 + g.sw, 3 * g.A - ins, 25 * g.S - g.ws / 2 - g.sw), 1, true); // Central Park
   const sq = [[40.7308, -73.9973], [40.7359, -73.9911], [40.7420, -73.9880], [40.7536, -73.9832], [40.7265, -73.9815], [40.8040, -73.9440]];
   for (const s of sq) { const b = blockOf(g, s[0], s[1]); fillPoly(ZONE, blockRect(g, b[0], b[1], 1, 1, -0.01), 1, true); }
   buildRoads();
+  placeGas(); for (const g of GAS_SITES) fillPoly(ZONE, g.apron, 3, true);
   { const R = MALL_RING, h = R.w / 2, c = [[R.s0, R.t0], [R.s1, R.t0], [R.s1, R.t1], [R.s0, R.t1]];
     for (let k = 0; k < 4; k++) { const a = c[k], b = c[(k + 1) % 4], ds = Math.sign(b[0] - a[0]) * h, dt = Math.sign(b[1] - a[1]) * h;
       addSeg(fW(SM, a[0] - ds, a[1] - dt), fW(SM, b[0] + ds, b[1] + dt), R.w, SEG_AVE).name = 'RING RD'; }
-    for (const s0 of [-20, 20]) addSeg(fW(SM, s0, 1), fW(SM, s0, R.t0 + h), 2.6, SEG_AVE).name = 'RING RD'; } // entrances off Richmond Ave
+    for (const s0 of [-20, 20]) addSeg(fW(SM, s0, 1), fW(SM, s0, R.t0 + h), 2.6, SEG_AVE).name = 'RING RD'; // entrances off Richmond Ave
+    addSeg(fW(SM, 45, -60), fW(SM, 45, 100), 3.0, SEG_AVE).name = 'RICHMOND HILL RD'; }          // splits the mall from the plazas to the south
   // blurred land mask (separable 1-4-6-4-1) for smooth coastlines
   { const K = [1, 4, 6, 4, 1], t1 = new Uint16Array(MW * MH);
     for (let y = 0; y < MH; y++) { const row = y * MW; for (let x = 0; x < MW; x++) { let v = 0; for (let k = -2; k <= 2; k++) { const xx = Math.min(MW - 1, Math.max(0, x + k)); v += (BORO[row + xx] ? 255 : 0) * K[k + 2]; } t1[row + x] = v >> 4; } }
@@ -920,8 +979,11 @@ function initWorldData() {
     LM.push({ type: 'label', x: a[0], z: a[1], r: 0, nr: 26, name: 'JFK8', sub: 'FULFILLMENT CENTER · GULF AVE' });
     LM.push({ type: 'label', x: b[0], z: b[1], r: 0, nr: 24, name: 'DYY6', sub: 'DELIVERY STATION · GULF AVE' });
     LM.push({ type: 'label', x: m[0], z: m[1], r: 0, nr: 34, name: 'BLOOMFIELD MARSH', sub: 'ARTHUR KILL WETLANDS' });
-    const sm = fW(SM, 0, 37); LM.push({ type: 'label', x: sm[0], z: sm[1], r: 0, nr: 42, name: 'STATEN ISLAND MALL', sub: 'RICHMOND AVE · NEW SPRINGVILLE' }); }
-  buildSite();
+    const sm = fW(SM, 0, 37); LM.push({ type: 'label', x: sm[0], z: sm[1], r: 0, nr: 42, name: 'STATEN ISLAND MALL', sub: 'RICHMOND AVE · NEW SPRINGVILLE' });
+    for (const c of GEO.CAMPUS) { let la = 0, lo = 0; for (const q of c[2]) { la += q[0]; lo += q[1]; } const w = P(la / c[2].length, lo / c[2].length); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr: 16, name: c[0], sub: c[1] }); }
+    for (const [s, t, nr, name, sub] of [[66, 40, 18, 'RICHMOND AVE PLAZA', '2795 RICHMOND AVE · ELECTRONICS · GROCERY'], [97, 40, 14, 'RICHMOND SHOPPING CENTER', '2873 RICHMOND AVE · DEPARTMENT STORE'], [119, 38, 18, 'WAREHOUSE CLUB', '2975 RICHMOND AVE · GAS · TIRES']]) {
+      const w = fW(SM, s, t); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr, name, sub }); } }
+  initLots(); buildSite();
   for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
     ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
     ['rock', 40.7587, -73.9787, 5.0, 'ROCKEFELLER CENTER', 0], ['esb', 40.7484, -73.9857, 5.5, 'EMPIRE STATE BUILDING', 0],
@@ -1036,6 +1098,8 @@ function inChunk(ctx, x, z) { return x >= ctx.x0 && x < ctx.x0 + CH && z >= ctx.
 // delivery-van lots, employee parking. Built once into SITE_BOXES / SITE_COLS; genChunk copies the boxes whose
 // centre falls in the chunk and every collider that overlaps it (so big buildings stay solid across chunk edges).
 let SITE_BOXES = null, SITE_COLS = null;
+// lot extras (live in this file): which buildings each striped lot serves, the mall ring, keep-clear rects
+function initLots() { LOTS[1].bl = MALL_BLDGS; LOTS[1].ring = MALL_RING; if (LOTS.length < 3) LOTS.push({ F: SM, s0: 48, s1: 132, t0: 2.4, t1: 62, tb: 10.0, bl: PLAZA_BLDGS, ex: [[112, 126, 6, 19]] }); }
 // Staten Island Mall (generic: no store names or logos): long concourse, two anchor stores, a big centre court with a
 // glass pyramid, a rear wing, entrance canopies, outparcel restaurants. Rects in the SM frame: [s0, s1, t0, t1, H, colour]
 const MALL_BLDGS = [
@@ -1047,6 +1111,43 @@ const MALL_BLDGS = [
   [-31, -24, 13, 18.5, 1.3, '#efe6d6'], // outparcel restaurant
   [24, 31, 13, 18.5, 1.3, '#dfe7ea'],  // outparcel
 ];
+// Richmond Ave plazas south of the mall, across Richmond Hill Rd (generic stores, by street address; no names or logos)
+// [s0, s1, t0, t1, H, wall colour, kind, accent]   kinds: box (big-box store), super (supermarket), club (warehouse club), pad
+const PLAZA_BLDGS = [
+  [51, 62, 34, 50, 2.4, '#59656f', 'box', '#20303f'],    // 2795: electronics store
+  [63.5, 77, 33, 50, 2.2, '#cfbea3', 'super', '#3d6b47'], // 2795: supermarket
+  [78.5, 85, 36, 50, 2.0, '#9c928a', 'box', '#5a4636'],  // 2795: furniture store
+  [89, 105, 31, 51, 2.7, '#e7e1d5', 'box', '#6e5c4a'],   // 2873: department store (Richmond Shopping Center)
+  [109, 129, 27, 56, 3.0, '#b4b8bc', 'club', '#3a4855'], // 2975: warehouse club
+  [54, 59, 10, 15, 1.2, '#efe6d6', 'pad', '#b5452f'],
+  [93, 98, 10, 15, 1.2, '#dfe7ea', 'pad', '#2f6f9f'],
+];
+// generic gas station (canopy + pump islands + kiosk + price pylon); x/z = centre, yaw = local +z along the road,
+// local -x = the road side. Pushes boxes into OB and colliders into cols.
+function gasStation(cols, x, z, yaw, big, accent) {
+  const lb2 = (lx, y, lz, sx, sy, sz, col, mat) => lbox(x, z, yaw, lx, y, lz, sx, sy, sz, col, mat);
+  const lc = (lx, lz, sx, sz, h) => { const p = rot(x, z, yaw, lx, lz); cols.push(p[0], p[1], yaw, sx / 2, sz / 2, h); };
+  const W = big ? 9 : 7, D = big ? 5 : 4, cx = -0.6, white = hex('#f2f3f4'), ac = hex(accent || '#2f6f9f');
+  lb2(cx, 1.85, 0, D, 0.32, W, white, 0);                                               // canopy
+  lb2(cx, 1.85, 0, D + 0.06, 0.16, W + 0.06, ac, 2);                                    // lit accent band
+  lb2(cx, 1.68, 0, D - 0.4, 0.04, W - 0.4, hex('#fff8dc'), 5);                           // canopy lights
+  const isl = big ? [-3.2, -1.1, 1.1, 3.2] : [-1.8, 1.8];
+  for (const iz of isl) {
+    lb2(cx, 0.08, iz, D * 0.62, 0.16, 0.55, hex('#c9c6bf'), 0);                         // island curb
+    for (const ix of [-D * 0.18, D * 0.18]) { lb2(cx + ix, 0.55, iz, 0.42, 0.9, 0.3, hex('#e9eaec'), 0); lb2(cx + ix, 0.75, iz, 0.3, 0.22, 0.32, ac, 2); lb2(cx + ix, 0.55, iz, 0.2, 0.18, 0.33, hex('#1d2430'), 6); }
+    lb2(cx, 1.0, iz, 0.14, 1.7, 0.14, hex('#d8d8d8'), 0);                               // column
+    lc(cx, iz, D * 0.62, 0.6, 1.0);
+  }
+  lb2(cx + D / 2 + 1.6, 0.7, 0, 2.2, 1.4, big ? 4.2 : 3.4, hex('#e8e2d6'), 0);           // kiosk / convenience store
+  lb2(cx + D / 2 + 0.48, 0.55, 0, 0.06, 0.8, big ? 3.4 : 2.6, hex('#2c3e55'), 7);
+  lb2(cx + D / 2 + 1.6, 1.45, 0, 2.3, 0.14, big ? 4.3 : 3.5, ac, 2);
+  lc(cx + D / 2 + 1.6, 0, 2.2, big ? 4.2 : 3.4, 1.5);
+  const pz = W / 2 + 0.4;                                                                // price pylon at the road corner
+  lb2(-D / 2 - 1.4, 1.5, pz, 0.16, 3.0, 0.16, hex('#4d535b'), 0);
+  lb2(-D / 2 - 1.4, 2.7, pz, 0.12, 1.2, 1.0, ac, 2); lb2(-D / 2 - 1.46, 2.5, pz, 0.04, 0.55, 0.8, hex('#101318'), 2);
+  for (const d of [-0.2, 0.2]) lb2(-D / 2 - 1.49, 2.5, pz + d, 0.02, 0.12, 0.3, hex('#ffb020'), 2);   // LED price digits
+  lc(-D / 2 - 1.4, pz, 0.3, 0.3, 3);
+}
 function buildSite() {
   const keep = OB; OB = [];
   const cols = [], Y = BF.yaw;
@@ -1139,6 +1240,60 @@ function buildSite() {
     for (let s = -34; s <= 34; s += 8.5) for (const t of [12.5, 22.5, 57, 62]) { if (MALL_BLDGS.some(b => s > b[0] - 1.5 && s < b[1] + 1.5 && t > b[2] - 1.5 && t < b[3] + 1.5)) continue;
       mb(s, t, 1.7, 0.12, 3.4, 0.12, C.pole, 0); mb(s, t, 3.4, 0.9, 0.1, 0.25, C.lamp, 5); }
     for (const [s, t] of [[-15, 20], [8, 21], [-6, 15], [16, 24], [-28, 60], [26, 58]]) { mb(s, t, 0.35, 2.4, 0.7, 0.7, hex('#c9cdd2'), 6); mc(s, t, 2.4, 0.7, 0.7); }
+  }
+  // ---- real buildings from OSM footprints (GEO.RB): projects, big boxes, institutions ----
+  { const BRICK = [hex('#8b4a36'), hex('#9a5a40'), hex('#7c4433'), hex('#a0634a')], RET = [hex('#d9d2c4'), hex('#c9ccd0')], INSTC = [hex('#d8cfbf'), hex('#c7b9a3')];
+    let k = 0;
+    for (const [lat, lon, sx0, sz0, yd, h, st] of GEO.RB) {
+      const p = P(lat, lon), y = yd * Math.PI / 180, sx = sx0 * 1.35, sz = sz0 * 1.35, n = k++;   // footprints scaled up to match the game's oversized cars/houses
+      if (st === 0) {
+        const c = BRICK[n % 4];
+        box(p[0], h / 2, p[1], sx, h, sz, y, c, 4);                                       // brick slab with small windows
+        box(p[0], h + 0.05, p[1], sx - 0.15, 0.1, sz - 0.15, y, hex('#4a4d52'), 0);       // roof
+        box(p[0], 0.25, p[1], sx + 0.06, 0.5, sz + 0.06, y, hex('#6b6f75'), 0);           // base course
+        if (sx * sz > 4) { const q = rot(p[0], p[1], y, (sx > sz ? sx * 0.3 : 0), (sx > sz ? 0 : sz * 0.3)); box(q[0], h + 0.45, q[1], 0.9, 0.8, 0.9, y, c, 0); } // stair bulkhead
+        const e = rot(p[0], p[1], y, 0, sz / 2 + 0.25); box(e[0], 0.9, e[1], Math.min(1.4, sx * 0.4), 0.08, 0.5, y, hex('#3a3f46'), 0); // entry canopy
+      } else if (st === 1) {
+        box(p[0], h / 2, p[1], sx, h, sz, y, RET[n % 2], 0); box(p[0], h + 0.04, p[1], sx - 0.2, 0.08, sz - 0.2, y, hex('#a9adb2'), 0);
+        box(p[0], h - 0.2, p[1], sx + 0.05, 0.4, sz + 0.05, y, hex('#5d6670'), 0);
+      } else {
+        box(p[0], h / 2, p[1], sx, h, sz, y, INSTC[n % 2], 1); box(p[0], h + 0.05, p[1], sx - 0.15, 0.1, sz - 0.15, y, hex('#6d6f73'), 0);
+      }
+      cols.push(p[0], p[1], y, sx / 2, sz / 2, h);
+    }
+  }
+  // ---- gas stations (GAS_SITES, map.js) ----
+  for (const g of GAS_SITES) gasStation(cols, g.x, g.z, g.yaw, g.big, g.accent);
+  // ---- Richmond Ave plazas ----
+  { const F = SM, Y2 = F.yaw;
+    const mb = (s, t, y, ss, sy, st, col, mat) => { const p = fW(F, s, t); box(p[0], y, p[1], st, sy, ss, Y2, col, mat); };
+    const mc = (s, t, ss, st, h) => { const p = fW(F, s, t); cols.push(p[0], p[1], Y2, st / 2, ss / 2, h); };
+    for (const [s0, s1, t0, t1, H, cs, kind, acs] of PLAZA_BLDGS) {
+      const col = hex(cs), ac = hex(acs), sc2 = (s0 + s1) / 2, tc = (t0 + t1) / 2, Ls = s1 - s0, Lt = t1 - t0;
+      const ns = Math.ceil(Ls / 11), nt = Math.ceil(Lt / 11);
+      for (let a = 0; a < ns; a++) for (let b = 0; b < nt; b++) mb(s0 + (a + 0.5) * Ls / ns, t0 + (b + 0.5) * Lt / nt, H / 2, Ls / ns, H, Lt / nt, col, 0);
+      mb(sc2, tc, H + 0.03, Ls - 0.3, 0.06, Lt - 0.3, kind === 'club' ? hex('#9aa0a6') : hex('#b9bdc2'), 0);
+      mc(sc2, tc, Ls, Lt, H);
+      if (kind === 'pad') { mb(sc2, t0 - 0.05, 0.6, Ls * 0.7, 0.8, 0.06, glass, 6); mb(sc2, tc, H + 0.25, Ls + 0.4, 0.3, Lt + 0.4, ac, 0); continue; }
+      // front (toward Richmond Ave): raised entrance parapet with an accent fascia, glass vestibule, canopy, bollards
+      const ew = kind === 'club' ? Ls * 0.28 : Ls * 0.42, es = kind === 'club' ? s0 + ew / 2 + 1 : sc2;
+      mb(es, t0 + 0.6, H + 0.45, ew, 0.9, 1.2, col, 0); mb(es, t0 - 0.05, H + 0.2, ew + 0.1, 0.9, 0.12, ac, 0);
+      mb(es, t0 - 0.06, 0.8, ew * 0.55, 1.6, 0.08, glass, 7); mb(es, t0 - 1.0, 1.85, ew * 0.75, 0.16, 2.0, ac, 0);
+      for (const o of [-ew * 0.33, ew * 0.33]) { mb(es + o, t0 - 1.9, 0.9, 0.18, 1.8, 0.18, hex('#d8d8d8'), 0); }
+      for (let k = -2; k <= 2; k++) mb(es + k * 0.9, t0 - 2.4, 0.3, 0.2, 0.6, 0.2, hex('#c8c8c8'), 0);
+      mb(sc2, t0 - 0.05, 0.25, Ls, 0.5, 0.1, hex('#6d747c'), 0);                                   // base band
+      if (kind === 'super') { mb(sc2, t0 - 0.08, 0.75, Ls * 0.8, 0.9, 0.06, glass, 8); mb(sc2, t0 - 0.7, 1.45, Ls * 0.9, 0.12, 1.3, ac, 0); }
+      if (kind === 'club') {                                                                       // ribbed metal walls + tyre centre bays
+        for (let s = s0 + 1.2; s < s1 - 0.6; s += 1.2) { mb(s, t0 - 0.05, H / 2, 0.08, H - 0.6, 0.06, hex('#a2a7ac'), 0); mb(s, t1 + 0.05, H / 2, 0.08, H - 0.6, 0.06, hex('#a2a7ac'), 0); }
+        for (let t = t0 + 3; t < t0 + 11; t += 2.6) mb(s1 + 0.05, t, 0.8, 0.06, 1.4, 2.0, hex('#3a3f46'), 0);
+      }
+      for (let t = t0 + 4; t < t1 - 2; t += 2.5) mb(sc2, t1 + 0.04, 0.75, Math.min(1.2, Ls * 0.1), 1.2, 0.06, hex('#353a42'), 0); // service doors at the back
+      mb(es + ew * 0.6 + 1.5, t0 - 4, 0.35, 2.4, 0.7, 0.7, hex('#c9cdd2'), 6); mc(es + ew * 0.6 + 1.5, t0 - 4, 2.4, 0.7, 0.7); // cart corral
+    }
+    // warehouse club gas station out by the avenue, lot light poles
+    { const w = fW(F, 119, 12); gasStation(cols, w[0], w[1], Y2, true, '#3a4855'); }
+    for (let s = 50; s <= 130; s += 9) for (const t of [8, 18, 27]) { if (s > 112 && s < 126 && t < 20) continue;
+      mb(s, t, 1.7, 0.12, 3.4, 0.12, C.pole, 0); mb(s, t, 3.4, 0.9, 0.1, 0.25, C.lamp, 5); }
   }
   SITE_BOXES = new Float32Array(OB); SITE_COLS = cols; OB = keep;
 }
@@ -1450,14 +1605,15 @@ function placeOpenProps(ctx) {
   if (SITE_BOXES) for (const L of LOTS) {
     const q = fLocal(L.F, ctx.x0 + CH / 2, ctx.z0 + CH / 2);
     if (q[0] < L.s0 - 40 || q[0] > L.s1 + 40 || q[1] < L.t0 - 40 || q[1] > L.t1 + 40) continue;
-    const mall = L.F === SM, R2 = MALL_RING;
+    const mall = !!L.bl, R2 = L.ring;
     for (let s = L.s0 + 0.7; s < L.s1; s += 1.4) for (let b = 0; b * 8.8 + L.tb < L.t1; b++) for (const tb of [1.3, 3.9]) {
       const t = L.tb + b * 8.8 + tb; if (t < L.t0 + 0.6 || t > L.t1 - 1.3) continue;
       const w = fW(L.F, s, t); if (!inChunk(ctx, w[0], w[1]) || tileAt(w[0], w[1]) !== T_PARKING) continue;
       let p = 0.38;
       if (mall) {
-        if (Math.abs(t - R2.t0) < 2.6 || Math.abs(t - R2.t1) < 2.6 || Math.abs(s - R2.s0) < 2.6 || Math.abs(s - R2.s1) < 2.6 || (Math.abs(Math.abs(s) - 20) < 2.4 && t < R2.t0 + 2)) continue;
-        let dmin = 1e9; for (const m of MALL_BLDGS) { const ds = Math.max(m[0] - s, 0, s - m[1]), dt = Math.max(m[2] - t, 0, t - m[3]); dmin = Math.min(dmin, Math.hypot(ds, dt)); }
+        if (R2 && (Math.abs(t - R2.t0) < 2.6 || Math.abs(t - R2.t1) < 2.6 || Math.abs(s - R2.s0) < 2.6 || Math.abs(s - R2.s1) < 2.6 || (Math.abs(Math.abs(s) - 20) < 2.4 && t < R2.t0 + 2))) continue;
+        if (L.ex && L.ex.some(e => s > e[0] && s < e[1] && t > e[2] && t < e[3])) continue;
+        let dmin = 1e9; for (const m of L.bl) { const ds = Math.max(m[0] - s, 0, s - m[1]), dt = Math.max(m[2] - t, 0, t - m[3]); dmin = Math.min(dmin, Math.hypot(ds, dt)); }
         if (dmin < 1.6) continue; p = 0.06 + 0.6 * Math.exp(-dmin / 12);
       }
       if (ihash(Math.round(s * 10), Math.round(t * 10), mall ? 78 : 77) % 1000 < p * 1000) prop(ctx, PT.PCAR, w[0], w[1], L.F.yaw + (tb < 2 ? Math.PI / 2 : -Math.PI / 2), R);
@@ -4132,7 +4288,7 @@ let ICON_TEX = null, ICON_CV = null;
 function rrect(x, a, b, w, h, r) { x.beginPath(); x.moveTo(a + r, b); x.arcTo(a + w, b, a + w, b + h, r); x.arcTo(a + w, b + h, a, b + h, r); x.arcTo(a, b + h, a, b, r); x.arcTo(a, b, a + w, b, r); x.closePath(); }
 function makeIconAtlas() {
   const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 128; const x = cv.getContext('2d');
-  const disc = ['#1f9e4a', '#c98a12', '#1d6fd6', '#e86f0c'], hi = ['#47d873', '#f5c04a', '#59a6ff', '#ffa040'];
+  const disc = ['#1f9e4a', '#c98a12', '#33414f', '#e86f0c'], hi = ['#47d873', '#f5c04a', '#6c7f92', '#ffa040'];
   for (let i = 0; i < 4; i++) {
     x.save(); x.translate(i * 128 + 64, 64);
     x.shadowColor = 'rgba(0,0,0,0.5)'; x.shadowBlur = 8; x.shadowOffsetY = 3;
@@ -4150,8 +4306,9 @@ function makeIconAtlas() {
       rrect(x, -30, -14, 60, 40, 7); x.fill();
       x.lineWidth = 6; x.strokeStyle = '#fff'; rrect(x, -11, -26, 22, 16, 5); x.stroke();
       x.shadowColor = 'transparent'; x.fillStyle = disc[1]; x.fillRect(-30, 0, 60, 4); x.fillRect(-5, -3, 10, 10);
-    } else if (i === 2) { // lightning bolt
-      x.beginPath(); x.moveTo(8, -36); x.lineTo(-20, 6); x.lineTo(-2, 6); x.lineTo(-10, 36); x.lineTo(22, -8); x.lineTo(3, -8); x.closePath(); x.fill();
+    } else if (i === 2) { // fuel pump (gas station blip)
+      rrect(x, -20, -28, 28, 54, 5); x.fill(); x.shadowColor = 'transparent'; x.fillStyle = disc[2]; x.fillRect(-14, -21, 16, 14);
+      x.fillStyle = '#fff'; x.fillRect(8, -18, 6, 4); x.fillRect(16, -18, 5, 30); x.fillRect(10, 10, 11, 5);
     } else { // gear
       x.beginPath(); const T = 8;
       for (let k = 0; k < T * 4; k++) { const a = (k / (T * 4)) * Math.PI * 2 - Math.PI / (T * 4), r = (k % 4 === 1 || k % 4 === 2) ? 33 : 25; x.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
@@ -4217,6 +4374,7 @@ function drawMini(t) {
   const blip = (px, pz, cell, px2) => { if (!ICON_CV) return; const s = px2 / sc; x.save(); x.translate(px - P.x, pz - P.z); x.rotate(CAM_AZ); x.drawImage(ICON_CV, cell * 128, 0, 128, 128, -s / 2, -s / 2, s, s); x.restore(); };
   x.imageSmoothingEnabled = true;
   for (const p of G.pickups) blip(p.x, p.z, p.big ? 1 : 0, (p.big ? 26 : 21) * W / 256);
+  for (const g of GAS_SITES) if (Math.abs(g.x - P.x) < 110 && Math.abs(g.z - P.z) < 110) blip(g.x, g.z, 2, 17 * W / 256);
   for (const p of G.gears) blip(p.x, p.z, 3, 24 * W / 256);
   const blink = Math.floor(t * 6) % 2;
   for (const c of G.cops) { if (!c.alive || c.ai.lost) continue; x.fillStyle = blink ? '#ff3030' : '#3a6bff'; x.beginPath(); x.arc(c.x - P.x, c.z - P.z, 3.4, 0, Math.PI * 2); x.fill(); }

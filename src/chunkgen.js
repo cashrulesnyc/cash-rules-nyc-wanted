@@ -65,8 +65,11 @@ function initWorldData() {
     LM.push({ type: 'label', x: a[0], z: a[1], r: 0, nr: 26, name: 'JFK8', sub: 'FULFILLMENT CENTER · GULF AVE' });
     LM.push({ type: 'label', x: b[0], z: b[1], r: 0, nr: 24, name: 'DYY6', sub: 'DELIVERY STATION · GULF AVE' });
     LM.push({ type: 'label', x: m[0], z: m[1], r: 0, nr: 34, name: 'BLOOMFIELD MARSH', sub: 'ARTHUR KILL WETLANDS' });
-    const sm = fW(SM, 0, 37); LM.push({ type: 'label', x: sm[0], z: sm[1], r: 0, nr: 42, name: 'STATEN ISLAND MALL', sub: 'RICHMOND AVE · NEW SPRINGVILLE' }); }
-  buildSite();
+    const sm = fW(SM, 0, 37); LM.push({ type: 'label', x: sm[0], z: sm[1], r: 0, nr: 42, name: 'STATEN ISLAND MALL', sub: 'RICHMOND AVE · NEW SPRINGVILLE' });
+    for (const c of GEO.CAMPUS) { let la = 0, lo = 0; for (const q of c[2]) { la += q[0]; lo += q[1]; } const w = P(la / c[2].length, lo / c[2].length); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr: 16, name: c[0], sub: c[1] }); }
+    for (const [s, t, nr, name, sub] of [[66, 40, 18, 'RICHMOND AVE PLAZA', '2795 RICHMOND AVE · ELECTRONICS · GROCERY'], [97, 40, 14, 'RICHMOND SHOPPING CENTER', '2873 RICHMOND AVE · DEPARTMENT STORE'], [119, 38, 18, 'WAREHOUSE CLUB', '2975 RICHMOND AVE · GAS · TIRES']]) {
+      const w = fW(SM, s, t); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr, name, sub }); } }
+  initLots(); buildSite();
   for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
     ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
     ['rock', 40.7587, -73.9787, 5.0, 'ROCKEFELLER CENTER', 0], ['esb', 40.7484, -73.9857, 5.5, 'EMPIRE STATE BUILDING', 0],
@@ -181,6 +184,8 @@ function inChunk(ctx, x, z) { return x >= ctx.x0 && x < ctx.x0 + CH && z >= ctx.
 // delivery-van lots, employee parking. Built once into SITE_BOXES / SITE_COLS; genChunk copies the boxes whose
 // centre falls in the chunk and every collider that overlaps it (so big buildings stay solid across chunk edges).
 let SITE_BOXES = null, SITE_COLS = null;
+// lot extras (live in this file): which buildings each striped lot serves, the mall ring, keep-clear rects
+function initLots() { LOTS[1].bl = MALL_BLDGS; LOTS[1].ring = MALL_RING; if (LOTS.length < 3) LOTS.push({ F: SM, s0: 48, s1: 132, t0: 2.4, t1: 62, tb: 10.0, bl: PLAZA_BLDGS, ex: [[112, 126, 6, 19]] }); }
 // Staten Island Mall (generic: no store names or logos): long concourse, two anchor stores, a big centre court with a
 // glass pyramid, a rear wing, entrance canopies, outparcel restaurants. Rects in the SM frame: [s0, s1, t0, t1, H, colour]
 const MALL_BLDGS = [
@@ -192,6 +197,43 @@ const MALL_BLDGS = [
   [-31, -24, 13, 18.5, 1.3, '#efe6d6'], // outparcel restaurant
   [24, 31, 13, 18.5, 1.3, '#dfe7ea'],  // outparcel
 ];
+// Richmond Ave plazas south of the mall, across Richmond Hill Rd (generic stores, by street address; no names or logos)
+// [s0, s1, t0, t1, H, wall colour, kind, accent]   kinds: box (big-box store), super (supermarket), club (warehouse club), pad
+const PLAZA_BLDGS = [
+  [51, 62, 34, 50, 2.4, '#59656f', 'box', '#20303f'],    // 2795: electronics store
+  [63.5, 77, 33, 50, 2.2, '#cfbea3', 'super', '#3d6b47'], // 2795: supermarket
+  [78.5, 85, 36, 50, 2.0, '#9c928a', 'box', '#5a4636'],  // 2795: furniture store
+  [89, 105, 31, 51, 2.7, '#e7e1d5', 'box', '#6e5c4a'],   // 2873: department store (Richmond Shopping Center)
+  [109, 129, 27, 56, 3.0, '#b4b8bc', 'club', '#3a4855'], // 2975: warehouse club
+  [54, 59, 10, 15, 1.2, '#efe6d6', 'pad', '#b5452f'],
+  [93, 98, 10, 15, 1.2, '#dfe7ea', 'pad', '#2f6f9f'],
+];
+// generic gas station (canopy + pump islands + kiosk + price pylon); x/z = centre, yaw = local +z along the road,
+// local -x = the road side. Pushes boxes into OB and colliders into cols.
+function gasStation(cols, x, z, yaw, big, accent) {
+  const lb2 = (lx, y, lz, sx, sy, sz, col, mat) => lbox(x, z, yaw, lx, y, lz, sx, sy, sz, col, mat);
+  const lc = (lx, lz, sx, sz, h) => { const p = rot(x, z, yaw, lx, lz); cols.push(p[0], p[1], yaw, sx / 2, sz / 2, h); };
+  const W = big ? 9 : 7, D = big ? 5 : 4, cx = -0.6, white = hex('#f2f3f4'), ac = hex(accent || '#2f6f9f');
+  lb2(cx, 1.85, 0, D, 0.32, W, white, 0);                                               // canopy
+  lb2(cx, 1.85, 0, D + 0.06, 0.16, W + 0.06, ac, 2);                                    // lit accent band
+  lb2(cx, 1.68, 0, D - 0.4, 0.04, W - 0.4, hex('#fff8dc'), 5);                           // canopy lights
+  const isl = big ? [-3.2, -1.1, 1.1, 3.2] : [-1.8, 1.8];
+  for (const iz of isl) {
+    lb2(cx, 0.08, iz, D * 0.62, 0.16, 0.55, hex('#c9c6bf'), 0);                         // island curb
+    for (const ix of [-D * 0.18, D * 0.18]) { lb2(cx + ix, 0.55, iz, 0.42, 0.9, 0.3, hex('#e9eaec'), 0); lb2(cx + ix, 0.75, iz, 0.3, 0.22, 0.32, ac, 2); lb2(cx + ix, 0.55, iz, 0.2, 0.18, 0.33, hex('#1d2430'), 6); }
+    lb2(cx, 1.0, iz, 0.14, 1.7, 0.14, hex('#d8d8d8'), 0);                               // column
+    lc(cx, iz, D * 0.62, 0.6, 1.0);
+  }
+  lb2(cx + D / 2 + 1.6, 0.7, 0, 2.2, 1.4, big ? 4.2 : 3.4, hex('#e8e2d6'), 0);           // kiosk / convenience store
+  lb2(cx + D / 2 + 0.48, 0.55, 0, 0.06, 0.8, big ? 3.4 : 2.6, hex('#2c3e55'), 7);
+  lb2(cx + D / 2 + 1.6, 1.45, 0, 2.3, 0.14, big ? 4.3 : 3.5, ac, 2);
+  lc(cx + D / 2 + 1.6, 0, 2.2, big ? 4.2 : 3.4, 1.5);
+  const pz = W / 2 + 0.4;                                                                // price pylon at the road corner
+  lb2(-D / 2 - 1.4, 1.5, pz, 0.16, 3.0, 0.16, hex('#4d535b'), 0);
+  lb2(-D / 2 - 1.4, 2.7, pz, 0.12, 1.2, 1.0, ac, 2); lb2(-D / 2 - 1.46, 2.5, pz, 0.04, 0.55, 0.8, hex('#101318'), 2);
+  for (const d of [-0.2, 0.2]) lb2(-D / 2 - 1.49, 2.5, pz + d, 0.02, 0.12, 0.3, hex('#ffb020'), 2);   // LED price digits
+  lc(-D / 2 - 1.4, pz, 0.3, 0.3, 3);
+}
 function buildSite() {
   const keep = OB; OB = [];
   const cols = [], Y = BF.yaw;
@@ -284,6 +326,60 @@ function buildSite() {
     for (let s = -34; s <= 34; s += 8.5) for (const t of [12.5, 22.5, 57, 62]) { if (MALL_BLDGS.some(b => s > b[0] - 1.5 && s < b[1] + 1.5 && t > b[2] - 1.5 && t < b[3] + 1.5)) continue;
       mb(s, t, 1.7, 0.12, 3.4, 0.12, C.pole, 0); mb(s, t, 3.4, 0.9, 0.1, 0.25, C.lamp, 5); }
     for (const [s, t] of [[-15, 20], [8, 21], [-6, 15], [16, 24], [-28, 60], [26, 58]]) { mb(s, t, 0.35, 2.4, 0.7, 0.7, hex('#c9cdd2'), 6); mc(s, t, 2.4, 0.7, 0.7); }
+  }
+  // ---- real buildings from OSM footprints (GEO.RB): projects, big boxes, institutions ----
+  { const BRICK = [hex('#8b4a36'), hex('#9a5a40'), hex('#7c4433'), hex('#a0634a')], RET = [hex('#d9d2c4'), hex('#c9ccd0')], INSTC = [hex('#d8cfbf'), hex('#c7b9a3')];
+    let k = 0;
+    for (const [lat, lon, sx0, sz0, yd, h, st] of GEO.RB) {
+      const p = P(lat, lon), y = yd * Math.PI / 180, sx = sx0 * 1.35, sz = sz0 * 1.35, n = k++;   // footprints scaled up to match the game's oversized cars/houses
+      if (st === 0) {
+        const c = BRICK[n % 4];
+        box(p[0], h / 2, p[1], sx, h, sz, y, c, 4);                                       // brick slab with small windows
+        box(p[0], h + 0.05, p[1], sx - 0.15, 0.1, sz - 0.15, y, hex('#4a4d52'), 0);       // roof
+        box(p[0], 0.25, p[1], sx + 0.06, 0.5, sz + 0.06, y, hex('#6b6f75'), 0);           // base course
+        if (sx * sz > 4) { const q = rot(p[0], p[1], y, (sx > sz ? sx * 0.3 : 0), (sx > sz ? 0 : sz * 0.3)); box(q[0], h + 0.45, q[1], 0.9, 0.8, 0.9, y, c, 0); } // stair bulkhead
+        const e = rot(p[0], p[1], y, 0, sz / 2 + 0.25); box(e[0], 0.9, e[1], Math.min(1.4, sx * 0.4), 0.08, 0.5, y, hex('#3a3f46'), 0); // entry canopy
+      } else if (st === 1) {
+        box(p[0], h / 2, p[1], sx, h, sz, y, RET[n % 2], 0); box(p[0], h + 0.04, p[1], sx - 0.2, 0.08, sz - 0.2, y, hex('#a9adb2'), 0);
+        box(p[0], h - 0.2, p[1], sx + 0.05, 0.4, sz + 0.05, y, hex('#5d6670'), 0);
+      } else {
+        box(p[0], h / 2, p[1], sx, h, sz, y, INSTC[n % 2], 1); box(p[0], h + 0.05, p[1], sx - 0.15, 0.1, sz - 0.15, y, hex('#6d6f73'), 0);
+      }
+      cols.push(p[0], p[1], y, sx / 2, sz / 2, h);
+    }
+  }
+  // ---- gas stations (GAS_SITES, map.js) ----
+  for (const g of GAS_SITES) gasStation(cols, g.x, g.z, g.yaw, g.big, g.accent);
+  // ---- Richmond Ave plazas ----
+  { const F = SM, Y2 = F.yaw;
+    const mb = (s, t, y, ss, sy, st, col, mat) => { const p = fW(F, s, t); box(p[0], y, p[1], st, sy, ss, Y2, col, mat); };
+    const mc = (s, t, ss, st, h) => { const p = fW(F, s, t); cols.push(p[0], p[1], Y2, st / 2, ss / 2, h); };
+    for (const [s0, s1, t0, t1, H, cs, kind, acs] of PLAZA_BLDGS) {
+      const col = hex(cs), ac = hex(acs), sc2 = (s0 + s1) / 2, tc = (t0 + t1) / 2, Ls = s1 - s0, Lt = t1 - t0;
+      const ns = Math.ceil(Ls / 11), nt = Math.ceil(Lt / 11);
+      for (let a = 0; a < ns; a++) for (let b = 0; b < nt; b++) mb(s0 + (a + 0.5) * Ls / ns, t0 + (b + 0.5) * Lt / nt, H / 2, Ls / ns, H, Lt / nt, col, 0);
+      mb(sc2, tc, H + 0.03, Ls - 0.3, 0.06, Lt - 0.3, kind === 'club' ? hex('#9aa0a6') : hex('#b9bdc2'), 0);
+      mc(sc2, tc, Ls, Lt, H);
+      if (kind === 'pad') { mb(sc2, t0 - 0.05, 0.6, Ls * 0.7, 0.8, 0.06, glass, 6); mb(sc2, tc, H + 0.25, Ls + 0.4, 0.3, Lt + 0.4, ac, 0); continue; }
+      // front (toward Richmond Ave): raised entrance parapet with an accent fascia, glass vestibule, canopy, bollards
+      const ew = kind === 'club' ? Ls * 0.28 : Ls * 0.42, es = kind === 'club' ? s0 + ew / 2 + 1 : sc2;
+      mb(es, t0 + 0.6, H + 0.45, ew, 0.9, 1.2, col, 0); mb(es, t0 - 0.05, H + 0.2, ew + 0.1, 0.9, 0.12, ac, 0);
+      mb(es, t0 - 0.06, 0.8, ew * 0.55, 1.6, 0.08, glass, 7); mb(es, t0 - 1.0, 1.85, ew * 0.75, 0.16, 2.0, ac, 0);
+      for (const o of [-ew * 0.33, ew * 0.33]) { mb(es + o, t0 - 1.9, 0.9, 0.18, 1.8, 0.18, hex('#d8d8d8'), 0); }
+      for (let k = -2; k <= 2; k++) mb(es + k * 0.9, t0 - 2.4, 0.3, 0.2, 0.6, 0.2, hex('#c8c8c8'), 0);
+      mb(sc2, t0 - 0.05, 0.25, Ls, 0.5, 0.1, hex('#6d747c'), 0);                                   // base band
+      if (kind === 'super') { mb(sc2, t0 - 0.08, 0.75, Ls * 0.8, 0.9, 0.06, glass, 8); mb(sc2, t0 - 0.7, 1.45, Ls * 0.9, 0.12, 1.3, ac, 0); }
+      if (kind === 'club') {                                                                       // ribbed metal walls + tyre centre bays
+        for (let s = s0 + 1.2; s < s1 - 0.6; s += 1.2) { mb(s, t0 - 0.05, H / 2, 0.08, H - 0.6, 0.06, hex('#a2a7ac'), 0); mb(s, t1 + 0.05, H / 2, 0.08, H - 0.6, 0.06, hex('#a2a7ac'), 0); }
+        for (let t = t0 + 3; t < t0 + 11; t += 2.6) mb(s1 + 0.05, t, 0.8, 0.06, 1.4, 2.0, hex('#3a3f46'), 0);
+      }
+      for (let t = t0 + 4; t < t1 - 2; t += 2.5) mb(sc2, t1 + 0.04, 0.75, Math.min(1.2, Ls * 0.1), 1.2, 0.06, hex('#353a42'), 0); // service doors at the back
+      mb(es + ew * 0.6 + 1.5, t0 - 4, 0.35, 2.4, 0.7, 0.7, hex('#c9cdd2'), 6); mc(es + ew * 0.6 + 1.5, t0 - 4, 2.4, 0.7, 0.7); // cart corral
+    }
+    // warehouse club gas station out by the avenue, lot light poles
+    { const w = fW(F, 119, 12); gasStation(cols, w[0], w[1], Y2, true, '#3a4855'); }
+    for (let s = 50; s <= 130; s += 9) for (const t of [8, 18, 27]) { if (s > 112 && s < 126 && t < 20) continue;
+      mb(s, t, 1.7, 0.12, 3.4, 0.12, C.pole, 0); mb(s, t, 3.4, 0.9, 0.1, 0.25, C.lamp, 5); }
   }
   SITE_BOXES = new Float32Array(OB); SITE_COLS = cols; OB = keep;
 }
@@ -595,14 +691,15 @@ function placeOpenProps(ctx) {
   if (SITE_BOXES) for (const L of LOTS) {
     const q = fLocal(L.F, ctx.x0 + CH / 2, ctx.z0 + CH / 2);
     if (q[0] < L.s0 - 40 || q[0] > L.s1 + 40 || q[1] < L.t0 - 40 || q[1] > L.t1 + 40) continue;
-    const mall = L.F === SM, R2 = MALL_RING;
+    const mall = !!L.bl, R2 = L.ring;
     for (let s = L.s0 + 0.7; s < L.s1; s += 1.4) for (let b = 0; b * 8.8 + L.tb < L.t1; b++) for (const tb of [1.3, 3.9]) {
       const t = L.tb + b * 8.8 + tb; if (t < L.t0 + 0.6 || t > L.t1 - 1.3) continue;
       const w = fW(L.F, s, t); if (!inChunk(ctx, w[0], w[1]) || tileAt(w[0], w[1]) !== T_PARKING) continue;
       let p = 0.38;
       if (mall) {
-        if (Math.abs(t - R2.t0) < 2.6 || Math.abs(t - R2.t1) < 2.6 || Math.abs(s - R2.s0) < 2.6 || Math.abs(s - R2.s1) < 2.6 || (Math.abs(Math.abs(s) - 20) < 2.4 && t < R2.t0 + 2)) continue;
-        let dmin = 1e9; for (const m of MALL_BLDGS) { const ds = Math.max(m[0] - s, 0, s - m[1]), dt = Math.max(m[2] - t, 0, t - m[3]); dmin = Math.min(dmin, Math.hypot(ds, dt)); }
+        if (R2 && (Math.abs(t - R2.t0) < 2.6 || Math.abs(t - R2.t1) < 2.6 || Math.abs(s - R2.s0) < 2.6 || Math.abs(s - R2.s1) < 2.6 || (Math.abs(Math.abs(s) - 20) < 2.4 && t < R2.t0 + 2))) continue;
+        if (L.ex && L.ex.some(e => s > e[0] && s < e[1] && t > e[2] && t < e[3])) continue;
+        let dmin = 1e9; for (const m of L.bl) { const ds = Math.max(m[0] - s, 0, s - m[1]), dt = Math.max(m[2] - t, 0, t - m[3]); dmin = Math.min(dmin, Math.hypot(ds, dt)); }
         if (dmin < 1.6) continue; p = 0.06 + 0.6 * Math.exp(-dmin / 12);
       }
       if (ihash(Math.round(s * 10), Math.round(t * 10), mall ? 78 : 77) % 1000 < p * 1000) prop(ctx, PT.PCAR, w[0], w[1], L.F.yaw + (tb < 2 ? Math.PI / 2 : -Math.PI / 2), R);

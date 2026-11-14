@@ -194,15 +194,56 @@ function lotAt(x, z) { for (const L of LOTS) { const q = fLocal(L.F, x, z); if (
 // mall Ring Road (a loop inside the lot) as avenue segments, overlapping at the corners
 const MALL_RING = { s0: -38, s1: 38, t0: 8, t1: 66, w: 2.8 };
 // zone codes: 6 marsh (drivable, splashy), 7 striped parking lot
-const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)]];
+const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(SM, 48, 2.4, 132, 62)]];
 // smooth value noise (marsh pools / reed beds)
 function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
   const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; }
 function marshWet(x, z) { return vnoise(x / 7, z / 7) * 0.65 + vnoise(x / 2.6 + 17, z / 2.6 - 5) * 0.35; } // > 0.58: open water pool
+// ---- gas stations: snap each real location to the road it fronts, cut a concrete apron (zone 3) into the block ----
+// GAS_SITES: {x, z, yaw, big, accent}; yaw puts local +z along the road and local -x toward it (see gasStation in chunkgen.js)
+const GAS_SITES = [];
+const GAS_ACCENTS = ['#2f6f9f', '#b5452f', '#2e8b57', '#d4a017', '#5b3f8f', '#1f4e79', '#c0392b', '#127369'];
+function placeGas() {
+  GAS_SITES.length = 0;
+  for (const q of GEO.GAS) {
+    const p = P(q[0], q[1]), b = boroAt(p[0], p[1]); if (!b) continue;
+    if (zoneAt(p[0], p[1]) === 7) continue;                 // inside a site lot that builds its own pumps
+    const big = !!q[2], depth = 3.7, far = big ? 5.6 : 4.9, half = (big ? 4.5 : 3.5) + 0.9;
+    let x, z, yaw, back;                                      // back = distance from origin to the road edge
+    // 1) a mapped avenue/highway close by: face it
+    let best = null, bd = 9;
+    for (const sg of SEGS) { if (sg.type !== SEG_AVE && sg.type !== SEG_HWY) continue;
+      let t = (p[0] - sg.ax) * sg.dx + (p[1] - sg.az) * sg.dz; if (t < 2 || t > sg.len - 2) continue;
+      const fx = sg.ax + sg.dx * t, fz = sg.az + sg.dz * t, d = Math.hypot(p[0] - fx, p[1] - fz) - sg.hw;
+      if (d < bd) { bd = d; best = { sg, fx, fz }; } }
+    if (best) {
+      const sg = best.sg; let nx = sg.dz, nz = -sg.dx; yaw = Math.atan2(sg.dx, sg.dz);
+      if ((p[0] - best.fx) * nx + (p[1] - best.fz) * nz < 0) { nx = -nx; nz = -nz; yaw += Math.PI; }
+      const off = sg.hw + 0.3 + depth; x = best.fx + nx * off; z = best.fz + nz * off; back = depth + 0.3;
+    } else {
+      // 2) the borough grid: the nearer of the avenue / street lines, centred on the block face
+      const g = GRIDS[b]; if (!g) continue;
+      const l = gLocal(g, p[0], p[1]), ua = g.A * Math.round(l[0] / g.A), vs = g.S * Math.round(l[1] / g.S);
+      const du = Math.abs(l[0] - ua) - g.wa / 2, dv = Math.abs(l[1] - vs) - g.ws / 2;
+      let u, v, dir;
+      if (du <= dv + 2) { const sgn = l[0] >= ua ? 1 : -1; u = ua + sgn * (g.wa / 2 + g.sw + depth); v = g.S * Math.floor(l[1] / g.S) + g.S / 2; dir = [g.dx, g.dz]; back = g.sw + depth;
+        yaw = Math.atan2(dir[0], dir[1]); if (sgn < 0) yaw += Math.PI; }
+      else { const sgn = l[1] >= vs ? 1 : -1; v = vs + sgn * (g.ws / 2 + g.sw + depth); u = g.A * Math.floor(l[0] / g.A) + g.A / 2; dir = [g.ex, g.ez]; back = g.sw + depth;
+        yaw = Math.atan2(dir[0], dir[1]); if (sgn > 0) yaw += Math.PI; }
+      const w = gWorld(g, u, v); x = w[0]; z = w[1];
+    }
+    if (GAS_SITES.some(o => Math.hypot(o.x - x, o.z - z) < 8)) continue;
+    if (boroAt(x, z) !== b) continue;                         // snapped into the water
+    const c = Math.cos(yaw), sn = Math.sin(yaw), L = (lx, lz) => [x + lx * c + lz * sn, z - lx * sn + lz * c];
+    GAS_SITES.push({ x, z, yaw, big, accent: GAS_ACCENTS[(Math.abs(Math.round(x * 7 + z * 13))) % GAS_ACCENTS.length],
+      apron: [L(-back - 0.05, -half), L(far, -half), L(far, half), L(-back - 0.05, half)] });
+  }
+}
 function buildMap() {
   const brd = GEO.BKQ_BORDER.slice().reverse().slice(1, -1);
   fillPoly(BORO, toW(GEO.NJ), 6);
   fillPoly(BORO, toW(GEO.SI), 5);
+  fillPoly(BORO, toW(GEO.SILVER_LAKE), 0); // inland lake
   fillPoly(BORO, toW(GEO.BKN_SHORE.concat(brd)), 3);
   fillPoly(BORO, toW(GEO.QNS_SHORE.concat(brd)), 4);
   fillPoly(BORO, toW(GEO.ROCKAWAY), 4);
@@ -211,16 +252,19 @@ function buildMap() {
   fillPoly(BORO, toW(GEO.BRX), 2);
   for (const z of GEO.ZONES) fillPoly(ZONE, toW(z[1]), z[0], true);
   for (const z of BF_ZONES) fillPoly(ZONE, z[1], z[0], true);
+  for (const c of GEO.CAMPUS) fillPoly(ZONE, toW(c[2]), 5, true);
   // grid-aligned Manhattan parks
   const g = GRIDS[1], ins = g.wa / 2 + g.sw;
   fillPoly(ZONE, gRect(g, ins, g.ws / 2 + g.sw, 3 * g.A - ins, 25 * g.S - g.ws / 2 - g.sw), 1, true); // Central Park
   const sq = [[40.7308, -73.9973], [40.7359, -73.9911], [40.7420, -73.9880], [40.7536, -73.9832], [40.7265, -73.9815], [40.8040, -73.9440]];
   for (const s of sq) { const b = blockOf(g, s[0], s[1]); fillPoly(ZONE, blockRect(g, b[0], b[1], 1, 1, -0.01), 1, true); }
   buildRoads();
+  placeGas(); for (const g of GAS_SITES) fillPoly(ZONE, g.apron, 3, true);
   { const R = MALL_RING, h = R.w / 2, c = [[R.s0, R.t0], [R.s1, R.t0], [R.s1, R.t1], [R.s0, R.t1]];
     for (let k = 0; k < 4; k++) { const a = c[k], b = c[(k + 1) % 4], ds = Math.sign(b[0] - a[0]) * h, dt = Math.sign(b[1] - a[1]) * h;
       addSeg(fW(SM, a[0] - ds, a[1] - dt), fW(SM, b[0] + ds, b[1] + dt), R.w, SEG_AVE).name = 'RING RD'; }
-    for (const s0 of [-20, 20]) addSeg(fW(SM, s0, 1), fW(SM, s0, R.t0 + h), 2.6, SEG_AVE).name = 'RING RD'; } // entrances off Richmond Ave
+    for (const s0 of [-20, 20]) addSeg(fW(SM, s0, 1), fW(SM, s0, R.t0 + h), 2.6, SEG_AVE).name = 'RING RD'; // entrances off Richmond Ave
+    addSeg(fW(SM, 45, -60), fW(SM, 45, 100), 3.0, SEG_AVE).name = 'RICHMOND HILL RD'; }          // splits the mall from the plazas to the south
   // blurred land mask (separable 1-4-6-4-1) for smooth coastlines
   { const K = [1, 4, 6, 4, 1], t1 = new Uint16Array(MW * MH);
     for (let y = 0; y < MH; y++) { const row = y * MW; for (let x = 0; x < MW; x++) { let v = 0; for (let k = -2; k <= 2; k++) { const xx = Math.min(MW - 1, Math.max(0, x + k)); v += (BORO[row + xx] ? 255 : 0) * K[k + 2]; } t1[row + x] = v >> 4; } }

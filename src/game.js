@@ -632,7 +632,7 @@ let ICON_TEX = null, ICON_CV = null;
 function rrect(x, a, b, w, h, r) { x.beginPath(); x.moveTo(a + r, b); x.arcTo(a + w, b, a + w, b + h, r); x.arcTo(a + w, b + h, a, b + h, r); x.arcTo(a, b + h, a, b, r); x.arcTo(a, b, a + w, b, r); x.closePath(); }
 function makeIconAtlas() {
   const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 128; const x = cv.getContext('2d');
-  const disc = ['#1f9e4a', '#c98a12', '#1d6fd6', '#e86f0c'], hi = ['#47d873', '#f5c04a', '#59a6ff', '#ffa040'];
+  const disc = ['#1f9e4a', '#c98a12', '#33414f', '#e86f0c'], hi = ['#47d873', '#f5c04a', '#6c7f92', '#ffa040'];
   for (let i = 0; i < 4; i++) {
     x.save(); x.translate(i * 128 + 64, 64);
     x.shadowColor = 'rgba(0,0,0,0.5)'; x.shadowBlur = 8; x.shadowOffsetY = 3;
@@ -650,8 +650,9 @@ function makeIconAtlas() {
       rrect(x, -30, -14, 60, 40, 7); x.fill();
       x.lineWidth = 6; x.strokeStyle = '#fff'; rrect(x, -11, -26, 22, 16, 5); x.stroke();
       x.shadowColor = 'transparent'; x.fillStyle = disc[1]; x.fillRect(-30, 0, 60, 4); x.fillRect(-5, -3, 10, 10);
-    } else if (i === 2) { // lightning bolt
-      x.beginPath(); x.moveTo(8, -36); x.lineTo(-20, 6); x.lineTo(-2, 6); x.lineTo(-10, 36); x.lineTo(22, -8); x.lineTo(3, -8); x.closePath(); x.fill();
+    } else if (i === 2) { // fuel pump (gas station blip)
+      rrect(x, -20, -28, 28, 54, 5); x.fill(); x.shadowColor = 'transparent'; x.fillStyle = disc[2]; x.fillRect(-14, -21, 16, 14);
+      x.fillStyle = '#fff'; x.fillRect(8, -18, 6, 4); x.fillRect(16, -18, 5, 30); x.fillRect(10, 10, 11, 5);
     } else { // gear
       x.beginPath(); const T = 8;
       for (let k = 0; k < T * 4; k++) { const a = (k / (T * 4)) * Math.PI * 2 - Math.PI / (T * 4), r = (k % 4 === 1 || k % 4 === 2) ? 33 : 25; x.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
@@ -717,6 +718,7 @@ function drawMini(t) {
   const blip = (px, pz, cell, px2) => { if (!ICON_CV) return; const s = px2 / sc; x.save(); x.translate(px - P.x, pz - P.z); x.rotate(CAM_AZ); x.drawImage(ICON_CV, cell * 128, 0, 128, 128, -s / 2, -s / 2, s, s); x.restore(); };
   x.imageSmoothingEnabled = true;
   for (const p of G.pickups) blip(p.x, p.z, p.big ? 1 : 0, (p.big ? 26 : 21) * W / 256);
+  for (const g of GAS_SITES) if (Math.abs(g.x - P.x) < 110 && Math.abs(g.z - P.z) < 110) blip(g.x, g.z, 2, 17 * W / 256);
   for (const p of G.gears) blip(p.x, p.z, 3, 24 * W / 256);
   const blink = Math.floor(t * 6) % 2;
   for (const c of G.cops) { if (!c.alive || c.ai.lost) continue; x.fillStyle = blink ? '#ff3030' : '#3a6bff'; x.beginPath(); x.arc(c.x - P.x, c.z - P.z, 3.4, 0, Math.PI * 2); x.fill(); }
