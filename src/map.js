@@ -194,7 +194,12 @@ function lotAt(x, z) { for (const L of LOTS) { const q = fLocal(L.F, x, z); if (
 // mall Ring Road (a loop inside the lot) as avenue segments, overlapping at the corners
 const MALL_RING = { s0: -38, s1: 38, t0: 8, t1: 66, w: 2.8 };
 // zone codes: 6 marsh (drivable, splashy), 7 striped parking lot
-const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(SM, 48, 2.4, 132, 62)]];
+// Snug Harbor (row of Greek Revival buildings facing Richmond Terrace): grounds are park
+const SNUG = P(40.6437, -74.1027);
+const SNUG_RECT = [[SNUG[0] - 24, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] + 22], [SNUG[0] - 24, SNUG[1] + 22]];
+// Howland Hook container terminal: quay along the shore (s along the quay, t inland)
+const HH = (() => { const F = mkFrame(P(40.6430, -74.1850), P(40.6362, -74.1957)); return F; })();
+const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(SM, 48, 2.4, 132, 62)], [1, SNUG_RECT], [3, fRect(HH, -4, 2, 64, -31)]];  // land is on the -e side of this quay
 // smooth value noise (marsh pools / reed beds)
 function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
   const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; }

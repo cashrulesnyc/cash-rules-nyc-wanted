@@ -65,6 +65,7 @@ function initWorldData() {
     LM.push({ type: 'label', x: a[0], z: a[1], r: 0, nr: 26, name: 'JFK8', sub: 'FULFILLMENT CENTER · GULF AVE' });
     LM.push({ type: 'label', x: b[0], z: b[1], r: 0, nr: 24, name: 'DYY6', sub: 'DELIVERY STATION · GULF AVE' });
     LM.push({ type: 'label', x: m[0], z: m[1], r: 0, nr: 34, name: 'BLOOMFIELD MARSH', sub: 'ARTHUR KILL WETLANDS' });
+    LM.push({ type: 'label', x: SNUG[0], z: SNUG[1], r: 17, nr: 22, name: 'SNUG HARBOR', sub: 'CULTURAL CENTER · RICHMOND TERRACE' }); LM.push({ type: 'label', x: SNUG[0] + 24, z: SNUG[1], r: 4.5 }); LM.push({ type: 'label', x: SNUG[0] - 6, z: SNUG[1] + 15, r: 5 });
     const sm = fW(SM, 0, 37); LM.push({ type: 'label', x: sm[0], z: sm[1], r: 0, nr: 42, name: 'STATEN ISLAND MALL', sub: 'RICHMOND AVE · NEW SPRINGVILLE' });
     for (const c of GEO.CAMPUS) { let la = 0, lo = 0; for (const q of c[2]) { la += q[0]; lo += q[1]; } const w = P(la / c[2].length, lo / c[2].length); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr: 16, name: c[0], sub: c[1] }); }
     for (const [s, t, nr, name, sub] of [[66, 40, 18, 'RICHMOND AVE PLAZA', '2795 RICHMOND AVE · ELECTRONICS · GROCERY'], [97, 40, 14, 'RICHMOND SHOPPING CENTER', '2873 RICHMOND AVE · DEPARTMENT STORE'], [119, 38, 18, 'WAREHOUSE CLUB', '2975 RICHMOND AVE · GAS · TIRES']]) {
@@ -347,6 +348,59 @@ function buildSite() {
       }
       cols.push(p[0], p[1], y, sx / 2, sz / 2, h);
     }
+  }
+  // ---- Snug Harbor: five Greek Revival temple-front buildings (A-E) in a row facing north to Richmond Terrace ----
+  { const X = SNUG[0], Z = SNUG[1], wht = hex('#eee8da'), wht2 = hex('#e2dbc9'), roofc = hex('#8a8f96'), b = (x, y, z, sx, sy, sz, c, m) => box(X + x, y, Z + z, sx, sy, sz, 0, c, m);
+    const sc = (x, z, sx, sz, h) => cols.push(X + x, Z + z, 0, sx / 2, sz / 2, h);
+    function temple(x, W, D, H, nCol, dome) {
+      b(x, H / 2, 0, W, H, D, wht2, 1);                                                    // body (window rows)
+      b(x, H + 0.08, 0, W + 0.2, 0.16, D + 0.2, wht, 0);                                   // cornice
+      b(x, H + 0.35, 0, W - 0.3, 0.4, D - 0.3, roofc, 0);                                  // low roof
+      const Dp = 1.4, zf = -D / 2 - Dp / 2, ph = H * 0.92;
+      b(x, 0.12, zf, W * 0.86, 0.24, Dp + 0.2, wht, 0);                                    // portico steps / stylobate
+      for (let k = 0; k < nCol; k++) { const cx = x - W * 0.38 + k * (W * 0.76) / (nCol - 1); b(cx, ph / 2 + 0.2, -D / 2 - Dp + 0.25, 0.24, ph, 0.24, wht, 0); b(cx, ph + 0.18, -D / 2 - Dp + 0.25, 0.34, 0.1, 0.34, wht, 0); }
+      b(x, ph + 0.35, zf, W * 0.86, 0.3, Dp, wht, 0);                                      // entablature
+      for (let k = 0; k < 4; k++) b(x, ph + 0.58 + k * 0.17, zf - 0.02, W * 0.86 * (1 - (k + 1) / 5), 0.17, Dp + 0.04, k % 2 ? wht : wht2, 0); // pediment steps
+      const ang = 0.38, half = W * 0.43;
+      for (const sd of [-1, 1]) boxQ(X + x + sd * half / 2, ph + 0.62 + half / 2 * Math.tan(ang), Z + zf, half / Math.cos(ang) + 0.1, 0.12, Dp + 0.2, qa(0, 0, 1, -sd * ang), roofc, 0);
+      if (dome) { for (let k = 0; k < 3; k++) b(x, H + 0.7 + k * 0.32, 0, 1.8 - k * 0.5, 0.34, 1.8 - k * 0.5, k === 2 ? hex('#9fb0a8') : wht, 0); b(x, H + 1.75, 0, 0.12, 0.5, 0.12, hex('#c9a227'), 2); }
+      sc(x, -Dp / 2, W, D + Dp, H);
+    }
+    temple(0, 5.6, 4.4, 2.8, 8, true);                                                     // Building C (1833)
+    for (const x of [-7, 7]) temple(x, 4.2, 3.8, 2.5, 6, false);                           // B, D
+    for (const x of [-13.5, 13.5]) temple(x, 4.0, 3.8, 2.4, 6, false);                     // A, E
+    for (const x of [-3.9, 3.9, -10.4, 10.4]) { b(x, 1.0, 0.6, 1.6, 2.0, 2.6, wht2, 1); sc(x, 0.6, 1.6, 2.6, 2.0); } // hyphen links
+    // Music Hall to the east (brick with a columned front), iron fence + gate piers on the Terrace, a central path
+    b(24, 1.2, 0, 6, 2.4, 4.4, hex('#9b4b3a'), 1); b(24, 2.5, 0, 6.2, 0.2, 4.6, wht, 0); for (let k = 0; k < 4; k++) b(21.9 + k * 1.4, 1.0, -2.4, 0.22, 2.0, 0.22, wht, 0); sc(24, 0, 6, 4.4, 2.4);
+    for (let x = -22; x <= 30; x += 1.6) if (Math.abs(x) > 2.8) b(x, 0.35, -7.0, 0.07, 0.7, 0.07, hex('#1d1f23'), 0);
+    b(-23 + 26, 0.62, -7.0, 52, 0.06, 0.06, hex('#1d1f23'), 0);
+    for (const x of [-2.8, 2.8]) { b(x, 0.7, -7.0, 0.5, 1.4, 0.5, hex('#cfc6b4'), 0); b(x, 1.5, -7.0, 0.3, 0.2, 0.3, hex('#cfc6b4'), 0); sc(x, -7.0, 0.5, 0.5, 1.4); }
+    b(0, 0.02, -5.0, 2.4, 0.04, 4.0, hex('#d9d2c2'), 0);
+    // Chinese Scholar's Garden (walled, behind the row)
+    for (const [x, z, sx, sz] of [[-6, 12, 9, 0.3], [-6, 18, 9, 0.3], [-10.5, 15, 0.3, 6], [-1.5, 15, 0.3, 6]]) { b(x, 0.6, z, sx, 1.2, sz, hex('#f1eee8'), 0); b(x, 1.25, z, sx + 0.2, 0.12, sz + 0.2, hex('#3a3d42'), 0); sc(x, z, sx, sz, 1.2); }
+    b(-6, 0.9, 15, 2.2, 0.12, 1.6, hex('#3a3d42'), 0); for (const [dx, dz] of [[-0.9, -0.6], [0.9, -0.6], [-0.9, 0.6], [0.9, 0.6]]) b(-6 + dx, 0.45, 15 + dz, 0.12, 0.9, 0.12, hex('#9b2d24'), 0);
+  }
+  // ---- Howland Hook container terminal: gantry cranes on the quay, container stacks, gatehouse ----
+  { const F = HH, inl = -1;                                                                  // land is on the -e side of the quay
+    const hb = (s, t, y, ss, sy, st, c, m) => { const q = fW(F, s, t * inl); box(q[0], y, q[1], st, sy, ss, F.yaw, c, m); };
+    const hc = (s, t, ss, st, h) => { const q = fW(F, s, t * inl); cols.push(q[0], q[1], F.yaw, st / 2, ss / 2, h); };
+    const R3 = rng(9090), CC = ['#c0392b', '#2b5fb3', '#1e8449', '#d68910', '#7d3c98', '#e8e8e8', '#5d6d7e', '#a04000', '#117a65', '#f1c40f'].map(hex);
+    for (const s of [6, 18, 30, 42, 54]) {                                                     // ship-to-shore gantry cranes
+      const blue = hex('#2e6fb5'), red = hex('#c0392b');
+      for (const [ds, dt] of [[-1.6, 1.2], [1.6, 1.2], [-1.6, 5.2], [1.6, 5.2]]) hb(s + ds, dt, 3.4, 0.3, 6.8, 0.3, blue, 0);
+      hb(s, 3.2, 6.9, 3.8, 0.5, 4.8, blue, 0); hb(s, -1.5, 7.3, 1.2, 0.35, 15, red, 0);          // portal beam + boom over the water
+      hb(s, 3.5, 7.9, 2.0, 1.1, 2.2, hex('#e8e8e8'), 0); hb(s, 5.6, 8.6, 0.25, 1.6, 0.25, blue, 0); // machinery house, A-frame
+      hc(s, 1.2, 3.6, 0.6, 7); hc(s, 5.2, 3.6, 0.6, 7);
+    }
+    for (let bs = 2; bs < 60; bs += 11) for (let bt = 10; bt < 27; bt += 5.5) {                 // container blocks
+      for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) { const n = 1 + Math.floor(R3() * 4); if (R3() < 0.1) continue;
+        hb(bs + k * 2.3 + 1.2, bt + r * 1.05, n * 0.27, 2.2, n * 0.54, 0.95, CC[Math.floor(R3() * CC.length)], 0); }
+      hc(bs + 4.6 + 0.6, bt + 1.6, 9.4, 4.4, 2.2);
+    }
+    for (let k = 0; k < 6; k++) { const s = 4 + k * 9.5; hb(s, 8.2, 1.3, 1.0, 2.6, 2.6, hex('#d4ac0d'), 0); hb(s, 8.2, 2.7, 1.1, 0.3, 2.7, hex('#2e3238'), 0); } // straddle carriers
+    hb(30, 29, 0.9, 12, 1.8, 2.2, hex('#d6d9dc'), 0); hb(30, 29, 2.0, 14, 0.2, 4.0, hex('#2e6fb5'), 0); hc(30, 29, 12, 2.2, 1.8); // gatehouse canopy
+    for (let s = 0; s < 62; s += 10) { hb(s, 7, 4, 0.2, 8, 0.2, C.pole, 0); hb(s, 7, 8.1, 1.2, 0.15, 0.4, C.lamp, 5); }
+    const L = fW(F, 30, 16 * inl); LM.push({ type: 'label', x: L[0], z: L[1], r: 0, nr: 32, name: 'HOWLAND HOOK', sub: 'CONTAINER TERMINAL · RICHMOND TERRACE' });
   }
   // ---- gas stations (GAS_SITES, map.js) ----
   for (const g of GAS_SITES) gasStation(cols, g.x, g.z, g.yaw, g.big, g.accent);
