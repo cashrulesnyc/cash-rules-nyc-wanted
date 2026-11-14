@@ -21,9 +21,9 @@ const path = require('path'); const html = process.argv[2] || path.resolve(__dir
     G.gears=[{x:P0.x+Math.sin(P0.h)*1.0,z:P0.z-Math.cos(P0.h)*1.0,t:0}];const before=P0.hp;__sim(0.2,0);return {before,after:P0.hp,max:P0.maxHp,left:G.gears.length,stat:SAVE.stats.gears};})()`);
   console.log('gear repair', JSON.stringify(gear));
   await pg.waitForTimeout(600); await pg.screenshot({path:out+'_gears.png'});
-  await pg.evaluate("(()=>{const p=P(40.745,-74.0075);G.P.x=p[0];G.P.z=p[1];G.P.h=-Math.PI/2+0.4;G.P.vx=-20;G.P.vz=0;G.cam.tx=G.P.x;G.cam.tz=G.P.z;})()");
+  await pg.evaluate("(()=>{const p=P(40.5745,-73.9800);G.P.x=p[0];G.P.z=p[1];G.P.h=Math.PI;G.P.vx=0;G.P.vz=20;G.cam.tx=G.P.x;G.cam.tz=G.P.z;})()");
   await sim(2.5,0); await pg.waitForTimeout(2500);
-  console.log('water', JSON.stringify(await st()));
+  console.log('water (off the Coney Island beach)', JSON.stringify(await st()));
   // chaos + night
   await pg.evaluate("GFX.night=1;");
   for (const boro of ['MANHATTAN','BROOKLYN','QUEENS','BRONX','STATEN ISLAND']) {

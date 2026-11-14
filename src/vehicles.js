@@ -363,6 +363,7 @@ function stepVehicle(v, dt) {
     return;
   }
   const t = tileAt(v.x, v.z);
+  v.sandT = t === T_SAND ? 0.8 : Math.max(0, (v.sandT || 0) - dt); // just left a beach: the only way into the water
   const surf = (t === T_PARK || t === T_SAND || t === T_CEM) ? 0.78 : t === T_MARSH ? (marshWet(v.x, v.z) > 0.56 ? 0.7 : 0.82) : (t === T_WALK || t === T_LOT) ? 0.92 : 1;
   const maxV = v.maxV * surf * (v.boost || 1);
   if (v.thr > 0) { if (vf < maxV) vf += maxV * 1.25 * dt * (1 - Math.max(0, vf) / maxV) + (vf < 0 ? 20 * dt : 0); else vf -= (vf - maxV) * 2 * dt; }
@@ -450,6 +451,18 @@ function collideWorld(v, dt, onProp) {
     // left a bridge sideways at height? clamp down
     v.onBridge = null;
     if (!v.air && !v.rampH) v.y += (0 - v.y) * Math.min(1, dt * 8);
+    // shoreline is solid for the player (no driving off docks/piers/seawalls); only a beach lets you roll into the water
+    if (v.role === 'player' && !v.air && v.sink === 0 && !(v.sandT > 0)) {
+      for (let it = 0; it < 5; it++) {
+        let hit = null;
+        for (const o of v.m.circles.concat([v.m.len * 0.5, -v.m.len * 0.5])) { const px = v.x + fx * o, pz = v.z + fz * o; if (tileAt(px, pz) === T_WATER) { hit = [px, pz]; break; } }
+        if (!hit) break;
+        let nx = landVal(hit[0] + 1, hit[1]) - landVal(hit[0] - 1, hit[1]), nz = landVal(hit[0], hit[1] + 1) - landVal(hit[0], hit[1] - 1);
+        const l = Math.hypot(nx, nz); if (l < 1e-6) { nx = v.x - hit[0]; nz = v.z - hit[1]; const l2 = Math.hypot(nx, nz) || 1; nx /= l2; nz /= l2; } else { nx /= l; nz /= l; }
+        v.x += nx * 0.22; v.z += nz * 0.22;
+        const vn = v.vx * nx + v.vz * nz; if (vn < 0) { v.vx -= nx * vn * 1.3; v.vz -= nz * vn * 1.3; maxImp = Math.max(maxImp, -vn); }
+      }
+    }
     if (!v.air && v.y < 0.3 && tileAt(v.x, v.z) === T_WATER && v.sink === 0) v.sink = 0.001;
   }
   return maxImp;
