@@ -47,6 +47,11 @@ const toW = a => a.map(PL);
 // Roads were widened for arcade driving: every avenue +ROAD_WA, every street +ROAD_WS (taken out of the
 // blocks), sidewalks GRID_SW wide. GRID_SW is also baked into the ground shader (gl.js).
 const GRID_SW = 0.6, ROAD_WA = 1.2, ROAD_WS = 0.8, HWY_K = 1.25, BRIDGE_K = 1.2;
+// Rounded street corners: every block is a rounded rectangle (curb radius GRID_R), so turns flow instead of snapping 90 deg.
+// blockDist(a, b) = signed distance into the block from its curb, where a/b = distance past the avenue/street road edge.
+// Mirrored in GROUND_FS (gl.js). Road < 0 <= sidewalk < GRID_SW <= lot.
+const GRID_R = 2.0;
+function blockDist(a, b) { if (a > 0 && b > 0 && a < GRID_R && b < GRID_R) return GRID_R - Math.hypot(GRID_R - a, GRID_R - b); return Math.min(a, b); }
 function mkGrid(boro, thDeg, A, S, wa, ws, oLat, oLon, style) {
   const th = thDeg * Math.PI / 180, o = P(oLat, oLon);
   wa += ROAD_WA; ws += ROAD_WS;
@@ -57,7 +62,7 @@ GRIDS[1] = mkGrid(1, 29, 15.5, 9, 3.6, 2.8, 40.7681, -73.9819, 'city');
 GRIDS[2] = mkGrid(2, 6, 12, 10, 3.4, 2.8, 40.8280, -73.9190, 'boro');
 GRIDS[3] = mkGrid(3, -10, 11, 9, 3.4, 2.7, 40.6840, -73.9780, 'brown');
 GRIDS[4] = mkGrid(4, 22, 12, 10, 3.4, 2.7, 40.7450, -73.9330, 'boro');
-GRIDS[5] = mkGrid(5, 12, 14, 12, 3.0, 2.6, 40.6400, -74.0800, 'sub');
+GRIDS[5] = mkGrid(5, 12, 24, 18, 3.6, 3.0, 40.6400, -74.0800, 'sub');   // driving-scale Staten Island: ~1.6x longer blocks, wider streets (was 14 x 12, 3.0 / 2.6)
 GRIDS[6] = mkGrid(6, 16, 13, 10, 3.4, 2.8, 40.7250, -74.0450, 'boro');
 function gLocal(g, x, z) { const rx = x - g.ox, rz = z - g.oz; return [rx * g.ex + rz * g.ez, rx * g.dx + rz * g.dz]; }
 function gWorld(g, u, v) { return [g.ox + u * g.ex + v * g.dx, g.oz + u * g.ez + v * g.dz]; }
@@ -348,8 +353,9 @@ function tileAt(x, z) {
   const rx = x - g.ox, rz = z - g.oz;
   const u = rx * g.ex + rz * g.ez, v = rx * g.dx + rz * g.dz; LASTU = u; LASTV = v;
   const du = Math.abs(u - g.A * Math.round(u / g.A)), dv = Math.abs(v - g.S * Math.round(v / g.S));
-  if (du < g.wa / 2 || dv < g.ws / 2) return T_ROAD;
-  if (du < g.wa / 2 + g.sw || dv < g.ws / 2 + g.sw) return T_WALK;
+  const bd = blockDist(du - g.wa / 2, dv - g.ws / 2);
+  if (bd < 0) return T_ROAD;
+  if (bd < g.sw) return T_WALK;
   return T_LOT;
 }
 function drivable(x, z) { return tileAt(x, z) !== T_WATER; }
@@ -417,10 +423,11 @@ function texel(x, z, out) {
       const g = LASTG, u = LASTU, v = LASTV;
       const du = Math.abs(u - g.A * Math.round(u / g.A)), dv = Math.abs(v - g.S * Math.round(v / g.S));
       c = shade(COL.walk, 0.96 + 0.07 * n, _sc);
-      if ((du >= g.wa / 2 && du < g.wa / 2 + 0.2) || (dv >= g.ws / 2 && dv < g.ws / 2 + 0.2)) c = COL.curb;
+      const bd = blockDist(du - g.wa / 2, dv - g.ws / 2);
+      if (bd < 0.2) c = COL.curb;
       else if (fr(u / 1.4) < 0.13 || fr(v / 1.4) < 0.13) c = shade(COL.walk, 0.9, _sc);
       // building-side shadow line (fake AO where the sidewalk meets the lot)
-      else if ((du > g.wa / 2 + g.sw - 0.2 && du < g.wa / 2 + g.sw) || (dv > g.ws / 2 + g.sw - 0.2 && dv < g.ws / 2 + g.sw)) c = shade(COL.walk, 0.84, _sc);
+      else if (bd > g.sw - 0.2) c = shade(COL.walk, 0.84, _sc);
       break;
     }
     case T_LOT: { const b = boroAt(x, z); c = shade(b === 5 ? COL.yard : (b === 4 && x > 330) ? COL.yard : COL.lot, 0.96 + 0.06 * n, _sc); break; }

@@ -587,7 +587,7 @@ function render(t, dt) {
   let fov, dist, pitch = CAM_PITCH, az = CAM_AZ;
   fov = 36; // landscape-only game (a portrait screen shows the rotate overlay)
   const sp = P ? vSpeed(P) : 0;
-  dist = Math.max(38, Math.min(52, 28 + cv.clientHeight * 0.033)) + sp * 0.35;
+  dist = Math.max(38, Math.min(52, 28 + cv.clientHeight * 0.033)) + sp * 0.7;   // pulls back with speed so the next turn is in view
   let tx = G.cam.tx, tz = G.cam.tz;
   if (G.state === 'play' || G.state === 'over') {
     const la = 0.3;

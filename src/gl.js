@@ -273,6 +273,7 @@ ${LIGHT_FS}
 float cov(float d, float hw, float f){ return clamp((hw - d) / f + 0.5, 0.0, 1.0) * clamp(2.0 * hw / f, 0.0, 1.0); }
 float dsh(float a, float p, float f){ float x = fract(a / p) * p; return cov(abs(x - p * 0.5), p * 0.25, f); }
 vec3 C(float r, float g, float b){ return vec3(r, g, b) / 255.0; }
+float bdist(float a, float b){ const float R = ${GRID_R.toFixed(3)}; if (a > 0.0 && b > 0.0 && a < R && b < R) return R - length(vec2(R - a, R - b)); return min(a, b); }
 vec3 gridColor(int bo, vec3 lot){
   vec4 ga = uGa[bo], gb = uGb[bo];
   vec2 r = vW.xz - ga.xy;
@@ -285,9 +286,10 @@ vec3 gridColor(int bo, vec3 lot){
   vec3 walk = C(196.0, 192.0, 184.0) * (0.96 + 0.07 * n);
   float joint = max(cov(abs(fract(u / 1.4) - 0.5) * 1.4, 0.09, fu), cov(abs(fract(v / 1.4) - 0.5) * 1.4, 0.09, fv));
   walk *= 1.0 - 0.08 * joint;
-  float inner = max(cov(abs(du - (wa * 0.5 + sw - 0.1)), 0.1, fu), cov(abs(dv - (ws * 0.5 + sw - 0.1)), 0.1, fv));
+  float bd = bdist(du - wa * 0.5, dv - ws * 0.5), fb = max(fwidth(bd), 1e-3);   // rounded-corner blocks (GRID_R)
+  float inner = cov(abs(bd - (sw - 0.1)), 0.1, fb);
   walk *= 1.0 - 0.14 * inner; // shade where the sidewalk meets the building line
-  float curb = max(cov(abs(du - wa * 0.5 - 0.1), 0.1, fu), cov(abs(dv - ws * 0.5 - 0.1), 0.1, fv));
+  float curb = cov(abs(bd - 0.1), 0.1, fb);
   walk = mix(walk, C(138.0, 136.0, 130.0), curb);
   // asphalt + markings
   vec3 road = C(66.0, 68.0, 76.0) * (0.94 + 0.12 * n);
@@ -307,8 +309,8 @@ vec3 gridColor(int bo, vec3 lot){
     else road = mix(road, W, cov(dv, 0.09, fv) * dsh(u, 2.0, fu));
     road *= 1.0 - 0.3 * cov(ws * 0.5 - dv, 0.2, fv);
   }
-  float roadM = max(cov(du, wa * 0.5, fu), cov(dv, ws * 0.5, fv));
-  float walkM = max(cov(du, wa * 0.5 + sw, fu), cov(dv, ws * 0.5 + sw, fv));
+  float roadM = clamp(0.5 - bd / fb, 0.0, 1.0);
+  float walkM = clamp(0.5 - (bd - sw) / fb, 0.0, 1.0);
   return mix(mix(lot, walk, walkM), road, roadM);
 }
 // highways (type 1), avenues like Broadway (2) and runways (3), same priority rule as segHit()
