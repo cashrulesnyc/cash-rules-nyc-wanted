@@ -234,10 +234,19 @@ function placeGas() {
       const fx = sg.ax + sg.dx * t, fz = sg.az + sg.dz * t, d = Math.hypot(p[0] - fx, p[1] - fz) - sg.hw;
       if (d < bd) { bd = d; best = { sg, fx, fz }; } }
     if (best) {
-      const sg = best.sg; let nx = sg.dz, nz = -sg.dx; yaw = Math.atan2(sg.dx, sg.dz);
-      if ((p[0] - best.fx) * nx + (p[1] - best.fz) * nz < 0) { nx = -nx; nz = -nz; yaw += Math.PI; }
-      const off = sg.hw + 0.3 + depth; x = best.fx + nx * off; z = best.fz + nz * off; back = depth + 0.3;
-      if (boroAt(x, z) !== b) { x = best.fx - nx * off; z = best.fz - nz * off; yaw += Math.PI; }   // the mapped point sits on the water side: use the land side
+      const sg = best.sg; let nx = sg.dz, nz = -sg.dx, yaw0 = Math.atan2(sg.dx, sg.dz);
+      if ((p[0] - best.fx) * nx + (p[1] - best.fz) * nz < 0) { nx = -nx; nz = -nz; yaw0 += Math.PI; }
+      const off = sg.hw + 0.3 + depth; back = depth + 0.3; x = null;
+      // slide along the avenue (bends, other segments) until the forecourt is clear of every mapped road; land side only
+      for (const ds of [0, 2, -2, 4, -4, 6, -6, 8, -8]) for (const side of [1, -1]) {
+        if (x !== null) break;
+        const fx = best.fx + sg.dx * ds, fz = best.fz + sg.dz * ds, cx = fx + side * nx * off, cz = fz + side * nz * off, yw = yaw0 + (side < 0 ? Math.PI : 0);
+        if (boroAt(cx, cz) !== b) continue;
+        const c = Math.cos(yw), sn = Math.sin(yw), L = (lx, lz) => [cx + lx * c + lz * sn, cz - lx * sn + lz * c];
+        if ([L(-back + 0.3, -half), L(far, -half), L(far, half), L(-back + 0.3, half), L(far * 0.5, 0)].some(q => { const s2 = segHit(q[0], q[1]); return s2 && s2.type !== SEG_BRIDGE; })) continue;
+        x = cx; z = cz; yaw = yw;
+      }
+      if (x === null) continue;
     } else {
       // 2) the borough grid: the nearer of the avenue / street lines, centred on the block face
       const g = GRIDS[b]; if (!g) continue;
@@ -251,6 +260,8 @@ function placeGas() {
       const w = gWorld(g, u, v); x = w[0]; z = w[1];
     }
     if (GAS_SITES.some(o => Math.hypot(o.x - x, o.z - z) < 8)) continue;
+    { const c = Math.cos(yaw), sn = Math.sin(yaw), L = (lx, lz) => [x + lx * c + lz * sn, z - lx * sn + lz * c];   // the forecourt must not sit on a mapped road
+      if ([L(-back + 0.3, -half), L(far, -half), L(far, half), L(-back + 0.3, half), L(far * 0.5, 0)].some(q => { const sg = segHit(q[0], q[1]); return sg && sg.type !== SEG_BRIDGE; })) continue; }
     if (boroAt(x, z) !== b) continue;                         // snapped into the water
     const c = Math.cos(yaw), sn = Math.sin(yaw), L = (lx, lz) => [x + lx * c + lz * sn, z - lx * sn + lz * c];
     GAS_SITES.push({ x, z, yaw, big, accent: GAS_ACCENTS[(Math.abs(Math.round(x * 7 + z * 13))) % GAS_ACCENTS.length],

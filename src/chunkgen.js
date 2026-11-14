@@ -70,7 +70,7 @@ function initWorldData() {
     for (const c of GEO.CAMPUS) { let la = 0, lo = 0; for (const q of c[2]) { la += q[0]; lo += q[1]; } const w = P(la / c[2].length, lo / c[2].length); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr: 16, name: c[0], sub: c[1] }); }
     for (const [s, t, nr, name, sub] of [[66, 40, 18, 'RICHMOND AVE PLAZA', '2795 RICHMOND AVE · ELECTRONICS · GROCERY'], [97, 40, 14, 'RICHMOND SHOPPING CENTER', '2873 RICHMOND AVE · DEPARTMENT STORE'], [119, 38, 18, 'WAREHOUSE CLUB', '2975 RICHMOND AVE · GAS · TIRES']]) {
       const w = fW(PZ, s, t); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr, name, sub }); } }
-  initLots(); buildSite();
+  initLots(); buildSite(); carveSites();
   for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
     ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
     ['rock', 40.7587, -73.9787, 5.0, 'ROCKEFELLER CENTER', 0], ['esb', 40.7484, -73.9857, 5.5, 'EMPIRE STATE BUILDING', 0],
@@ -332,8 +332,14 @@ function buildSite() {
   { const BRICK = [hex('#8b4a36'), hex('#9a5a40'), hex('#7c4433'), hex('#a0634a')], RET = [hex('#d9d2c4'), hex('#c9ccd0')], INSTC = [hex('#d8cfbf'), hex('#c7b9a3')];
     let k = 0;
     for (const [lat, lon, sx0, sz0, yd, h, st] of GEO.RB) {
-      const p = P(lat, lon), y = yd * Math.PI / 180, sx = sx0 * 1.35, sz = sz0 * 1.35, n = k++;   // footprints scaled up to match the game's oversized cars/houses
+      const p = P(lat, lon), y = yd * Math.PI / 180, n = k++; let sx = sx0 * 1.35, sz = sz0 * 1.35;   // footprints scaled up to match the game's oversized cars/houses
       if (!boroAt(p[0], p[1])) continue;                                                     // mapped footprint that lands in the water here
+      { // never on a mapped avenue / highway (bridges are elevated and fine): shrink to fit, else drop
+        const roadOn = (k) => { const c = Math.cos(y), sn = Math.sin(y), hx = sx * k / 2 + 0.35, hz = sz * k / 2 + 0.35;
+          for (const [a, d] of [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [0, 1], [-1, 0], [1, 0], [0, 0]]) { const sg = segHit(p[0] + a * hx * c + d * hz * sn, p[1] - a * hx * sn + d * hz * c); if (sg && sg.type !== SEG_BRIDGE) return true; } return false; };
+        let k = 1; while (k > 0.8 && roadOn(k)) k -= 0.05;
+        if (k <= 0.8) continue;                                                              // would turn into a sliver: leave it out
+        if (k < 1) { sx *= k; sz *= k; } }
       if (st === 0) {
         const c = BRICK[n % 4];
         box(p[0], h / 2, p[1], sx, h, sz, y, c, 4);                                       // brick slab with small windows
@@ -588,6 +594,40 @@ function buildSite() {
   }
   SITE_BOXES = new Float32Array(OB); SITE_COLS = cols; OB = keep;
 }
+// Real buildings must never stand on the procedural street grid. For every site building (collider >= 1.2 tall), each grid
+// street or avenue it touches is removed for the whole block (curb to curb, sidewalks included) and the intersections it
+// sits on are cleared, so neighbouring blocks merge into one superblock (as NYC does around projects and big sites) instead
+// of leaving crosswalks and road stubs under walls. The cleared ground takes the zone around the building (lawn / plaza /
+// tarmac); bare grid lots under a footprint become plaza so no procedural house grows inside it. Mapped avenues and
+// highways (segments) are not touched: sites are placed clear of them.
+let CARVED = 0;
+function carveSites() {
+  if (!SITE_COLS) return;
+  const S = SITE_COLS, done = new Set(), sw = GRID_SW;
+  const zAt = (x, z) => { const m = landIdx(x, z); return m < 0 ? -1 : ZONE[m]; };
+  for (let i = 0; i < S.length; i += 6) {
+    const cx = S[i], cz = S[i + 1], yaw = S[i + 2], ha = S[i + 3], hb = S[i + 4], h = S[i + 5];
+    if (h < 1.2 || ha * hb * 4 < 1.5) continue;
+    const b = boroAt(cx, cz), g = GRIDS[b]; if (!b || !g) continue;
+    const zc = zAt(cx, cz), val = zc > 0 ? zc : 5;
+    const c = Math.cos(yaw), sn = Math.sin(yaw), W = (lx, lz) => [cx + lx * c + lz * sn, cz - lx * sn + lz * c];
+    if (zc === 0) fillPoly(ZONE, [W(-ha - 0.6, -hb - 0.6), W(ha + 0.6, -hb - 0.6), W(ha + 0.6, hb + 0.6), W(-ha - 0.6, hb + 0.6)], 5, true);
+    const rect = (u0, u1, v0, v1) => fillPoly(ZONE, [gWorld(g, u0, v0), gWorld(g, u1, v0), gWorld(g, u1, v1), gWorld(g, u0, v1)], val, true);
+    for (let a = -ha - 0.4; a <= ha + 0.4; a += 0.5) for (let d = -hb - 0.4; d <= hb + 0.4; d += 0.5) {
+      const q = W(a, d); if (zAt(q[0], q[1]) !== 0 || boroAt(q[0], q[1]) !== b || segHit(q[0], q[1])) continue;
+      const l = gLocal(g, q[0], q[1]), iu = Math.round(l[0] / g.A), jv = Math.round(l[1] / g.S);
+      const onA = Math.abs(l[0] - iu * g.A) < g.wa / 2 + sw, onS = Math.abs(l[1] - jv * g.S) < g.ws / 2 + sw;
+      if (!onA && !onS) continue;
+      const key = b + ':' + (onA && onS ? 'x' + iu + ',' + jv : onA ? 'a' + iu + ',' + Math.floor(l[1] / g.S) : 's' + Math.floor(l[0] / g.A) + ',' + jv);
+      if (done.has(key)) continue; done.add(key); CARVED++;
+      const ea = g.wa / 2 + sw + MAP_RES * 0.6, es = g.ws / 2 + sw + MAP_RES * 0.6;   // + over half a raster cell, so no sliver of curb survives
+      if (onA && onS) rect(iu * g.A - ea, iu * g.A + ea, jv * g.S - es, jv * g.S + es);                                   // intersection
+      else if (onA) { const j0 = Math.floor(l[1] / g.S); rect(iu * g.A - ea, iu * g.A + ea, j0 * g.S + g.ws / 2, (j0 + 1) * g.S - g.ws / 2); }   // avenue, one block
+      else { const i0 = Math.floor(l[0] / g.A); rect(i0 * g.A + g.wa / 2, (i0 + 1) * g.A - g.wa / 2, jv * g.S - es, jv * g.S + es); }        // street, one block
+    }
+  }
+}
+
 function addSite(ctx) {
   if (!SITE_BOXES) return;
   const B = SITE_BOXES;
