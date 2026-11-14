@@ -185,7 +185,9 @@ function fW(F, s, t) { return [F.a[0] + F.d[0] * s + F.e[0] * t, F.a[1] + F.d[1]
 function fRect(F, s0, t0, s1, t1) { return [fW(F, s0, t0), fW(F, s1, t0), fW(F, s1, t1), fW(F, s0, t1)]; }
 function fLocal(F, x, z) { const rx = x - F.a[0], rz = z - F.a[1]; return [rx * F.d[0] + rz * F.d[1], rx * F.e[0] + rz * F.e[1]]; }
 const BF = mkFrame(P(40.6300, -74.1850), P(40.6000, -74.1900));                     // Bloomfield: along the West Shore Expwy
-const SM = mkFrame(P(40.5950, -74.1615), P(40.5700, -74.1650), P(40.5822, -74.1612)); // Staten Island Mall: along Richmond Ave, origin at the mall
+// Richmond Ave runs N-S at about -74.169 past the mall (OSM). The mall sits on the EAST side, the big-box plazas across on the WEST side.
+const SM = mkFrame(P(40.5748, -74.1700), P(40.5872, -74.1684), P(40.5815, -74.16914)); // Staten Island Mall: s = north along Richmond Ave, t = east (into the mall)
+const PZ = mkFrame(P(40.5872, -74.1684), P(40.5748, -74.1700), P(40.5953, -74.16735)); // Richmond Ave plazas: s = south along the avenue, t = west (into the plazas)
 function bfW(s, t) { return fW(BF, s, t); }
 function bfRect(s0, t0, s1, t1) { return fRect(BF, s0, t0, s1, t1); }
 // striped lots: frame, extent, stall phase (bands of [2.6 stalls][2.6 stalls][3.4 aisle] starting at tb)
@@ -195,6 +197,7 @@ function lotAt(x, z) { for (const L of LOTS) { const q = fLocal(L.F, x, z); if (
 const MALL_RING = { s0: -38, s1: 38, t0: 8, t1: 66, w: 2.8 };
 // zone codes: 6 marsh (drivable, splashy), 7 striped parking lot
 // Snug Harbor (row of Greek Revival buildings facing Richmond Terrace): grounds are park
+const CAMPUS_BB = [];   // [x0, z0, x1, z1] of each GEO.CAMPUS polygon (filled by buildMap)
 const SNUG = P(40.6437, -74.1027);
 const SNUG_RECT = [[SNUG[0] - 24, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] + 22], [SNUG[0] - 24, SNUG[1] + 22]];
 // Howland Hook container terminal: quay along the shore (s along the quay, t inland)
@@ -202,7 +205,7 @@ const HH = (() => { const F = mkFrame(P(40.6430, -74.1850), P(40.6362, -74.1957)
 // St. George waterfront: ferry terminal (slips point NE at the ferry berth), Empire Outlets + ballpark along the north shore
 const SG = mkFrame(P(40.6437, -74.0728), P(40.6452, -74.0708));        // s = seaward toward the berth, t = 90deg right of that
 const SGW = mkFrame(P(40.6447, -74.0742), P(40.6466, -74.0800));       // along the shore heading WNW (outlets, ballpark); t = inland
-const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(SM, 48, 2.4, 132, 62)], [1, SNUG_RECT], [3, fRect(HH, -4, 2, 64, -31)], [5, fRect(SG, -14, -12, 2, 12)], [5, fRect(SGW, -2, 1, 36, -15)]];  // SGW: inland is -t  // land is on the -e side of this quay
+const BF_ZONES = [[6, bfRect(-26, 3.2, 150, 90)], [3, bfRect(4, 15, 118, 50)], [7, bfRect(4, 3.2, 118, 15)], [7, fRect(SM, -42, 2.4, 42, 72)], [7, fRect(PZ, 48, 2.4, 132, 62)], [1, SNUG_RECT], [3, fRect(HH, -4, 2, 64, -31)], [5, fRect(SG, -14, -12, 2, 12)], [5, fRect(SGW, -2, 1, 36, -15)]];  // SGW: inland is -t  // land is on the -e side of this quay
 // smooth value noise (marsh pools / reed beds)
 function vnoise(x, z) { const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, ux = fx * fx * (3 - 2 * fx), uz = fz * fz * (3 - 2 * fz);
   const a = hash2(xi, zi), b = hash2(xi + 1, zi), c = hash2(xi, zi + 1), d = hash2(xi + 1, zi + 1); return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; }
@@ -276,7 +279,8 @@ function buildMap() {
   fillPoly(BORO, toW(GEO.BRX), 2);
   for (const z of GEO.ZONES) fillPoly(ZONE, toW(z[1]), z[0], true);
   for (const z of BF_ZONES) fillPoly(ZONE, z[1], z[0], true);
-  for (const c of GEO.CAMPUS) fillPoly(ZONE, toW(c[2]), 5, true);
+  CAMPUS_BB.length = 0;   // housing campuses: lawn (park zone) with sparse trees between the towers (placeOpenProps)
+  for (const c of GEO.CAMPUS) { const w = toW(c[2]); fillPoly(ZONE, w, 1, true); let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const q of w) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); } CAMPUS_BB.push([x0, z0, x1, z1]); }
   for (const r of GEO.PAVE) fillPoly(ZONE, toW([[r[0], r[2]], [r[0], r[3]], [r[1], r[3]], [r[1], r[2]]]), 3, true);
   // grid-aligned Manhattan parks
   const g = GRIDS[1], ins = g.wa / 2 + g.sw;
@@ -290,7 +294,9 @@ function buildMap() {
     for (let k = 0; k < 4; k++) { const a = c[k], b = c[(k + 1) % 4], ds = Math.sign(b[0] - a[0]) * h, dt = Math.sign(b[1] - a[1]) * h;
       addSeg(fW(SM, a[0] - ds, a[1] - dt), fW(SM, b[0] + ds, b[1] + dt), R.w, SEG_AVE).name = 'RING RD'; }
     for (const s0 of [-20, 20]) addSeg(fW(SM, s0, 1), fW(SM, s0, R.t0 + h), 2.6, SEG_AVE).name = 'RING RD'; // entrances off Richmond Ave
-    addSeg(fW(SM, 45, -60), fW(SM, 45, 100), 3.0, SEG_AVE).name = 'RICHMOND HILL RD'; }          // splits the mall from the plazas to the south
+    // Richmond Hill Rd leaves Richmond Ave just north of the mall and bends south-east around its corner (OSM shape)
+    { const pts = [fW(SM, 46, 1.5), fW(SM, 46, 62), fW(SM, 40, 74), fW(SM, 0, 80), P(40.5733, -74.1470)];
+      for (let i = 0; i + 1 < pts.length; i++) addSeg(pts[i], pts[i + 1], 3.0, SEG_AVE).name = 'RICHMOND HILL RD'; } }
   // blurred land mask (separable 1-4-6-4-1) for smooth coastlines
   { const K = [1, 4, 6, 4, 1], t1 = new Uint16Array(MW * MH);
     for (let y = 0; y < MH; y++) { const row = y * MW; for (let x = 0; x < MW; x++) { let v = 0; for (let k = -2; k <= 2; k++) { const xx = Math.min(MW - 1, Math.max(0, x + k)); v += (BORO[row + xx] ? 255 : 0) * K[k + 2]; } t1[row + x] = v >> 4; } }

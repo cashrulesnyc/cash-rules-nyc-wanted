@@ -69,7 +69,7 @@ function initWorldData() {
     const sm = fW(SM, 0, 37); LM.push({ type: 'label', x: sm[0], z: sm[1], r: 0, nr: 42, name: 'STATEN ISLAND MALL', sub: 'RICHMOND AVE · NEW SPRINGVILLE' });
     for (const c of GEO.CAMPUS) { let la = 0, lo = 0; for (const q of c[2]) { la += q[0]; lo += q[1]; } const w = P(la / c[2].length, lo / c[2].length); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr: 16, name: c[0], sub: c[1] }); }
     for (const [s, t, nr, name, sub] of [[66, 40, 18, 'RICHMOND AVE PLAZA', '2795 RICHMOND AVE · ELECTRONICS · GROCERY'], [97, 40, 14, 'RICHMOND SHOPPING CENTER', '2873 RICHMOND AVE · DEPARTMENT STORE'], [119, 38, 18, 'WAREHOUSE CLUB', '2975 RICHMOND AVE · GAS · TIRES']]) {
-      const w = fW(SM, s, t); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr, name, sub }); } }
+      const w = fW(PZ, s, t); LM.push({ type: 'label', x: w[0], z: w[1], r: 0, nr, name, sub }); } }
   initLots(); buildSite();
   for (const [type, lat, lon, r, name, dv] of [['flatiron', 40.7411, -73.9897, 3.6, 'FLATIRON BUILDING', 0], ['wsq', 40.7308, -73.9973, 3.2, 'WASHINGTON SQUARE ARCH', 0],
     ['msg', 40.7505, -73.9934, 4.6, 'MADISON SQUARE GARDEN', 0], ['gct', 40.7527, -73.9772, 4.0, 'GRAND CENTRAL TERMINAL', 0], ['metlife', 40.7536, -73.9766, 4.0, 'METLIFE BUILDING', 0],
@@ -186,7 +186,7 @@ function inChunk(ctx, x, z) { return x >= ctx.x0 && x < ctx.x0 + CH && z >= ctx.
 // centre falls in the chunk and every collider that overlaps it (so big buildings stay solid across chunk edges).
 let SITE_BOXES = null, SITE_COLS = null;
 // lot extras (live in this file): which buildings each striped lot serves, the mall ring, keep-clear rects
-function initLots() { LOTS[1].bl = MALL_BLDGS; LOTS[1].ring = MALL_RING; if (LOTS.length < 3) LOTS.push({ F: SM, s0: 48, s1: 132, t0: 2.4, t1: 62, tb: 10.0, bl: PLAZA_BLDGS, ex: [[112, 126, 6, 19]] }); }
+function initLots() { LOTS[1].bl = MALL_BLDGS; LOTS[1].ring = MALL_RING; if (LOTS.length < 3) LOTS.push({ F: PZ, s0: 48, s1: 132, t0: 2.4, t1: 62, tb: 10.0, bl: PLAZA_BLDGS, ex: [[112, 126, 6, 19]] }); }
 // Staten Island Mall (generic: no store names or logos): long concourse, two anchor stores, a big centre court with a
 // glass pyramid, a rear wing, entrance canopies, outparcel restaurants. Rects in the SM frame: [s0, s1, t0, t1, H, colour]
 const MALL_BLDGS = [
@@ -490,7 +490,7 @@ function buildSite() {
   // ---- gas stations (GAS_SITES, map.js) ----
   for (const g of GAS_SITES) gasStation(cols, g.x, g.z, g.yaw, g.big, g.accent);
   // ---- Richmond Ave plazas ----
-  { const F = SM, Y2 = F.yaw;
+  { const F = PZ, Y2 = F.yaw;
     const mb = (s, t, y, ss, sy, st, col, mat) => { const p = fW(F, s, t); box(p[0], y, p[1], st, sy, ss, Y2, col, mat); };
     const mc = (s, t, ss, st, h) => { const p = fW(F, s, t); cols.push(p[0], p[1], Y2, st / 2, ss / 2, h); };
     for (const [s0, s1, t0, t1, H, cs, kind, acs] of PLAZA_BLDGS) {
@@ -845,18 +845,24 @@ function placeOpenProps(ctx) {
     }
     if (!mall) for (let s = 9; s < 118; s += 12) { const w = fW(L.F, s, 3.2 + 7.0); if (inChunk(ctx, w[0], w[1])) prop(ctx, PT.LAMP, w[0], w[1], L.F.yaw, R); }
   }
+  // site colliders near this chunk, so park/plaza trees never grow inside a real building
+  const SC = []; if (SITE_COLS) for (let i = 0; i < SITE_COLS.length; i += 6) { const S = SITE_COLS, r = Math.hypot(S[i + 3], S[i + 4]) + 1;
+    if (S[i] + r > ctx.x0 && S[i] - r < ctx.x0 + CH && S[i + 1] + r > ctx.z0 && S[i + 1] - r < ctx.z0 + CH) SC.push(i); }
+  const siteHit = (x, z, pad) => { for (const i of SC) { const S = SITE_COLS, c = Math.cos(S[i + 2]), sn = Math.sin(S[i + 2]), dx = x - S[i], dz = z - S[i + 1];
+    const lx = dx * c - dz * sn, lz = dx * sn + dz * c; if (Math.abs(lx) < S[i + 3] + pad && Math.abs(lz) < S[i + 4] + pad) return true; } return false; };
+  const inCampus = (x, z) => { for (const b of CAMPUS_BB) if (x > b[0] && x < b[2] && z > b[1] && z < b[3]) return true; return false; };
   // parks: jittered lattice
   for (let z = ctx.z0 + 1.6; z < ctx.z0 + CH; z += 3.2) for (let x = ctx.x0 + 1.6; x < ctx.x0 + CH; x += 3.2) {
     const px = x + (R() - 0.5) * 2.2, pz = z + (R() - 0.5) * 2.2, r = R();
     const t = tileAt(px, pz);
-    if (t === T_PARK) { if (lmExcluded(px, pz, 1)) continue; if (r < 0.55) prop(ctx, PT.TREE, px, pz, 0, R); else if (r < 0.58) prop(ctx, PT.BENCH, px, pz, R() * 3, R); else if (r < 0.6) prop(ctx, PT.LAMP, px, pz, R() * 6, R); }
+    if (t === T_PARK) { if (lmExcluded(px, pz, 1) || (SC.length && siteHit(px, pz, 0.9))) continue; if (inCampus(px, pz)) { if (r < 0.16) prop(ctx, PT.TREE, px, pz, 0, R); else if (r < 0.19) prop(ctx, PT.BENCH, px, pz, R() * 3, R); continue; } if (r < 0.55) prop(ctx, PT.TREE, px, pz, 0, R); else if (r < 0.58) prop(ctx, PT.BENCH, px, pz, R() * 3, R); else if (r < 0.6) prop(ctx, PT.LAMP, px, pz, R() * 6, R); }
     else if (t === T_SAND) { if (lmExcluded(px, pz, 1)) continue; if (r < 0.12) prop(ctx, PT.UMB, px, pz, R(), R); }
     else if (t === T_MARSH) { // reed clumps (decor only: no collider, no heat) away from open pools
       if (r < 0.55 && marshWet(px, pz) < 0.54) { const k = 3 + Math.floor(R() * 4);
         for (let q = 0; q < k; q++) { const rx = px + (R() - 0.5) * 1.4, rz = pz + (R() - 0.5) * 1.4, h = 0.5 + R() * 0.7;
           box(rx, h / 2, rz, 0.07, h, 0.07, R() * 3, R() < 0.5 ? hex('#8f9a4e') : hex('#b3a868'), 0); if (R() < 0.5) box(rx, h, rz, 0.1, 0.2, 0.1, 0, hex('#5a3e24'), 0); } }
     }
-    else if (t === T_PLAZA) { if (r < 0.18 && !lmExcluded(px, pz, 2)) prop(ctx, PT.TREE, px, pz, 0, R); }
+    else if (t === T_PLAZA) { if (r < 0.18 && !lmExcluded(px, pz, 2) && !(SC.length && siteHit(px, pz, 0.9))) prop(ctx, PT.TREE, px, pz, 0, R); }
     else if (t === T_CEM) {
       if (r < 0.15) prop(ctx, PT.TREE, px, pz, 0, R);
       else for (let a = 0; a < 2; a++) for (let c = 0; c < 2; c++) if (R() < 0.7) { const tx = px - 0.7 + a * 1.4, tz = pz - 0.7 + c * 1.4; if (tileAt(tx, tz) === T_CEM) prop(ctx, PT.TOMB, tx, tz, 0.2, R); }
