@@ -258,6 +258,7 @@ function buildMap() {
   for (const z of GEO.ZONES) fillPoly(ZONE, toW(z[1]), z[0], true);
   for (const z of BF_ZONES) fillPoly(ZONE, z[1], z[0], true);
   for (const c of GEO.CAMPUS) fillPoly(ZONE, toW(c[2]), 5, true);
+  for (const r of GEO.PAVE) fillPoly(ZONE, toW([[r[0], r[2]], [r[0], r[3]], [r[1], r[3]], [r[1], r[2]]]), 3, true);
   // grid-aligned Manhattan parks
   const g = GRIDS[1], ins = g.wa / 2 + g.sw;
   fillPoly(ZONE, gRect(g, ins, g.ws / 2 + g.sw, 3 * g.A - ins, 25 * g.S - g.ws / 2 - g.sw), 1, true); // Central Park

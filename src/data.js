@@ -239,3 +239,5 @@ GEO.SILVER_LAKE = [[40.6293,-74.0958],[40.6288,-74.0944],[40.6252,-74.0951],[40.
 GEO.RB = [];
 // Open campuses (zone 5 plaza) where the projects stand, replacing the generic street grid: [name, sub, [[lat,lon]...]]
 GEO.CAMPUS = [];
+// Paved lots around real big buildings (zone 3), [lat0, lat1, lon0, lon1]
+GEO.PAVE = [];
