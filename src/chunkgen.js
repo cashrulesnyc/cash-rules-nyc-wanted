@@ -719,7 +719,7 @@ function placeLots(g, b, i, j, uc, vc, bu, bv, R, ctx) {
   if (b === 1 && wc[1] < P(40.8000, 0)[1]) style = 'brown';
   let lots = [];
   if (style === 'sub') {
-    const nu = Math.max(2, Math.round(bu / 3.2)), nv = 2;
+    const nu = Math.max(1, Math.round(bu / 5.6)), nv = 2;   // 'summarised' suburbs: fewer, car-proportioned houses (~1.6 car lengths wide)
     for (let a = 0; a < nu; a++) for (let c = 0; c < nv; c++) lots.push([uc - bu / 2 + (a + 0.5) * bu / nu, vc - bv / 2 + (c + 0.5) * bv / nv, bu / nu / 2, bv / nv / 2, 'house']);
   } else if (style === 'brown') {
     const nu = Math.max(3, Math.round(bu / 1.7));
@@ -738,7 +738,7 @@ function placeLots(g, b, i, j, uc, vc, bu, bv, R, ctx) {
     if (!lotOK(g, b, L[0], L[1], hu, hv)) continue;
     const w = gWorld(g, L[0], L[1]);
     const r = R();
-    if (L[4] === 'house') { house(w[0], w[1], yaw, hu * 2, hv * 2, R, ctx); continue; }
+    if (L[4] === 'house') { const dv0 = L[1] - vc; house(w[0], w[1], yaw, hu * 2, hv * 2, R, ctx, Math.abs(dv0) > 0.01 ? -Math.sign(dv0) : 1); continue; }
     let h = L[4] === 'row' ? 2.0 + R() * 1.3 : heightFor(b, w[0], w[1], r, g.style);
     const pal = L[4] === 'row' ? PAL.brown : (b === 1 ? (h > 7 ? PAL.tower : PAL.walkup) : b === 6 ? (h > 7 ? PAL.tower : PAL.brick) : (h > 7 ? PAL.tower : (b === 3 ? PAL.brown : PAL.brick)));
     // which local-z side faces a street: lots sit either side of the block's centre line in v (v = -lz)
@@ -823,14 +823,28 @@ function tower(x, z, yaw, w, d, h, col, R, ctx, b, faceZ, kind, masonry) {
   addCol(ctx, x, z, yaw, w / 2, d / 2, h);
 }
 
-function house(x, z, yaw, w, d, R, ctx) {
+function house(x, z, yaw, w, d, R, ctx, faceZ) {
+  // Detached two-storey house sized against the car (~3.9 wide, 1.6 car lengths): set back behind a front yard, porch and
+  // door on the street side (local z = faceZ), stepped gable roof, chimney, a driveway beside it (sometimes with a parked car).
   const col = PAL.house[Math.floor(R() * PAL.house.length)], rc = PAL.roof[Math.floor(R() * PAL.roof.length)];
-  const bw = Math.min(w, 2.4), bd = Math.min(d, 2.6), h = 1.2 + R() * 0.5;
-  box(x, h / 2, z, bw, h, bd, yaw, col, 4);
-  box(x, h + 0.16, z, bw + 0.15, 0.32, bd + 0.15, yaw, rc, 0);
-  box(x, h + 0.45, z, bw * 0.62, 0.3, bd + 0.15, yaw, rc, 0);
-  addCol(ctx, x, z, yaw, bw / 2, bd / 2, h);
-  if (R() < 0.5) { const p = rot(x, z, yaw, (R() < 0.5 ? -1 : 1) * (bw / 2 + 0.5), 0); if (tileAt(p[0], p[1]) === T_LOT) prop(ctx, 12, p[0], p[1], yaw, R); }
+  const bw = Math.min(w - 0.7, 3.9), bd = Math.min(d - 1.8, 3.6), h = 1.9 + R() * 0.6, fz = faceZ || 1;
+  if (bw < 1.4 || bd < 1.4) return;
+  const zc = -fz * Math.max(0, (d - bd) / 2 - 1.3), xc = (R() < 0.5 ? -1 : 1) * Math.max(0, (w - bw) / 2 - 0.35);
+  const L = (lx, y, lz, sx, sy, sz, c, m) => lbox(x, z, yaw, xc + lx, y, zc + lz, sx, sy, sz, c, m);
+  L(0, h / 2, 0, bw, h, bd, col, 4);
+  L(0, h + 0.15, 0, bw + 0.2, 0.3, bd + 0.24, rc, 0); L(0, h + 0.44, 0, bw + 0.2, 0.3, bd * 0.64, rc, 0); L(0, h + 0.7, 0, bw + 0.2, 0.24, bd * 0.3, rc, 0);  // stepped gable
+  L(bw * 0.3, h + 0.6, -fz * bd * 0.15, 0.36, 1.0, 0.36, hex('#7a4a3a'), 0);                                             // chimney
+  const pz = fz * (bd / 2 + 0.38);
+  L(-bw * 0.18, 0.06, pz, bw * 0.5, 0.12, 0.76, hex('#b9b2a6'), 0); L(-bw * 0.18, 1.02, pz, bw * 0.54, 0.08, 0.84, rc, 0);   // porch + porch roof
+  for (const o of [-bw * 0.4, bw * 0.04]) L(o, 0.55, pz + fz * 0.32, 0.08, 0.95, 0.08, hex('#eeeae2'), 0);
+  L(-bw * 0.18, 0.5, fz * (bd / 2 + 0.02), 0.5, 0.86, 0.04, hex('#3a3f46'), 0);                                          // front door
+  const ex = (bw / 2 + 0.75) * (xc > 0 ? -1 : 1), dz0 = fz * (d / 2) - zc;                                            // driveway beside the house, out to the street
+  if (Math.abs(ex) + 0.6 < w / 2 + Math.abs(xc)) {
+    L(ex, 0.015, dz0 / 2, 1.15, 0.03, Math.abs(dz0), hex('#9b9a96'), 0);
+    if (R() < 0.45) { const q = rot(x, z, yaw, xc + ex, zc + fz * (bd / 2 + 0.6)); prop(ctx, PT.PCAR, q[0], q[1], yaw + (R() < 0.5 ? 0 : Math.PI), R); }
+  }
+  { const q = rot(x, z, yaw, xc, zc); addCol(ctx, q[0], q[1], yaw, bw / 2, bd / 2, h); }
+  if (R() < 0.6) { const p = rot(x, z, yaw, xc + (R() < 0.5 ? -1 : 1) * (bw / 2 - 0.3), zc + fz * (bd / 2 + 0.9)); if (tileAt(p[0], p[1]) === T_LOT) prop(ctx, PT.BUSH, p[0], p[1], yaw, R); }
 }
 
 // prop types
