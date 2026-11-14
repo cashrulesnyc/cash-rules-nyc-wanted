@@ -969,6 +969,8 @@ Avoid unnecessary interface redesign.
 
 > **Revision 2.2 (owner instruction, November 13, 2026):** **nitro power-ups and jump ramps are removed** from the game (no spawns, no ramps on the map, and their mission ladders "Big Airs Off Ramps" and "Grab Nitro" are retired; lifetime stats stay in the save). **Speed motion blur** is added for drama (radial streaks above ~55% of top speed, car stays sharp; toggle in Settings). Buildings always render at full height (no height-cutting near the car); when a building covers the car, the car shows as a **bold outline** (solid yellow fill with a dark rim). The starter Street Sedan is factory grey with no repaint (upgrades only).
 
+> **Revision 2.3 (owner instructions, November 14, 2026):** the game is **landscape only** (portrait shows a rotate-your-phone screen and pauses the run). Staten Island is rebuilt on real map data (OpenStreetMap): the north-shore coastline, Richmond Terrace, Forest Ave and Richmond Ave follow their real lines; the mall sits on the east side of Richmond Ave with the Best Buy / Target / Costco plazas south of it on the same side; police precincts, hospitals (RUMC, SIUH North and South), Borough Hall, the ferry terminal area, the New Brighton substation and the Bayonne power plant across the Kill are at their real positions; 53 gas stations are placed borough-wide; the housing projects (Stapleton, Park Hill, West Brighton, Mariners Harbor, Richmond Terrace, Cassidy-Lafayette, South Beach, Berry, Todt Hill) use their real building footprints. Stores carry generic labels only (type + address), never names, logos or brand colours.
+
 ### 23.1 GARAGE (added in revision 2.1)
 
 - A dedicated 3D garage environment, rendered with the game's own engine.
