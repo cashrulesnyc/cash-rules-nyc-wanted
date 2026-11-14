@@ -333,6 +333,7 @@ function buildSite() {
     let k = 0;
     for (const [lat, lon, sx0, sz0, yd, h, st] of GEO.RB) {
       const p = P(lat, lon), y = yd * Math.PI / 180, sx = sx0 * 1.35, sz = sz0 * 1.35, n = k++;   // footprints scaled up to match the game's oversized cars/houses
+      if (!boroAt(p[0], p[1])) continue;                                                     // mapped footprint that lands in the water here
       if (st === 0) {
         const c = BRICK[n % 4];
         box(p[0], h / 2, p[1], sx, h, sz, y, c, 4);                                       // brick slab with small windows
@@ -445,6 +446,24 @@ function buildSite() {
       for (const z of [-5.5, 0.3, 6]) { for (const x of [-6.5, 6.5]) lb(x, 1.8, z, 0.18, 3.6, 0.18, hex('#9aa1a8'), 0); lb(0, 3.55, z, 13.2, 0.16, 0.16, hex('#9aa1a8'), 0); for (let w = -5; w <= 5; w += 2.5) lb(w, 3.2, z, 0.05, 0.6, 0.05, hex('#d9d2c4'), 0); }
       for (const x of [-11, 11]) { for (let k = 0; k < 5; k++) lb(x, 1.2 + k * 2.4, 4, 1.4 - k * 0.22, 2.4, 1.4 - k * 0.22, hex('#a7adb3'), 0); lb(x, 10.5, 4, 3.6, 0.18, 0.18, hex('#a7adb3'), 0); lc(x, 4, 1.4, 1.4, 12); }
       lb(5, 0.85, -6.3, 4, 1.7, 2.6, hex('#8f4b3a'), 1); lc(5, -6.3, 4, 2.6, 1.7);
+    } else if (c.type === 'store') {                     // big box set back behind its front lot (local -z faces the avenue)
+      const [W, D, H] = c.dims, zc = c.R - D / 2 - 0.4, wall = [hex('#d9d2c4'), hex('#c9ccd0'), hex('#d4c8b4')][(Math.abs(Math.round(X * 3 + Z))) % 3];
+      lb(0, H / 2, zc, W, H, D, wall, 0); lb(0, H + 0.05, zc, W - 0.2, 0.1, D - 0.2, hex('#a9adb2'), 0); lc(0, zc, W, D, H);
+      lb(0, H - 0.25, zc - D / 2 - 0.03, W + 0.05, 0.5, 0.08, hex('#5d6670'), 0);                                  // parapet band
+      lb(0, H * 0.5, zc - D / 2 - 0.35, Math.min(2.4, W * 0.3), H, 0.7, hex('#8a9097'), 0);                        // entrance vestibule
+      lb(0, H * 0.45, zc - D / 2 - 0.72, Math.min(2.0, W * 0.25), H * 0.7, 0.04, hex('#2c3e55'), 7);               // glass doors
+      lb(0, H + 0.35, zc - D / 2 - 0.1, Math.min(3.2, W * 0.4), 0.7, 0.12, hex('#3a4855'), 0);                     // blank sign panel (no names)
+      for (const x of [-W / 2 + 1, 0, W / 2 - 1]) { const zl = zc - D / 2 - 2.6; lb(x, 0.9, zl, 0.1, 1.8, 0.1, hex('#9aa1a8'), 0); lb(x, 1.82, zl, 0.5, 0.08, 0.2, hex('#f4f1e0'), 5); }
+      for (const [x, zo] of [[-W / 2 + 0.8, 1.3], [-W / 2 + 2.2, 1.6], [W / 2 - 1.0, 1.5], [W / 2 - 2.4, 1.2], [1.2, 3.4]]) { const q = rot(X, Z, Y, x, zc - D / 2 - zo - 0.6);
+        carBoxes(q[0], q[1], Y + (zo > 1.4 ? 0 : Math.PI), hex(['#9aa0a6', '#2b2f36', '#c0392b', '#f2f4f7', '#1f4e79'][Math.abs(Math.round(x * 5)) % 5])); cols.push(q[0], q[1], Y, 0.55, 1.08, 1.0); }
+    } else if (c.type === 'plant') {                     // gas-fired power plant: turbine halls, boiler (HRSG) blocks, tall banded stacks, tanks
+      lb(-3, 1.7, 3.5, 12, 3.4, 5, hex('#c4c9ce'), 0); lb(-3, 3.45, 3.5, 12.2, 0.12, 5.2, hex('#8a9097'), 0); lc(-3, 3.5, 12, 5, 3.4);
+      for (let k = 0; k < 4; k++) { const x = -7.5 + k * 3;
+        lb(x, 2.7, -2.5, 2.4, 5.4, 4.2, hex('#a3abb3'), 0); lb(x, 5.45, -2.5, 2.5, 0.1, 4.3, hex('#7d838b'), 0); lc(x, -2.5, 2.4, 4.2, 5.4);
+        lb(x, 6.5, -5.2, 1.0, 13, 1.0, hex('#e3e5e8'), 0); lb(x, 11.6, -5.2, 1.04, 0.7, 1.04, hex('#c0392b'), 0); lb(x, 12.6, -5.2, 1.04, 0.5, 1.04, hex('#c0392b'), 0); lc(x, -5.2, 1, 1, 13);
+        lb(x, 2.0, 1.0, 0.5, 0.5, 2.6, hex('#6b7077'), 0); }
+      for (const [x, z] of [[7.5, -5], [7.5, 0], [7.5, 5]]) { lb(x, 1.1, z, 3.4, 2.2, 3.4, hex('#eceeef'), 0); lb(x, 2.25, z, 3.2, 0.1, 3.2, hex('#b9bec3'), 0); lc(x, z, 3.4, 3.4, 2.2); }
+      for (let x = -11; x <= 11; x += 1.6) { lb(x, 0.6, -11, 0.06, 1.2, 0.06, hex('#6b7077'), 0); lb(x, 0.6, 11, 0.06, 1.2, 0.06, hex('#6b7077'), 0); lb(-11, 0.6, x, 0.06, 1.2, 0.06, hex('#6b7077'), 0); lb(11, 0.6, x, 0.06, 1.2, 0.06, hex('#6b7077'), 0); }
     }
     LM.push({ type: 'label', x: X, z: Z, r: c.R * 0.75, nr: c.R + 6, name: c.name, sub: c.sub });
   }

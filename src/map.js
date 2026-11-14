@@ -185,9 +185,12 @@ function fW(F, s, t) { return [F.a[0] + F.d[0] * s + F.e[0] * t, F.a[1] + F.d[1]
 function fRect(F, s0, t0, s1, t1) { return [fW(F, s0, t0), fW(F, s1, t0), fW(F, s1, t1), fW(F, s0, t1)]; }
 function fLocal(F, x, z) { const rx = x - F.a[0], rz = z - F.a[1]; return [rx * F.d[0] + rz * F.d[1], rx * F.e[0] + rz * F.e[1]]; }
 const BF = mkFrame(P(40.6300, -74.1850), P(40.6000, -74.1900));                     // Bloomfield: along the West Shore Expwy
-// Richmond Ave runs N-S at about -74.169 past the mall (OSM). The mall sits on the EAST side, the big-box plazas across on the WEST side.
+// Richmond Ave runs N-S at about -74.169 past the mall (OSM). The mall and the big-box plazas (2795 / 2873 / 2975 Richmond Ave,
+// odd-numbered like the mall at 2655) are all on the EAST side; the plazas sit south of the mall across a side street.
 const SM = mkFrame(P(40.5748, -74.1700), P(40.5872, -74.1684), P(40.5815, -74.16914)); // Staten Island Mall: s = north along Richmond Ave, t = east (into the mall)
-const PZ = mkFrame(P(40.5872, -74.1684), P(40.5748, -74.1700), P(40.5953, -74.16735)); // Richmond Ave plazas: s = south along the avenue, t = west (into the plazas)
+// Plazas: s = south along the avenue, t = east (into the plazas). A mirrored frame (e flipped) so the layout keeps facing the avenue;
+// every box in it is axis-aligned, so the mirror changes nothing but the side of the road. PZ s = 48 sits just south of the mall ring.
+const PZ = (() => { const F = mkFrame(P(40.5872, -74.1684), P(40.5748, -74.1700), fW(SM, 3, 0)); F.e = [-F.e[0], -F.e[1]]; return F; })();
 function bfW(s, t) { return fW(BF, s, t); }
 function bfRect(s0, t0, s1, t1) { return fRect(BF, s0, t0, s1, t1); }
 // striped lots: frame, extent, stall phase (bands of [2.6 stalls][2.6 stalls][3.4 aisle] starting at tb)
@@ -198,7 +201,7 @@ const MALL_RING = { s0: -38, s1: 38, t0: 8, t1: 66, w: 2.8 };
 // zone codes: 6 marsh (drivable, splashy), 7 striped parking lot
 // Snug Harbor (row of Greek Revival buildings facing Richmond Terrace): grounds are park
 const CAMPUS_BB = [];   // [x0, z0, x1, z1] of each GEO.CAMPUS polygon (filled by buildMap)
-const SNUG = P(40.6437, -74.1027);
+const SNUG = P(40.6434, -74.1027);   // keeps the porticos clear of the real (OSM) Richmond Terrace
 const SNUG_RECT = [[SNUG[0] - 24, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] - 7.5], [SNUG[0] + 32, SNUG[1] + 22], [SNUG[0] - 24, SNUG[1] + 22]];
 // Howland Hook container terminal: quay along the shore (s along the quay, t inland)
 const HH = (() => { const F = mkFrame(P(40.6430, -74.1850), P(40.6362, -74.1957)); return F; })();
@@ -217,7 +220,7 @@ const GAS_ACCENTS = ['#2f6f9f', '#b5452f', '#2e8b57', '#d4a017', '#5b3f8f', '#1f
 function placeGas() {
   GAS_SITES.length = 0;
   for (const q of GEO.GAS) {
-    const p = P(q[0], q[1]), b = boroAt(p[0], p[1]); if (!b) continue;
+    const p = P(q[0], q[1]), b = boroAt(p[0], p[1]); if (!b || b === 6) continue;   // no New Jersey stations
     if (zoneAt(p[0], p[1]) === 7) continue;                 // inside a site lot that builds its own pumps
     const big = !!q[2], depth = 3.7, far = big ? 5.6 : 4.9, half = (big ? 4.5 : 3.5) + 0.9;
     let x, z, yaw, back;                                      // back = distance from origin to the road edge
@@ -231,6 +234,7 @@ function placeGas() {
       const sg = best.sg; let nx = sg.dz, nz = -sg.dx; yaw = Math.atan2(sg.dx, sg.dz);
       if ((p[0] - best.fx) * nx + (p[1] - best.fz) * nz < 0) { nx = -nx; nz = -nz; yaw += Math.PI; }
       const off = sg.hw + 0.3 + depth; x = best.fx + nx * off; z = best.fz + nz * off; back = depth + 0.3;
+      if (boroAt(x, z) !== b) { x = best.fx - nx * off; z = best.fz - nz * off; yaw += Math.PI; }   // the mapped point sits on the water side: use the land side
     } else {
       // 2) the borough grid: the nearer of the avenue / street lines, centred on the block face
       const g = GRIDS[b]; if (!g) continue;
@@ -257,13 +261,14 @@ function placeCivic() {
   for (const c of GEO.CIVIC) {
     const p = P(c[1], c[2]), b = boroAt(p[0], p[1]) || 5, g = GRIDS[b];
     let x = p[0], z = p[1], yaw = g ? -g.th : 0;
+    const big = c[0] === 'hospital_big' ? 1.35 : 1, R = c[0].startsWith('hospital') ? 13 * big : c[0] === 'energy' ? 9 : c[0] === 'plant' ? 12 : c[0] === 'boroughhall' ? 7 : c[0] === 'store' ? c[6][1] / 2 + 4.2 : 6.5;
+    const back = Math.max(5, R + 0.6);                                       // setback from the avenue's edge so the site's front stays off the road
     if (c[5]) { let best = null, bd = 12;                                     // face a named avenue
       for (const sg of SEGS) { if (sg.type !== SEG_AVE || !sg.name) continue; const t = (x - sg.ax) * sg.dx + (z - sg.az) * sg.dz; if (t < 0 || t > sg.len) continue;
         const fx = sg.ax + sg.dx * t, fz = sg.az + sg.dz * t, d = Math.hypot(x - fx, z - fz); if (d < bd) { bd = d; best = { sg, fx, fz }; } }
-      if (best) { const sg = best.sg; let nx = sg.dz, nz = -sg.dx; yaw = Math.atan2(sg.dx, sg.dz) + Math.PI / 2; if ((x - best.fx) * nx + (z - best.fz) * nz < 0) { nx = -nx; nz = -nz; yaw += Math.PI; } x = best.fx + nx * (sg.hw + 5); z = best.fz + nz * (sg.hw + 5); } }
-    const big = c[0] === 'hospital_big' ? 1.35 : 1, R = c[0].startsWith('hospital') ? 13 * big : c[0] === 'energy' ? 9 : c[0] === 'boroughhall' ? 7 : 6.5;
+      if (best) { const sg = best.sg; let nx = sg.dz, nz = -sg.dx; yaw = Math.atan2(sg.dx, sg.dz) + Math.PI / 2; if ((x - best.fx) * nx + (z - best.fz) * nz < 0) { nx = -nx; nz = -nz; yaw += Math.PI; } x = best.fx + nx * (sg.hw + back); z = best.fz + nz * (sg.hw + back); } }
     const cs = Math.cos(yaw), sn = Math.sin(yaw), L = (lx, lz) => [x + lx * cs + lz * sn, z - lx * sn + lz * cs];
-    CIVIC_SITES.push({ type: c[0], x, z, yaw, name: c[3], sub: c[4], R, pad: [L(-R, -R), L(R, -R), L(R, R), L(-R, R)] });
+    CIVIC_SITES.push({ type: c[0], x, z, yaw, name: c[3], sub: c[4], R, dims: c[6], pad: c[0] === 'store' ? [L(-c[6][0] / 2 - 2, -R - 0.6), L(c[6][0] / 2 + 2, -R - 0.6), L(c[6][0] / 2 + 2, R), L(-c[6][0] / 2 - 2, R)] : [L(-R, -R), L(R, -R), L(R, R), L(-R, R)] });
   }
 }
 function buildMap() {
@@ -288,12 +293,11 @@ function buildMap() {
   const sq = [[40.7308, -73.9973], [40.7359, -73.9911], [40.7420, -73.9880], [40.7536, -73.9832], [40.7265, -73.9815], [40.8040, -73.9440]];
   for (const s of sq) { const b = blockOf(g, s[0], s[1]); fillPoly(ZONE, blockRect(g, b[0], b[1], 1, 1, -0.01), 1, true); }
   buildRoads();
-  placeGas(); for (const g of GAS_SITES) fillPoly(ZONE, g.apron, 3, true);
-  placeCivic(); for (const c of CIVIC_SITES) fillPoly(ZONE, c.pad, c.type === 'energy' ? 3 : 5, true);
   { const R = MALL_RING, h = R.w / 2, c = [[R.s0, R.t0], [R.s1, R.t0], [R.s1, R.t1], [R.s0, R.t1]];
     for (let k = 0; k < 4; k++) { const a = c[k], b = c[(k + 1) % 4], ds = Math.sign(b[0] - a[0]) * h, dt = Math.sign(b[1] - a[1]) * h;
       addSeg(fW(SM, a[0] - ds, a[1] - dt), fW(SM, b[0] + ds, b[1] + dt), R.w, SEG_AVE).name = 'RING RD'; }
     for (const s0 of [-20, 20]) addSeg(fW(SM, s0, 1), fW(SM, s0, R.t0 + h), 2.6, SEG_AVE).name = 'RING RD'; // entrances off Richmond Ave
+    addSeg(fW(SM, -42.6, 1.5), fW(SM, -42.6, 72), 3.0, SEG_AVE);                                   // side street between the mall and the plazas
     // Richmond Hill Rd leaves Richmond Ave just north of the mall and bends south-east around its corner (OSM shape)
     { const pts = [fW(SM, 46, 1.5), fW(SM, 46, 62), fW(SM, 40, 74), fW(SM, 0, 80), P(40.5733, -74.1470)];
       for (let i = 0; i + 1 < pts.length; i++) addSeg(pts[i], pts[i + 1], 3.0, SEG_AVE).name = 'RICHMOND HILL RD'; } }
@@ -305,6 +309,9 @@ function buildMap() {
   const tmp = new Uint8Array(MW * MH), R = 4;
   for (let y = 0; y < MH; y++) { const row = y * MW; let last = -1e9; for (let x = 0; x < MW; x++) { if (BORO[row + x]) last = x; if (x - last <= R) tmp[row + x] = 1; } last = 1e9; for (let x = MW - 1; x >= 0; x--) { if (BORO[row + x]) last = x; if (last - x <= R) tmp[row + x] = 1; } }
   for (let x = 0; x < MW; x++) { let last = -1e9; for (let y = 0; y < MH; y++) { if (tmp[y * MW + x]) last = y; if (y - last <= R) NEARL[y * MW + x] = 1; } last = 1e9; for (let y = MH - 1; y >= 0; y--) { if (tmp[y * MW + x]) last = y; if (last - y <= R) NEARL[y * MW + x] = 1; } }
+  // gas stations + civic sites need boroAt(), which reads the blurred land mask above, so they go last
+  placeGas(); for (const g of GAS_SITES) fillPoly(ZONE, g.apron, 3, true);
+  placeCivic(); for (const c of CIVIC_SITES) fillPoly(ZONE, c.pad, c.type === 'energy' || c.type === 'plant' || c.type === 'store' ? 3 : 5, true);
 }
 
 // ---------- tile classification ----------
