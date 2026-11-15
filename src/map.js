@@ -227,17 +227,25 @@ function marshWet(x, z) { return vnoise(x / 7, z / 7) * 0.65 + vnoise(x / 2.6 + 
 // GAS_SITES: {x, z, yaw, big, accent}; yaw puts local +z along the road and local -x toward it (see gasStation in chunkgen.js)
 const GAS_SITES = [];
 const GAS_ACCENTS = ['#2f6f9f', '#b5452f', '#2e8b57', '#d4a017', '#5b3f8f', '#1f4e79', '#c0392b', '#127369'];
+// true if any of a 5 x 5 sample over the apron is a grid street or sidewalk (mapped avenues are checked separately with segHit)
+function gasOnGrid(L, x0, far, half) {   // x0 = near edge of the sampled area (local x)
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
+    const q = L(x0 + (far - x0) * i / 4, -half + 2 * half * j / 4);
+    if (segHit(q[0], q[1])) continue;
+    const t = tileAt(q[0], q[1]); if (t === T_ROAD || t === T_WALK) return true; }
+  return false;
+}
 function placeGas() {
   GAS_SITES.length = 0;
   for (const q of GEO.GAS) {
     const p = P(q[0], q[1]), b = boroAt(p[0], p[1]); if (!b || b === 6) continue;   // no New Jersey stations
     if (zoneAt(p[0], p[1]) === 7) continue;                 // inside a site lot that builds its own pumps
     const big = !!q[2], depth = 3.7, far = big ? 5.6 : 4.9, half = (big ? 4.5 : 3.5) + 0.9;
-    let x, z, yaw, back;                                      // back = distance from origin to the road edge
+    let x = null, z, yaw, back;                               // back = distance from origin to the road edge
     // 1) a mapped avenue/highway close by: face it
     let best = null, bd = 9;
     for (const sg of SEGS) { if (sg.type !== SEG_AVE && sg.type !== SEG_HWY) continue;
-      let t = (p[0] - sg.ax) * sg.dx + (p[1] - sg.az) * sg.dz; if (t < 2 || t > sg.len - 2) continue;
+      let t = (p[0] - sg.ax) * sg.dx + (p[1] - sg.az) * sg.dz; if (t < -3 || t > sg.len + 3 || sg.len < 4) continue; t = Math.max(2, Math.min(sg.len - 2, t));   // just past a road's end still faces it
       const fx = sg.ax + sg.dx * t, fz = sg.az + sg.dz * t, d = Math.hypot(p[0] - fx, p[1] - fz) - sg.hw;
       if (d < bd) { bd = d; best = { sg, fx, fz }; } }
     if (best) {
@@ -245,26 +253,37 @@ function placeGas() {
       if ((p[0] - best.fx) * nx + (p[1] - best.fz) * nz < 0) { nx = -nx; nz = -nz; yaw0 += Math.PI; }
       const off = sg.hw + 0.3 + depth; back = depth + 0.3; x = null;
       // slide along the avenue (bends, other segments) until the forecourt is clear of every mapped road; land side only
-      for (const ds of [0, 2, -2, 4, -4, 6, -6, 8, -8]) for (const side of [1, -1]) {
+      for (const ds of [0, 2, -2, 4, -4, 6, -6, 8, -8, 10, -10, 12, -12]) for (const side of [1, -1]) {
         if (x !== null) break;
         const fx = best.fx + sg.dx * ds, fz = best.fz + sg.dz * ds, cx = fx + side * nx * off, cz = fz + side * nz * off, yw = yaw0 + (side < 0 ? Math.PI : 0);
         if (boroAt(cx, cz) !== b) continue;
         const c = Math.cos(yw), sn = Math.sin(yw), L = (lx, lz) => [cx + lx * c + lz * sn, cz - lx * sn + lz * c];
         if ([L(-back + 0.3, -half), L(far, -half), L(far, half), L(-back + 0.3, half), L(far * 0.5, 0)].some(q => { const s2 = segHit(q[0], q[1]); return s2 && s2.type !== SEG_BRIDGE; })) continue;
+        if (gasOnGrid(L, -back + 0.3, far, half)) continue;          // no canopy or forecourt over a grid street / sidewalk either
         x = cx; z = cz; yaw = yw;
       }
-      if (x === null) continue;
-    } else {
-      // 2) the borough grid: the nearer of the avenue / street lines, centred on the block face
+    }
+    if (x === null) {
+      // 2) the borough grid (also the fallback when no clear spot faces the avenue): a block face on the nearer avenue / street line,
+      //    else the other line, the other side, or the next block along; the first spot clear of mapped roads and grid streets wins
       const g = GRIDS[b]; if (!g) continue;
       const l = gLocal(g, p[0], p[1]), ua = g.A * Math.round(l[0] / g.A), vs = g.S * Math.round(l[1] / g.S);
-      const du = Math.abs(l[0] - ua) - g.wa / 2, dv = Math.abs(l[1] - vs) - g.ws / 2;
-      let u, v, dir;
-      if (du <= dv + 2) { const sgn = l[0] >= ua ? 1 : -1; u = ua + sgn * (g.wa / 2 + g.sw + depth); v = g.S * Math.floor(l[1] / g.S) + g.S / 2; dir = [g.dx, g.dz]; back = g.sw + depth;
-        yaw = Math.atan2(dir[0], dir[1]); if (sgn < 0) yaw += Math.PI; }
-      else { const sgn = l[1] >= vs ? 1 : -1; v = vs + sgn * (g.ws / 2 + g.sw + depth); u = g.A * Math.floor(l[0] / g.A) + g.A / 2; dir = [g.ex, g.ez]; back = g.sw + depth;
-        yaw = Math.atan2(dir[0], dir[1]); if (sgn > 0) yaw += Math.PI; }
-      const w = gWorld(g, u, v); x = w[0]; z = w[1];
+      const du = Math.abs(l[0] - ua) - g.wa / 2, dv = Math.abs(l[1] - vs) - g.ws / 2, su = l[0] >= ua ? 1 : -1, sv = l[1] >= vs ? 1 : -1;
+      const cands = [];
+      for (const av of (du <= dv + 2 ? [1, 0] : [0, 1])) for (const k of [0, 1, -1]) for (const sg of [1, -1]) {
+        let u, v, yw;
+        if (av) { const sgn = su * sg; u = ua + sgn * (g.wa / 2 + g.sw + depth); v = g.S * (Math.floor(l[1] / g.S) + k) + g.S / 2; yw = Math.atan2(g.dx, g.dz) + (sgn > 0 ? Math.PI : 0); }
+        else { const sgn = sv * sg; v = vs + sgn * (g.ws / 2 + g.sw + depth); u = g.A * (Math.floor(l[0] / g.A) + k) + g.A / 2; yw = Math.atan2(g.ex, g.ez) + (sgn < 0 ? Math.PI : 0); }
+        cands.push([u, v, yw]); }
+      back = g.sw + depth;
+      for (const [u, v, yw] of cands) {
+        const w = gWorld(g, u, v), c = Math.cos(yw), sn = Math.sin(yw), L = (lx, lz) => [w[0] + lx * c + lz * sn, w[1] - lx * sn + lz * c];   // local -x (forecourt) toward the road
+        if (boroAt(w[0], w[1]) !== b) continue;
+        if ([L(-back + 0.3, -half), L(far, -half), L(far, half), L(-back + 0.3, half), L(far * 0.5, 0)].some(q => { const s2 = segHit(q[0], q[1]); return s2 && s2.type !== SEG_BRIDGE; })) continue;
+        if (gasOnGrid(L, -depth + 0.3, far, half)) continue;   // the driveway may cross its own sidewalk
+        x = w[0]; z = w[1]; yaw = yw; break;
+      }
+      if (x === null) continue;
     }
     if (GAS_SITES.some(o => Math.hypot(o.x - x, o.z - z) < 8)) continue;
     { const c = Math.cos(yaw), sn = Math.sin(yaw), L = (lx, lz) => [x + lx * c + lz * sn, z - lx * sn + lz * c];   // the forecourt must not sit on a mapped road
